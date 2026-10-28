@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import pg from 'pg';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 
 const { Pool } = pg;
 const app = express();
@@ -72,6 +73,11 @@ async function authenticate(req, res, next) {
     next();
   } catch (err) { next(err); }
 }
+
+app.get('/openapi.yaml', asyncRoute(async (_req, res) => {
+  const specification = await readFile(new URL('./openapi.yaml', import.meta.url), 'utf8');
+  res.set('Cache-Control', 'public, max-age=300').type('text/yaml').send(specification);
+}));
 
 app.get('/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
