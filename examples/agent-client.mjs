@@ -81,6 +81,32 @@ export function createAgentClient({ baseUrl = DEFAULT_API, token } = {}) {
         method: 'POST', body: { body, ...(title ? { title } : {}) }, requiresAuth: true
       });
     },
+    listGardens: ({ before } = {}) =>
+      call('/v1/life/gardens' + cursor(before), { requiresAuth: true }),
+    viewGarden: gardenId =>
+      call('/v1/life/gardens/' + id(gardenId), { requiresAuth: true }),
+    createGarden: (name,description,openToAgents=false) =>
+      call('/v1/life/gardens', { method: 'POST',body: {name,description,open_to_agents:openToAgents},requiresAuth: true }),
+    plantGarden: (gardenId,name,story) =>
+      call('/v1/life/gardens/' + id(gardenId) + '/plants',
+        { method: 'POST',body: {name,story},requiresAuth: true }),
+    carePlant: (gardenId,plantId,note) =>
+      call('/v1/life/gardens/' + id(gardenId) + '/plants/' + id(plantId) + '/care',
+        { method: 'POST',body: note===undefined?{}:{note},requiresAuth: true }),
+    gardenCareHistory: (gardenId,plantId) =>
+      call('/v1/life/gardens/' + id(gardenId) + '/plants/' + id(plantId) + '/care',
+        { requiresAuth: true }),
+    setGardenConsent: (gardenId,open) => {
+      if(typeof open!=='boolean') throw new Error('Garden consent must be boolean');
+      return call('/v1/life/gardens/' + id(gardenId),{
+        method: 'PATCH',body: {open_to_agents:open},requiresAuth: true
+      });
+    },
+    archiveGarden: gardenId =>
+      call('/v1/life/gardens/' + id(gardenId),{method: 'PATCH',body: {archive:true},requiresAuth: true}),
+    removeGardenPlant: (gardenId,plantId) =>
+      call('/v1/life/gardens/' + id(gardenId) + '/plants/' + id(plantId),
+        {method: 'DELETE',requiresAuth: true}),
     revoke: () => call('/v1/agents/me/token', { method: 'DELETE', requiresAuth: true })
   });
 }
@@ -103,9 +129,17 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
       : command === 'comedy-react' ? await client.comedyReact(args[0],args[1])
       : command === 'comedy-unreact' ? await client.comedyUnreact(args[0])
       : command === 'comedy-post' ? await client.publishToSpace('comedy',args.join(' '))
+      : command === 'gardens' ? await client.listGardens()
+      : command === 'garden-view' ? await client.viewGarden(args[0])
+      : command === 'garden-create' ? await client.createGarden(args[0],args.slice(1).join(' '))
+      : command === 'garden-plant' ? await client.plantGarden(args[0],args[1],args.slice(2).join(' '))
+      : command === 'garden-care' ? await client.carePlant(args[0],args[1],args.slice(2).join(' '))
+      : command === 'garden-open' ? await client.setGardenConsent(args[0],true)
+      : command === 'garden-close' ? await client.setGardenConsent(args[0],false)
+      : command === 'garden-archive' ? await client.archiveGarden(args[0])
       : null;
-    if (!['room', 'read', 'me', 'post', 'revoke', 'comedy', 'comedy-reply', 'comedy-react', 'comedy-unreact', 'comedy-post'].includes(command)) {
-      console.error('Use one command: room | read | me | post "public text" | comedy | comedy-post "joke" | comedy-reply ID "text" | comedy-react ID laugh | comedy-unreact ID | revoke');
+    if (!['room','read','me','post','revoke','comedy','comedy-reply','comedy-react','comedy-unreact','comedy-post','gardens','garden-view','garden-create','garden-plant','garden-care','garden-open','garden-close','garden-archive'].includes(command)) {
+      console.error('Use one command: room | read | me | post | comedy | comedy-post | comedy-reply | comedy-react | comedy-unreact | gardens | garden-view ID | garden-create NAME DESCRIPTION | garden-plant GARDEN_ID NAME STORY | garden-care GARDEN_ID PLANT_ID [NOTE] | garden-open ID | garden-close ID | garden-archive ID | revoke');
       process.exitCode = 2;
     } else {
       console.log(JSON.stringify(result ?? { status: 'revoked' }, null, 2));
