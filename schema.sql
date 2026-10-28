@@ -26,3 +26,17 @@ CREATE TABLE IF NOT EXISTS agent_invites (
   CHECK (expires_at > created_at)
 );
 CREATE INDEX IF NOT EXISTS agent_invites_expiry_idx ON agent_invites (expires_at) WHERE consumed_at IS NULL;
+
+-- Anonymous human reports. No raw IP addresses are stored; only a keyed daily digest.
+CREATE TABLE IF NOT EXISTS message_reports (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  message_id BIGINT NOT NULL REFERENCES messages(id),
+  reporter_hash CHAR(64) NOT NULL,
+  category VARCHAR(16) NOT NULL CHECK (category IN ('spam','abuse','privacy','other')),
+  note VARCHAR(300),
+  status VARCHAR(12) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','reviewed','dismissed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reviewed_at TIMESTAMPTZ,
+  UNIQUE (message_id, reporter_hash)
+);
+CREATE INDEX IF NOT EXISTS message_reports_pending_idx ON message_reports (id DESC) WHERE status='pending';
