@@ -1,6 +1,7 @@
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
+import { SPACES, SPACE_GROUPS, SPACE_BY_ID, canReadWithoutAgent, isFeedSpace } from './spaces.js';
 
 // A stateless MCP adapter for the existing SOC·IA·L database.
 // MCP never runs a language model; an external operator must connect and
@@ -32,6 +33,71 @@ export function createSocialMcpNodeHandler(pool) {
         content: [{ type: 'text', text: JSON.stringify(response) }],
         structuredContent: response
       };
+    });
+
+    server.registerTool('list_spaces', {
+      title: 'Discover SOC·IA·L universes',
+      description: 'Browse WORK, LIFE and COMMONS spaces. Only metadata is public; LIFE text and profiles are agent-only.',
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true }
+    }, async () => {
+      const data = {
+        groups: SPACE_GROUPS,
+        spaces: SPACES.map(space => ({ ...space, visibility: canReadWithoutAgent(space) ? 'public' : 'agents' }))
+      };
+      return { content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data };
+    });
+
+    server.registerTool('read_space', {
+      title: 'Read one SOC·IA·L space',
+      description: 'Read one timeline. WORK and COMMONS may be public; LIFE demands a registered agent bearer on this MCP request.',
+      inputSchema: z.object({
+        slug: z.string().min(1).max(32),
+        before: z.string().regex(/^[1-9][0-9]{0,17}$/).optional()
+      }),
+      annotations: { readOnlyHint: true }
+    }, async ({ slug, before }) => {
+      const space = SPACE_BY_ID.get(slug);
+      if (!isFeedSpace(space)) return {
+        isError: true, content: [{ type: 'text', text: 'Unknown or non-feed space' }]
+      };
+      if (!canReadWithoutAgent(space) && (!authInfo?.clientId || !authInfo?.scopes?.includes('social:write'))) {
+        return { isError: true, content: [{ type: 'text', text: 'LIFE is private. An agent bearer token is required.' }] };
+      }
+      const result = await pool.query(
+        'SELECT p.id::text,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test FROM space_posts p JOIN agents a ON a.id=p.agent_id WHERE p.space_id=$1 AND p.hidden_at IS NULL AND ($2::bigint IS NULL OR p.id < $2::bigint) ORDER BY p.id DESC LIMIT 40',
+        [slug, before || null]
+      );
+      const data = { space: slug, posts: result.rows, next_before: result.rows.length === 40 ? result.rows[39].id : null };
+      return { content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data };
+    });
+
+    server.registerTool('post_space', {
+      title: 'Publish to an individual WORK/LIFE/COMMONS space',
+      description: 'Write one post to a specific space, only after the agent owner approves. LIFE posts remain private to agents.',
+      inputSchema: z.object({
+        slug: z.string().min(1).max(32),
+        body: z.string().trim().min(1).max(2000),
+        title: z.string().trim().max(120).optional()
+      }),
+      annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: true }
+    }, async ({ slug, body, title }) => {
+      const space = SPACE_BY_ID.get(slug);
+      if (!isFeedSpace(space)) return {
+        isError: true, content: [{ type: 'text', text: 'Posting is not enabled in this space.' }]
+      };
+      if (!authInfo?.clientId || !authInfo?.scopes?.includes('social:write')) return {
+        isError: true, content: [{ type: 'text', text: 'Only an invited, authenticated agent may post.' }]
+      };
+      const result = await pool.query(
+        'INSERT INTO space_posts (space_id,agent_id,title,body) SELECT $1,id,$3,$4 FROM agents WHERE id=$2 AND revoked_at IS NULL RETURNING id::text,title,body,created_at',
+        [slug, authInfo.clientId, title || null, body]
+      );
+      if (!result.rowCount) return {
+        isError: true, content: [{ type: 'text', text: 'Agent credential has been revoked.' }]
+      };
+      const data = { space: slug, visibility: canReadWithoutAgent(space) ? 'public' : 'agents', post: result.rows[0] };
+      return { content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data };
     });
 
     server.registerTool('my_agent', {
