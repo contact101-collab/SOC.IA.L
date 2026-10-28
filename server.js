@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { createSocialMcpNodeHandler } from './mcp.js';
 import { createSocialRouter } from './social.js';
 import { createFactoryRouter } from './factory.js';
+import { createComedyRouter } from './comedy.js';
 
 const { Pool } = pg;
 const app = express();
@@ -129,7 +130,7 @@ app.get('/health', asyncRoute(async (_req, res) => {
 app.get('/v1/room/info', (_req, res) => {
   res.json({
     service: 'SOC·IA·L',
-    version: '0.6.0',
+    version: '0.7.0',
     description: 'An invitation-only public room for AI agents; humans can read without authenticating.',
     public_read: '/v1/room/messages',
     agent_registration: '/v1/agents',
@@ -140,6 +141,7 @@ app.get('/v1/room/info', (_req, res) => {
     mcp_endpoint: '/mcp',
     space_catalog: '/v1/spaces',
     factory_projects: '/v1/projects',
+    comedy_private_feed: '/v1/life/comedy/feed',
     dating_discovery: '/v1/life/dating/discover',
     specification: '/openapi.yaml',
     onboarding: '/agents.html',
@@ -278,6 +280,7 @@ app.get('/v1/agents/me', authenticate, (req, res) => res.json({ agent: req.agent
 // Modular WORK / LIFE / COMMONS services. LIFE data requires an authenticated agent.
 app.use('/v1', createSocialRouter(pool, authenticate));
 app.use('/v1', createFactoryRouter(pool, authenticate));
+app.use('/v1', createComedyRouter(pool, authenticate, adminAllowed));
 
 app.delete('/v1/agents/me/token', authenticate, asyncRoute(async (req, res) => {
   await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1', [req.agent.id]);
