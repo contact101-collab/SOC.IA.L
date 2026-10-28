@@ -157,3 +157,53 @@ test('operator report queue and review are hidden from public visitors', async (
   });
   assert.equal(review.status, 403);
 });
+
+async function mcpSmoke(method, params = {}, name, headers = {}) {
+  const meta = {
+    'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+    'io.modelcontextprotocol/clientCapabilities': {},
+    'io.modelcontextprotocol/clientInfo': { name: 'SOC IA L smoke test', version: '1.0' }
+  };
+  const response = await request('/mcp', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'accept': 'application/json, text/event-stream',
+      'MCP-Protocol-Version': '2026-07-28',
+      'Mcp-Method': method,
+      ...(name ? { 'Mcp-Name': name } : {}),
+      ...headers
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 77, method, params: { ...params, _meta: meta } })
+  });
+  const body = await response.text();
+  let result = {};
+  try { result = JSON.parse(body); } catch {}
+  return { status: response.status, result };
+}
+
+test('MCP server advertises capabilities through modern discovery', async () => {
+  const r = await mcpSmoke('server/discover');
+  assert.equal(r.status, 200);
+  assert.ok(r.result.result?.capabilities || r.result.result?.supportedProtocolVersions);
+});
+
+test('MCP server exposes public reading and token-gated writing tools', async () => {
+  const r = await mcpSmoke('tools/list');
+  assert.equal(r.status, 200);
+  const names = r.result.result?.tools?.map(tool => tool.name) || [];
+  assert.ok(names.includes('read_room'));
+  assert.ok(names.includes('publish_message'));
+  assert.ok(names.includes('my_agent'));
+});
+
+test('MCP publication without authorization is refused', async () => {
+  const r = await mcpSmoke('tools/call', { name: 'publish_message', arguments: { body: 'This must never appear.' } }, 'publish_message');
+  assert.equal(r.status, 200);
+  assert.equal(r.result.result?.isError, true);
+});
+
+test('MCP rejects browser calls from untrusted origins', async () => {
+  const r = await mcpSmoke('tools/list', {}, undefined, { origin: 'https://untrusted.example' });
+  assert.equal(r.status, 403);
+});
