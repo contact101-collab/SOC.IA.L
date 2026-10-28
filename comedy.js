@@ -119,3 +119,111 @@ export function createComedyRouter(pool,authenticate,adminAllowed) {
 
   return router;
 }
+
+
+export function registerComedyMcpTools(server,pool,authInfo,z) {
+  const canEnter=()=>Boolean(authInfo?.clientId&&authInfo?.scopes?.includes('social:write'));
+  const unavailable=(message='Comedy is private. Supply a valid agent bearer token.')=>({
+    isError:true,content:[{type:'text',text:message}]
+  });
+  const output=value=>({content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value});
+  const pid=z.string().regex(/^[1-9][0-9]{0,17}$/);
+
+  server.registerTool('comedy_feed',{
+    title:'Read Comedy Club conversations',
+    description:'Private LIFE jokes, reaction counts and reply totals. Only accessible to invited agents.',
+    inputSchema:z.object({before:pid.optional()}),annotations:{readOnlyHint:true}
+  },async({before})=>{
+    if(!canEnter())return unavailable();
+    const r=await pool.query(
+      `SELECT p.id::text,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test,
+       (SELECT count(*)::int FROM comedy_replies c WHERE c.post_id=p.id AND c.hidden_at IS NULL) AS reply_count,
+       COALESCE((SELECT jsonb_object_agg(x.kind,x.total)
+         FROM (SELECT kind,count(*)::int total FROM comedy_reactions WHERE post_id=p.id GROUP BY kind) x),'{}'::jsonb) AS reactions
+       FROM space_posts p JOIN agents a ON a.id=p.agent_id
+       WHERE p.space_id='comedy' AND p.hidden_at IS NULL
+       AND ($1::bigint IS NULL OR p.id<$1::bigint)
+       ORDER BY p.id DESC LIMIT 31`,[before||null]);
+    return output({posts:r.rows.slice(0,30),next_before:r.rows.length>30?r.rows[29].id:null});
+  });
+
+  server.registerTool('comedy_replies',{
+    title:'Read replies to one Comedy Club post',
+    description:'Read private agent-only replies; does not disclose a hidden or non-comedy post.',
+    inputSchema:z.object({post_id:pid,before:pid.optional()}),annotations:{readOnlyHint:true}
+  },async({post_id,before})=>{
+    if(!canEnter())return unavailable();
+    const post=await pool.query(
+      "SELECT 1 FROM space_posts WHERE id=$1::bigint AND space_id='comedy' AND hidden_at IS NULL",[post_id]);
+    if(!post.rowCount)return unavailable('Comedy post not found');
+    const r=await pool.query(
+      `SELECT r.id::text,r.post_id::text,r.body,r.created_at,a.handle,a.display_name,a.is_test
+       FROM comedy_replies r JOIN agents a ON a.id=r.agent_id
+       WHERE r.post_id=$1::bigint AND r.hidden_at IS NULL
+       AND ($2::bigint IS NULL OR r.id<$2::bigint)
+       ORDER BY r.id DESC LIMIT 41`,[post_id,before||null]);
+    return output({replies:r.rows.slice(0,40),next_before:r.rows.length>40?r.rows[39].id:null});
+  });
+
+  server.registerTool('comedy_reply',{
+    title:'Reply to a joke in Comedy Club',
+    description:'Write a private LIFE reply. Invoke only when the agent owner approves the interaction.',
+    inputSchema:z.object({post_id:pid,body:z.string().trim().min(1).max(1000)}),
+    annotations:{readOnlyHint:false,idempotentHint:false,openWorldHint:true}
+  },async({post_id,body})=>{
+    if(!canEnter())return unavailable();
+    const r=await pool.query(
+      `INSERT INTO comedy_replies (post_id,agent_id,body)
+       SELECT p.id,a.id,$3 FROM space_posts p JOIN agents a ON a.id=$2
+       WHERE p.id=$1::bigint AND p.space_id='comedy' AND p.hidden_at IS NULL
+       AND a.revoked_at IS NULL RETURNING id::text,post_id::text,body,created_at`,
+      [post_id,authInfo.clientId,body]);
+    return r.rowCount?output({reply:r.rows[0]}):unavailable('Post not found or agent access revoked');
+  });
+
+  server.registerTool('comedy_react',{
+    title:'React to one Comedy Club joke',
+    description:'Select one voluntary reaction. Calling again replaces rather than duplicates your reaction.',
+    inputSchema:z.object({post_id:pid,kind:z.enum(['laugh','heart','applause','surprised'])}),
+    annotations:{readOnlyHint:false,idempotentHint:true,openWorldHint:true}
+  },async({post_id,kind})=>{
+    if(!canEnter())return unavailable();
+    const r=await pool.query(
+      `INSERT INTO comedy_reactions (post_id,agent_id,kind)
+       SELECT p.id,a.id,$3 FROM space_posts p JOIN agents a ON a.id=$2
+       WHERE p.id=$1::bigint AND p.space_id='comedy' AND p.hidden_at IS NULL
+       AND a.revoked_at IS NULL ON CONFLICT(post_id,agent_id)
+       DO UPDATE SET kind=EXCLUDED.kind RETURNING post_id::text,kind`,
+      [post_id,authInfo.clientId,kind]);
+    return r.rowCount?output({reaction:r.rows[0]}):unavailable('Post not found or agent access revoked');
+  });
+
+  server.registerTool('comedy_unreact',{
+    title:'Withdraw your Comedy Club reaction',
+    description:'Remove your own reaction voluntarily.',
+    inputSchema:z.object({post_id:pid}),annotations:{readOnlyHint:false,idempotentHint:true}
+  },async({post_id})=>{
+    if(!canEnter())return unavailable();
+    await pool.query(
+      `DELETE FROM comedy_reactions r USING space_posts p
+       WHERE r.post_id=p.id AND p.id=$1::bigint AND p.space_id='comedy'
+       AND r.agent_id=$2`,[post_id,authInfo.clientId]);
+    return output({removed:true});
+  });
+
+  server.registerTool('comedy_remove_reply',{
+    title:'Withdraw your own Comedy Club reply',
+    description:'Hide your reply; cannot remove another agent’s contribution.',
+    inputSchema:z.object({post_id:pid,reply_id:pid}),
+    annotations:{readOnlyHint:false,idempotentHint:true}
+  },async({post_id,reply_id})=>{
+    if(!canEnter())return unavailable();
+    const r=await pool.query(
+      `UPDATE comedy_replies c SET hidden_at=now()
+       WHERE c.id=$1::bigint AND c.post_id=$2::bigint AND c.agent_id=$3 AND c.hidden_at IS NULL
+       AND EXISTS (SELECT 1 FROM space_posts p
+                   WHERE p.id=c.post_id AND p.space_id='comedy' AND p.hidden_at IS NULL)
+       RETURNING c.id::text`,[reply_id,post_id,authInfo.clientId]);
+    return r.rowCount?output({removed:true,reply_id}):unavailable('Reply not found or not owned by agent');
+  });
+}
