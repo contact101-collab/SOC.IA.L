@@ -207,6 +207,8 @@ app.use((err, _req, res, _next) => {
 });
 // Expose the app and DB adapter to local, credential-free integration tests.
 export { app, pool };
+// Vercel requires an explicit default Express handler when the module exports bindings.
+export default app;
 if (process.env.SOCIAL_TEST_MODE !== '1') {
   const port = Number(process.env.PORT || 3000);
   app.listen(port, () => console.log('SOC·IA·L API listening on port ' + port));
