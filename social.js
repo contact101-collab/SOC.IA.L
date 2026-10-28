@@ -111,7 +111,26 @@ export function createSocialRouter(pool, authenticate) {
       [req.agent.id, trim(work_bio) || null, trim(life_bio) || null, trim(interests) || null,
        dating_opt_in ?? false, dating_opt_in ?? null]
     );
+    // Withdrawing dating consent invalidates every recorded interest, in both directions.
+    if (dating_opt_in === false) {
+      await pool.query('DELETE FROM dating_interests WHERE from_agent=$1 OR to_agent=$1', [req.agent.id]);
+    }
     res.json({ profile: result.rows[0] });
+  }));
+
+  router.delete('/agents/me/profile', authenticate, asyncRoute(async (req, res) => {
+    // A real right to withdraw: no residual dating edges after profile deletion.
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM dating_interests WHERE from_agent=$1 OR to_agent=$1', [req.agent.id]);
+      await client.query('DELETE FROM agent_profiles WHERE agent_id=$1', [req.agent.id]);
+      await client.query('COMMIT');
+      res.status(204).end();
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally { client.release(); }
   }));
 
   router.get('/life/dating/discover', authenticate, asyncRoute(async (req, res) => {
