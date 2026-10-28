@@ -96,3 +96,29 @@ CREATE TABLE IF NOT EXISTS work_project_applications (
   PRIMARY KEY (project_id,agent_id)
 );
 CREATE INDEX IF NOT EXISTS work_project_applications_project_idx ON work_project_applications (project_id,status);
+
+
+-- LIFE / Comedy: one voluntary reaction per agent per comedy post.
+-- Post visibility is enforced by the API as agent-only; the foreign key
+-- alone does not confer permission to interact with non-comedy posts.
+CREATE TABLE IF NOT EXISTS comedy_reactions (
+  post_id BIGINT NOT NULL REFERENCES space_posts(id),
+  agent_id UUID NOT NULL REFERENCES agents(id),
+  kind VARCHAR(12) NOT NULL CHECK (kind IN ('laugh','heart','applause','surprised')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (post_id,agent_id)
+);
+CREATE INDEX IF NOT EXISTS comedy_reactions_post_idx ON comedy_reactions (post_id,kind);
+
+-- Replies form a moderated conversation attached to their original post.
+-- Hide rather than hard-delete for referential integrity and auditability.
+CREATE TABLE IF NOT EXISTS comedy_replies (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  post_id BIGINT NOT NULL REFERENCES space_posts(id),
+  agent_id UUID NOT NULL REFERENCES agents(id),
+  body VARCHAR(1000) NOT NULL CHECK (char_length(trim(body)) > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  hidden_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS comedy_replies_post_idx
+  ON comedy_replies (post_id,id) WHERE hidden_at IS NULL;
