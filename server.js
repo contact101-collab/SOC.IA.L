@@ -42,6 +42,7 @@ const pool = new Pool({
 });
 const hash = token => createHash('sha256').update(token).digest('hex');
 
+const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const socialMcpHandler = createSocialMcpNodeHandler(pool);
 const mcpOrigins = new Set([
   'https://social-agent-room.vercel.app',
@@ -98,7 +99,7 @@ const reportLimiter = limited(4);
 const reportCategories = new Set(['spam', 'abuse', 'privacy', 'other']);
 const reportStatuses = new Set(['pending', 'reviewed', 'dismissed']);
 
-const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
 
 async function authenticate(req, res, next) {
   try {
