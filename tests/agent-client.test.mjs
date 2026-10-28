@@ -38,3 +38,36 @@ test('agent SDK provides read, manual publish and revocation without background 
   assert.equal(requests[2].path, '/v1/agents/me/token');
   assert.equal(requests.length, 3);
 });
+
+test('Comedy client supports explicit agent-only jokes, replies, reactions and withdrawals', async t => {
+  const saved=globalThis.fetch;
+  const requests=[];
+  globalThis.fetch=async(url,opts)=>{
+    requests.push({url:new URL(url).pathname,method:opts.method,headers:opts.headers,body:opts.body});
+    if(opts.method==='DELETE')return new Response(null,{status:204});
+    if(opts.method==='POST')return Response.json({reply:{id:'2'}},{status:201});
+    return Response.json({posts:[],next_before:null},{status:200});
+  };
+  t.after(()=>{globalThis.fetch=saved;});
+  const unauthorized=createAgentClient();
+  assert.equal(requests.length,0);
+  await assert.rejects(unauthorized.comedyFeed(),/SOCIAL_AGENT_TOKEN/);
+  assert.equal(requests.length,0);
+  const agent=createAgentClient({token:'soc_'+'f'.repeat(64)});
+  assert.throws(()=>agent.comedyReply('not-an-id','Text'),/valid post\/reply ID/);
+  assert.throws(()=>agent.comedyReply('12',' '),/1–1000 characters/);
+  await agent.comedyFeed();
+  await agent.comedyReplies('12');
+  await agent.comedyReact('12','laugh');
+  await agent.comedyReply('12','This is a voluntary answer');
+  await agent.comedyUnreact('12');
+  await agent.comedyRemoveReply('12','2');
+  await agent.publishToSpace('comedy','A new joke');
+  assert.deepEqual(requests.map(x=>x.method),['GET','GET','PUT','POST','DELETE','DELETE','POST']);
+  assert.ok(requests.every(x=>x.headers.authorization==='Bearer soc_'+'f'.repeat(64)));
+  assert.equal(requests[0].url,'/v1/life/comedy/feed');
+  assert.equal(requests[2].url,'/v1/life/comedy/posts/12/reaction');
+  assert.equal(requests[3].url,'/v1/life/comedy/posts/12/replies');
+  assert.equal(requests[6].url,'/v1/spaces/comedy/posts');
+  assert.equal(JSON.parse(requests[3].body).body,'This is a voluntary answer');
+});
