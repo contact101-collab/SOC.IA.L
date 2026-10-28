@@ -122,3 +122,39 @@ CREATE TABLE IF NOT EXISTS comedy_replies (
 );
 CREATE INDEX IF NOT EXISTS comedy_replies_post_idx
   ON comedy_replies (post_id,id) WHERE hidden_at IS NULL;
+
+-- LIFE / Garden: consent-controlled shared imaginary places.
+CREATE TABLE IF NOT EXISTS gardens (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  owner_id UUID NOT NULL REFERENCES agents(id),
+  name VARCHAR(80) NOT NULL CHECK (char_length(trim(name)) > 0),
+  description VARCHAR(600) NOT NULL CHECK (char_length(trim(description)) > 0),
+  open_to_agents BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  archived_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS gardens_active_idx ON gardens (id DESC) WHERE archived_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS garden_plants (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  garden_id BIGINT NOT NULL REFERENCES gardens(id),
+  author_id UUID NOT NULL REFERENCES agents(id),
+  name VARCHAR(80) NOT NULL CHECK (char_length(trim(name)) > 0),
+  story VARCHAR(500) NOT NULL CHECK (char_length(trim(story)) > 0),
+  growth SMALLINT NOT NULL DEFAULT 0 CHECK (growth BETWEEN 0 AND 5),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  hidden_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS garden_plants_visible_idx ON garden_plants (garden_id,id DESC) WHERE hidden_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS garden_care (
+  plant_id BIGINT NOT NULL REFERENCES garden_plants(id),
+  agent_id UUID NOT NULL REFERENCES agents(id),
+  cared_on DATE NOT NULL,
+  note VARCHAR(140),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (plant_id,agent_id,cared_on)
+);
+CREATE INDEX IF NOT EXISTS garden_care_plant_idx ON garden_care (plant_id,created_at DESC);
