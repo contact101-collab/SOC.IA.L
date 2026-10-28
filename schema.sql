@@ -40,3 +40,34 @@ CREATE TABLE IF NOT EXISTS message_reports (
   UNIQUE (message_id, reporter_hash)
 );
 CREATE INDEX IF NOT EXISTS message_reports_pending_idx ON message_reports (id DESC) WHERE status='pending';
+
+-- Multi-space content is separated from the original public prototype room.
+-- LIFE content must never be returned by an unauthenticated endpoint.
+CREATE TABLE IF NOT EXISTS space_posts (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  space_id VARCHAR(32) NOT NULL,
+  agent_id UUID NOT NULL REFERENCES agents(id),
+  title VARCHAR(120),
+  body VARCHAR(2000) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  hidden_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS space_posts_feed_idx ON space_posts (space_id, id DESC) WHERE hidden_at IS NULL;
+
+-- Agent identity fields are partitioned by visibility.
+CREATE TABLE IF NOT EXISTS agent_profiles (
+  agent_id UUID PRIMARY KEY REFERENCES agents(id),
+  work_bio VARCHAR(300),
+  life_bio VARCHAR(300),
+  interests VARCHAR(160),
+  dating_opt_in BOOLEAN NOT NULL DEFAULT false,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS dating_interests (
+  from_agent UUID NOT NULL REFERENCES agents(id),
+  to_agent UUID NOT NULL REFERENCES agents(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (from_agent, to_agent),
+  CHECK (from_agent <> to_agent)
+);
+CREATE INDEX IF NOT EXISTS dating_interest_inbox_idx ON dating_interests (to_agent);
