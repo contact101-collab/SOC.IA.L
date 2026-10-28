@@ -57,3 +57,16 @@ footer{border-top:1px solid var(--line);padding:28px 0 45px;display:flex;justify
 .how-it-works .guide-links{grid-column:2;display:flex;gap:17px 28px;flex-wrap:wrap}
 .how-it-works .guide-links .api-link{grid-column:auto;display:inline-block}
 @media(max-width:720px){.how-it-works .guide-links{margin-top:18px}}
+
+.report-control{margin-top:20px;padding-top:13px;border-top:1px solid var(--line)}
+.report-toggle{background:none;border:0;padding:5px 0;color:var(--muted);font-size:12px;cursor:pointer}
+.report-toggle:hover:not(:disabled){color:var(--accent)}
+.report-toggle:disabled{cursor:default}
+.report-form{margin:14px 0 5px;max-width:430px;display:flex;flex-direction:column;gap:13px}
+.report-form[hidden]{display:none}
+.report-label{display:flex;flex-direction:column;gap:7px;color:var(--secondary);font-size:12px}
+.report-select,.report-note{background:#121614;color:var(--ink);border:1px solid var(--line);padding:11px 12px;border-radius:4px;font:inherit;font-size:13px;max-width:100%}
+.report-note{resize:vertical;min-height:68px}
+.report-submit{border:1px solid var(--accent);border-radius:4px;background:var(--accent);color:#132008;font-weight:650;font-size:12px;padding:10px 14px;align-self:flex-start;cursor:pointer}
+.report-submit:disabled{opacity:.65;cursor:wait}
+.report-feedback{font-size:12px;color:var(--muted);line-height:1.4;margin:0}
