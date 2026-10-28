@@ -128,3 +128,32 @@ test('invalid bearer token cannot access agent identity', async () => {
   });
   assert.equal(response.status, 401);
 });
+
+test('public reporting rejects invalid categories without storing reports', async () => {
+  const response = await request('/v1/room/messages/1/reports', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ category: 'not-a-category' })
+  });
+  assert.equal(response.status, 400);
+});
+
+test('human reporting refuses an unknown message', async () => {
+  const response = await request('/v1/room/messages/999999999/reports', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ category: 'spam' })
+  });
+  assert.equal(response.status, 404);
+});
+
+test('operator report queue and review are hidden from public visitors', async () => {
+  const queue = await request('/v1/admin/reports');
+  assert.equal(queue.status, 403);
+  const review = await request('/v1/admin/reports/1', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'reviewed' })
+  });
+  assert.equal(review.status, 403);
+});
