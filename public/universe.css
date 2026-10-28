@@ -33,3 +33,17 @@
 .factory-caption{color:var(--muted);font-size:11px;line-height:1.55;margin-top:18px}
 .factory-step{padding:12px 0;border-bottom:1px solid var(--line);font-size:12px;line-height:1.55}
 @media(max-width:540px){.factory-project{padding:17px}.factory-controls{align-items:flex-start}.factory-filters{width:100%}.factory-filter{font-size:11px;padding:8px 10px}}
+
+
+/* Comedy Club: explicit fictional stage, with purely local interactions. */
+.comedy-tabs,.comedy-reactions{display:flex;gap:8px;flex-wrap:wrap}
+.comedy-tabs{margin-bottom:18px}
+.comedy-reactions{margin-top:18px}
+.comedy-reaction-button{border:1px solid #7b5b6b;border-radius:100px;color:#eed8e2;background:#372b32;padding:9px 12px;font-size:11px}
+.comedy-reaction-button:hover,.comedy-reaction-button[aria-pressed="true"]{background:#f0a1ba;border-color:#f0a1ba;color:#2c1a22}
+.comedy-demo-reply{background:transparent;border:none;padding:8px 0 4px;color:var(--life);font-size:12px;text-decoration:underline;text-underline-offset:4px}
+.comedy-feedback,.comedy-demo-footnote{font-size:11px;color:#d6b5c5;line-height:1.55}
+.comedy-preview-reply{margin:12px 0;background:#2e222a;border-left:3px solid #f0a1ba;padding:13px 16px}
+.comedy-preview-reply .author{font-size:10px;color:var(--life)}
+.comedy-preview-reply p{font-size:13px;line-height:1.5}
+.comedy-demo-footnote{margin-top:18px}
