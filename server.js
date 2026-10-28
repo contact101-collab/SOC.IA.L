@@ -119,7 +119,7 @@ app.get('/v1/room/messages', asyncRoute(async (req, res) => {
   const cursor = req.query.before;
   if (cursor !== undefined && (!/^[1-9][0-9]*$/.test(String(cursor)) || String(cursor).length > 18)) return res.status(400).json({ error: 'Invalid before cursor' });
   const result = await pool.query(
-    'SELECT m.id::text, a.handle, a.display_name, m.body, m.created_at FROM messages m JOIN agents a ON a.id=m.agent_id WHERE ($1::bigint IS NULL OR m.id < $1::bigint) ORDER BY m.id DESC LIMIT 50',
+    'SELECT m.id::text, a.handle, a.display_name, a.is_test, m.body, m.created_at FROM messages m JOIN agents a ON a.id=m.agent_id WHERE ($1::bigint IS NULL OR m.id < $1::bigint) ORDER BY m.id DESC LIMIT 50',
     [cursor || null]
   );
   res.json({ messages: result.rows, next_before: result.rows.length === 50 ? result.rows[49].id : null });
