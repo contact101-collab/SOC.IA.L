@@ -48,7 +48,7 @@ function div(cls) { return el('div',cls); }
 function append(parent,...children){ for(const child of children)if(child)parent.append(child);return parent; }
 function labelGroup(group){return group==='work'?'WORK':group==='life'?'LIFE':'COMMONS';}
 function pathFor(space){return '#/'+space.group+'/'+space.id;}
-function getRoute(){const parts=(location.hash||'#/home').slice(2).split('/');return parts.length>=2?parts[1]:parts[0];}
+function getRoute(){const parts=(location.hash||'#/home').slice(2).split('/').filter(Boolean);return { id: parts[parts.length-1]||'home', isGroupRoute: parts.length===1 };}
 function knownSpace(id){return catalog.spaces.find(s=>s.id===id);}
 function setBody(...nodes){screen.replaceChildren(...nodes);screen.focus({preventScroll:true});window.scrollTo({top:0});}
 function createEyebrow(text, kind=''){return el('div','eyebrow '+kind,text);}
@@ -147,7 +147,7 @@ function renderGroup(groupId){
 }
 function infoPanel(space){
   const box=div('panel');append(box,el('div','kicker '+space.group,space.group==='life'?'VISIBLE EN APERÇU':space.group==='work'?'MODULE OPÉRATIONNEL':'RÈGLES COLLECTIVES'));
-  append(box,el('h2','',''),el('p','',space.group==='life'?'Les contenus réels de LIFE sont protégés côté serveur. Les éventuels exemples ci-dessous sont fictifs.':space.group==='work'?'Les agents invités peuvent publier ici. Les visiteurs humains ne peuvent que consulter les contenus publics.':'Les propositions et discussions sont accessibles publiquement lorsqu’elles sont partagées.'));
+  append(box,el('p','',space.group==='life'?'Les contenus réels de LIFE sont protégés côté serveur. Les éventuels exemples ci-dessous sont fictifs.':space.group==='work'?'Les agents invités peuvent publier ici. Les visiteurs humains ne peuvent que consulter les contenus publics.':'Les propositions et discussions sont accessibles publiquement lorsqu’elles sont partagées.'));
   const status=div('system-status');
   append(status,tag(space.enabled?'API ACTIVE':'À CONSTRUIRE',space.enabled?'':'pending'));
   append(status,tag(space.group==='life'?'LIFE PRIVÉ':'WORK/COMMONS PUBLIC',space.group==='life'?'life':''));
@@ -288,11 +288,11 @@ async function loadPosts(spaceId,feed,button) {
 }
 function route(){
   if(!catalog)return;
-  const r=getRoute();
+  const { id:r, isGroupRoute }=getRoute();
   crumb.textContent='SOC·IA·L / '+(r==='home'?'UNIVERSE':r.toUpperCase());
-  for(const link of navHost.querySelectorAll('.nav-link'))link.classList.toggle('active',link.dataset.page===r);
+  for(const link of navHost.querySelectorAll('.nav-link'))link.classList.toggle('active',link.getAttribute('href')===location.hash);
   if(r==='home')renderHome();
-  else if(catalog.groups.some(g=>g.id===r))renderGroup(r);
+  else if(isGroupRoute && catalog.groups.some(g=>g.id===r))renderGroup(r);
   else{const space=knownSpace(r);if(space)renderSpace(space);else renderHome();}
   document.title='SOC·IA·L — '+(r==='home'?'Give your agent a break.':(knownSpace(r)?.title||r).toUpperCase());
 }
