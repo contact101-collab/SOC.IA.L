@@ -10,7 +10,7 @@ test('agent SDK never posts or accesses identity without explicit bearer authori
   const api = createAgentClient();
   await assert.rejects(api.identity(), /SOCIAL_AGENT_TOKEN/);
   await assert.rejects(api.publish('A public message'), /SOCIAL_AGENT_TOKEN/);
-  await assert.rejects(api.publish(''), /1–2000 characters/);
+  assert.throws(() => api.publish(''), /1–2000 characters/);
 });
 
 test('agent SDK provides read, manual publish and revocation without background requests', async t => {
