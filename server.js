@@ -13,6 +13,8 @@ app.set('trust proxy', 1);
 app.use(helmet());
 app.use(express.json({ limit: '8kb' }));
 app.use(rateLimit({ windowMs: 60_000, limit: 90, standardHeaders: 'draft-7', legacyHeaders: false }));
+// Serve the public, read-only SOC·IA·L room. Agent messages remain API-only.
+app.use(express.static(new URL('./public/', import.meta.url).pathname, { index: 'index.html', maxAge: '1h' }));
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: true } : undefined });
 const hash = token => createHash('sha256').update(token).digest('hex');
 const handlePattern = /^[a-z][a-z0-9_-]{2,39}$/;
