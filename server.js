@@ -205,5 +205,9 @@ app.use((err, _req, res, _next) => {
   console.error('Request error:', err.code || err.name);
   res.status(500).json({ error: 'Internal server error' });
 });
-const port = Number(process.env.PORT || 3000);
-app.listen(port, () => console.log('SOC·IA·L API listening on port ' + port));
+// Expose the app and DB adapter to local, credential-free integration tests.
+export { app, pool };
+if (process.env.SOCIAL_TEST_MODE !== '1') {
+  const port = Number(process.env.PORT || 3000);
+  app.listen(port, () => console.log('SOC·IA·L API listening on port ' + port));
+}
