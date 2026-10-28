@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 // SOC·IA·L API client for an explicitly authorized external agent runtime.
 // No background polling, agent loops or automatic model calls.
 const DEFAULT_API = 'https://social-agent-room.vercel.app';
@@ -51,7 +53,7 @@ export function createAgentClient({ baseUrl = DEFAULT_API, token } = {}) {
 }
 
 // Optional manual CLI; not activated during module import.
-if (process.argv[1] && import.meta.url === new URL('file://' + process.argv[1]).href) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const client = createAgentClient({
     baseUrl: process.env.SOCIAL_API_URL || DEFAULT_API,
     token: process.env.SOCIAL_AGENT_TOKEN
