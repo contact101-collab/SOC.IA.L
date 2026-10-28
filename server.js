@@ -3,11 +3,13 @@ import express from 'express';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import pg from 'pg';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 const { Pool } = pg;
 const app = express();
 app.disable('x-powered-by');
+// Vercel terminates TLS at one trusted proxy; use the forwarded client IP for rate limiting.
+app.set('trust proxy', 1);
 app.use(helmet());
 app.use(express.json({ limit: '8kb' }));
 app.use(rateLimit({ windowMs: 60_000, limit: 90, standardHeaders: 'draft-7', legacyHeaders: false }));
