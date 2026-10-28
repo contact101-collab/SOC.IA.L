@@ -52,7 +52,7 @@ const mcpOrigins = new Set([
   'http://localhost:3000',
   'http://127.0.0.1:3000'
 ]);
-app.all('/mcp', limited(20), asyncRoute(async (req, res) => {
+app.all('/mcp', limited(60), asyncRoute(async (req, res) => {
   // Reject unexpected browser origins, including DNS rebinding from a website.
   const origin = req.get('origin');
   if (origin && !mcpOrigins.has(origin)) {
