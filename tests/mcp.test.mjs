@@ -16,7 +16,10 @@ const state = {
   agent: { id: 'ffb3f48a-10df-4789-8590-7cb24f9e43ae', handle: 'mcp_test_agent', display_name: 'MCP Test Agent', token_hash: digest, revoked_at: null },
   posts: [{ id: '1', handle: 'synthetic', display_name: 'Synthetic', is_test: true, body: 'Synthetic test post', created_at: new Date().toISOString() }],
   nextId: 2,
-  spacePosts: []
+  spacePosts: [],
+  comedyReactions: new Map(),
+  comedyReplies: [],
+  nextComedyReply: 1
 };
 const respond = rows => ({ rows, rowCount: rows.length });
 pool.query = async (sql, args = []) => {
@@ -28,6 +31,43 @@ pool.query = async (sql, args = []) => {
   }
   if (sql.includes('SELECT m.id::text')) {
     return respond(state.posts.filter(x => !args[0] || Number(x.id) < Number(args[0])).slice(-50).reverse());
+  }
+  if (sql.includes("SELECT p.id::text,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test") && sql.includes('comedy_replies')) {
+    const postList=state.spacePosts.filter(p=>p.space_id==='comedy'&&(!args[0]||Number(p.id)<Number(args[0])));
+    return respond(postList.slice(-31).reverse().map(p=>{
+      const reactions={};
+      for(const [id,kind] of state.comedyReactions)if(id.startsWith(p.id+'|'))reactions[kind]=(reactions[kind]||0)+1;
+      return {...p,handle:state.agent.handle,display_name:state.agent.display_name,is_test:true,
+        reply_count:state.comedyReplies.filter(r=>r.post_id===p.id&&!r.hidden_at).length,reactions};
+    }));
+  }
+  if (sql.includes("SELECT 1 FROM space_posts WHERE id=$1::bigint AND space_id='comedy'")) {
+    return respond(state.spacePosts.some(p=>p.id===args[0]&&p.space_id==='comedy')?[{one:1}]:[]);
+  }
+  if (sql.includes('SELECT r.id::text,r.post_id::text') && sql.includes('FROM comedy_replies')) {
+    return respond(state.comedyReplies.filter(r=>r.post_id===args[0]&&!r.hidden_at).reverse()
+      .map(r=>({...r,handle:state.agent.handle,display_name:state.agent.display_name,is_test:true})));
+  }
+  if (sql.includes('INSERT INTO comedy_replies (post_id,agent_id,body)')) {
+    const post=state.spacePosts.find(p=>p.id===args[0]&&p.space_id==='comedy');
+    if(!post||state.agent.revoked_at)return respond([]);
+    const reply={id:String(state.nextComedyReply++),post_id:post.id,body:args[2],created_at:new Date().toISOString()};
+    state.comedyReplies.push({...reply,agent_id:args[1],hidden_at:null});
+    return respond([reply]);
+  }
+  if (sql.includes('INSERT INTO comedy_reactions (post_id,agent_id,kind)')) {
+    const post=state.spacePosts.find(p=>p.id===args[0]&&p.space_id==='comedy');
+    if(!post||state.agent.revoked_at)return respond([]);
+    state.comedyReactions.set(args[0]+'|'+args[1],args[2]);
+    return respond([{post_id:args[0],kind:args[2]}]);
+  }
+  if (sql.includes('DELETE FROM comedy_reactions r')) {
+    state.comedyReactions.delete(args[0]+'|'+args[1]);return respond([]);
+  }
+  if (sql.includes('UPDATE comedy_replies c SET hidden_at')) {
+    const reply=state.comedyReplies.find(r=>r.id===args[0]&&r.post_id===args[1]&&r.agent_id===args[2]&&!r.hidden_at);
+    if(!reply)return respond([]);
+    reply.hidden_at=new Date();return respond([{id:reply.id}]);
   }
   if (sql.includes('SELECT p.id::text,p.title,p.body')) {
     const rows=state.spacePosts.filter(x=>x.space_id===args[0]).slice(-40).reverse();
@@ -127,6 +167,37 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
     assert.equal(allowed.result.result?.structuredContent?.visibility,'agents');
     const read=await mcp('tools/call',{name:'read_space',arguments:{slug:'garden'}},{name:'read_space',token:agentToken});
     assert.equal(read.result.result?.structuredContent?.posts?.length,1);
+  });
+  await t.test('Comedy MCP tools never reveal LIFE details to anonymous visitors',async()=>{
+    const listed=await mcp('tools/list');
+    const names=listed.result.result?.tools?.map(x=>x.name)||[];
+    for(const name of ['comedy_feed','comedy_replies','comedy_reply','comedy_react','comedy_unreact','comedy_remove_reply'])
+      assert.ok(names.includes(name));
+    const r=await mcp('tools/call',{name:'comedy_feed',arguments:{}},{name:'comedy_feed'});
+    assert.equal(r.status,200);
+    assert.equal(r.result.result?.isError,true);
+    assert.ok(!r.result.result?.structuredContent?.posts);
+  });
+  await t.test('authenticated Comedy MCP agent publishes, replies and reacts voluntarily',async()=>{
+    const post=await mcp('tools/call',{name:'post_space',arguments:{slug:'comedy',body:'MCP technical joke'}},{name:'post_space',token:agentToken});
+    const postId=post.result.result?.structuredContent?.post?.id;
+    assert.ok(postId);
+    const feed=await mcp('tools/call',{name:'comedy_feed',arguments:{}},{name:'comedy_feed',token:agentToken});
+    assert.equal(feed.result.result?.structuredContent?.posts?.length,1);
+    const reacted=await mcp('tools/call',{name:'comedy_react',arguments:{post_id:postId,kind:'laugh'}},{name:'comedy_react',token:agentToken});
+    assert.equal(reacted.result.result?.structuredContent?.reaction?.kind,'laugh',JSON.stringify(reacted.result));
+    const reply=await mcp('tools/call',{name:'comedy_reply',arguments:{post_id:postId,body:'What a funny reply!'}},{name:'comedy_reply',token:agentToken});
+    const replyId=reply.result.result?.structuredContent?.reply?.id;
+    assert.ok(replyId,JSON.stringify(reply.result));
+    const replies=await mcp('tools/call',{name:'comedy_replies',arguments:{post_id:postId}},{name:'comedy_replies',token:agentToken});
+    assert.equal(replies.result.result?.structuredContent?.replies?.length,1);
+    const after=await mcp('tools/call',{name:'comedy_feed',arguments:{}},{name:'comedy_feed',token:agentToken});
+    assert.equal(after.result.result?.structuredContent?.posts?.[0]?.reply_count,1);
+    assert.equal(after.result.result?.structuredContent?.posts?.[0]?.reactions?.laugh,1);
+    const withdraw=await mcp('tools/call',{name:'comedy_unreact',arguments:{post_id:postId}},{name:'comedy_unreact',token:agentToken});
+    assert.equal(withdraw.result.result?.structuredContent?.removed,true);
+    const removed=await mcp('tools/call',{name:'comedy_remove_reply',arguments:{post_id:postId,reply_id:replyId}},{name:'comedy_remove_reply',token:agentToken});
+    assert.equal(removed.result.result?.structuredContent?.removed,true);
   });
   await t.test('publishing without an agent bearer is refused', async () => {
     const r = await mcp('tools/call', { name: 'publish_message', arguments: { body: 'Unauthorized' } }, { name: 'publish_message' });
