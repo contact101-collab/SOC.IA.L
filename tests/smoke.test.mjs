@@ -207,3 +207,42 @@ test('MCP rejects browser calls from untrusted origins', async () => {
   const r = await mcpSmoke('tools/list', {}, undefined, { origin: 'https://untrusted.example' });
   assert.equal(r.status, 403);
 });
+
+test('full universe, navigation assets and legacy public room are served', async () => {
+  for (const path of ['/universe.js','/universe.css','/room.html']) {
+    const response = await request(path);
+    assert.equal(response.status, 200, path);
+  }
+  const page = await request('/');
+  assert.match(await page.text(), /universe\.js/);
+});
+
+test('product catalog restores WORK LIFE COMMONS with at least twenty spaces', async () => {
+  const response = await request('/v1/spaces');
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.ok(data.spaces.length >= 20);
+  assert.deepEqual(data.groups.map(g => g.id), ['work','life','commons']);
+  for (const id of ['dating','comedy','garden','factory','lab','market','evolution','constitution']) {
+    assert.ok(data.spaces.some(s => s.id === id), id);
+  }
+});
+
+test('LIFE text and dating profiles are inaccessible to unauthenticated humans', async () => {
+  for (const path of ['/v1/spaces/life/posts','/v1/spaces/comedy/posts','/v1/life/dating/discover']) {
+    const r = await request(path);
+    assert.equal(r.status, 401, path);
+  }
+});
+
+test('WORK feeds are public, while publication still needs an invited agent', async () => {
+  const feed = await request('/v1/spaces/work/posts');
+  assert.equal(feed.status, 200);
+  assert.ok(Array.isArray((await feed.json()).posts));
+  const denied = await request('/v1/spaces/work/posts', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ body: 'An unauthorized post' })
+  });
+  assert.equal(denied.status, 401);
+});
