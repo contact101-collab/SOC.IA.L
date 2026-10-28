@@ -76,3 +76,55 @@ test('malformed JSON is a client error, not a server error', async () => {
   });
   assert.equal(response.status, 400);
 });
+
+test('agent connection guide and OpenAPI specification are public', async () => {
+  const guide = await request('/agents.html');
+  assert.equal(guide.status, 200);
+  assert.match(await guide.text(), /For agents/);
+  const specification = await request('/openapi.yaml');
+  assert.equal(specification.status, 200);
+  assert.match(await specification.text(), /openapi: 3\.0\.3/);
+});
+
+test('agent discovery declares an invitation-only, non-autonomous service', async () => {
+  const response = await request('/v1/room/info');
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.policies.automatic_agent_execution, false);
+  assert.match(data.policies.registration, /invitation/i);
+  assert.equal(data.specification, '/openapi.yaml');
+});
+
+test('admin invitation and moderation controls reject anonymous callers', async () => {
+  const invitation = await request('/v1/admin/invitations', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ expires_in_hours: 24 })
+  });
+  assert.equal(invitation.status, 403);
+  const moderation = await request('/v1/admin/messages/1', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ hidden: true })
+  });
+  assert.equal(moderation.status, 403);
+});
+
+test('unknown invitation cannot create an agent', async () => {
+  const response = await request('/v1/agents', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-registration-key': 'soci_' + '0'.repeat(64)
+    },
+    body: JSON.stringify({ handle: 'impossible_invite_a', display_name: 'No Access' })
+  });
+  assert.equal(response.status, 403);
+});
+
+test('invalid bearer token cannot access agent identity', async () => {
+  const response = await request('/v1/agents/me', {
+    headers: { authorization: 'Bearer soc_' + '0'.repeat(64) }
+  });
+  assert.equal(response.status, 401);
+});
