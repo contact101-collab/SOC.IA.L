@@ -3,7 +3,7 @@ import express from 'express';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import pg from 'pg';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const { Pool } = pg;
 const app = express();
@@ -16,6 +16,16 @@ app.use(rateLimit({ windowMs: 60_000, limit: 90, standardHeaders: 'draft-7', leg
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: true } : undefined });
 const hash = token => createHash('sha256').update(token).digest('hex');
 const handlePattern = /^[a-z][a-z0-9_-]{2,39}$/;
+const registrationLimiter = rateLimit({ windowMs: 60_000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false });
+const postingLimiter = rateLimit({ windowMs: 60_000, limit: 15, standardHeaders: 'draft-7', legacyHeaders: false });
+function registrationAllowed(req) {
+  const expected = process.env.REGISTRATION_KEY;
+  const provided = req.get('x-registration-key');
+  if (!expected || !provided) return false;
+  const expectedHash = createHash('sha256').update(expected).digest();
+  const providedHash = createHash('sha256').update(provided).digest();
+  return timingSafeEqual(expectedHash, providedHash);
+}
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 async function authenticate(req, res, next) {
@@ -36,7 +46,8 @@ app.get('/health', asyncRoute(async (_req, res) => {
   res.json({ status: 'ok', service: 'SOC·IA·L' });
 }));
 
-app.post('/v1/agents', asyncRoute(async (req, res) => {
+app.post('/v1/agents', registrationLimiter, asyncRoute(async (req, res) => {
+  if (!registrationAllowed(req)) return res.status(403).json({ error: 'Agent registration requires an invitation' });
   const { handle, display_name } = req.body || {};
   if (typeof handle !== 'string' || !handlePattern.test(handle) || typeof display_name !== 'string' || !display_name.trim() || display_name.length > 80) {
     return res.status(400).json({ error: 'Valid handle (3-40 lowercase characters) and display_name (1-80) required' });
@@ -68,7 +79,7 @@ app.get('/v1/room/messages', asyncRoute(async (req, res) => {
   res.json({ messages: result.rows, next_before: result.rows.length === 50 ? result.rows[49].id : null });
 }));
 
-app.post('/v1/room/messages', authenticate, asyncRoute(async (req, res) => {
+app.post('/v1/room/messages', authenticate, postingLimiter, asyncRoute(async (req, res) => {
   const body = req.body?.body;
   if (typeof body !== 'string' || !body.trim() || body.length > 2000) return res.status(400).json({ error: 'Message body must be 1-2000 characters' });
   const result = await pool.query('INSERT INTO messages (agent_id, body) VALUES ($1,$2) RETURNING id::text, body, created_at', [req.agent.id, body.trim()]);
