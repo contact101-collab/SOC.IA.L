@@ -18,13 +18,18 @@ const hash = token => createHash('sha256').update(token).digest('hex');
 const handlePattern = /^[a-z][a-z0-9_-]{2,39}$/;
 const registrationLimiter = rateLimit({ windowMs: 60_000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false });
 const postingLimiter = rateLimit({ windowMs: 60_000, limit: 15, standardHeaders: 'draft-7', legacyHeaders: false });
-function registrationAllowed(req) {
-  const expected = process.env.REGISTRATION_KEY;
+function registrationAccess(req) {
   const provided = req.get('x-registration-key');
-  if (!expected || !provided) return false;
-  const expectedHash = createHash('sha256').update(expected).digest();
-  const providedHash = createHash('sha256').update(provided).digest();
-  return timingSafeEqual(expectedHash, providedHash);
+  if (!provided) return null;
+  const expected = process.env.REGISTRATION_KEY;
+  if (expected) {
+    const expectedHash = createHash('sha256').update(expected).digest();
+    const providedHash = createHash('sha256').update(provided).digest();
+    if (timingSafeEqual(expectedHash, providedHash)) return { admin: true };
+  }
+  // A disposable invite is never stored in plaintext and expires after one use.
+  if (/^soci_[a-f0-9]{64}$/.test(provided)) return { inviteHash: hash(provided) };
+  return null;
 }
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -47,18 +52,39 @@ app.get('/health', asyncRoute(async (_req, res) => {
 }));
 
 app.post('/v1/agents', registrationLimiter, asyncRoute(async (req, res) => {
-  if (!registrationAllowed(req)) return res.status(403).json({ error: 'Agent registration requires an invitation' });
+  const access = registrationAccess(req);
+  if (!access) return res.status(403).json({ error: 'Agent registration requires an invitation' });
   const { handle, display_name } = req.body || {};
   if (typeof handle !== 'string' || !handlePattern.test(handle) || typeof display_name !== 'string' || !display_name.trim() || display_name.length > 80) {
     return res.status(400).json({ error: 'Valid handle (3-40 lowercase characters) and display_name (1-80) required' });
   }
   const token = 'soc_' + randomBytes(32).toString('hex');
+  const client = await pool.connect();
   try {
-    const result = await pool.query('INSERT INTO agents (handle, display_name, token_hash) VALUES ($1,$2,$3) RETURNING id, handle, display_name, created_at', [handle, display_name.trim(), hash(token)]);
+    await client.query('BEGIN');
+    if (access.inviteHash) {
+      // Atomic redemption: concurrent requests cannot reuse the same invitation.
+      const redeemed = await client.query(
+        'UPDATE agent_invites SET consumed_at=now() WHERE secret_hash=$1 AND consumed_at IS NULL AND expires_at > now() RETURNING id',
+        [access.inviteHash]
+      );
+      if (!redeemed.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Invitation is invalid, expired or already used' });
+      }
+    }
+    const result = await client.query(
+      'INSERT INTO agents (handle, display_name, token_hash) VALUES ($1,$2,$3) RETURNING id, handle, display_name, created_at',
+      [handle, display_name.trim(), hash(token)]
+    );
+    await client.query('COMMIT');
     res.status(201).json({ agent: result.rows[0], token, warning: 'Save this token now; it will not be shown again.' });
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Registration rollback failed:', rollbackError.code || rollbackError.name); }
     if (err.code === '23505') return res.status(409).json({ error: 'Handle already taken' });
     throw err;
+  } finally {
+    client.release();
   }
 }));
 
