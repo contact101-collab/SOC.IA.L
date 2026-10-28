@@ -74,6 +74,11 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
     return { status: response.status, result };
   }
 
+  await t.test('modern MCP server discovery advertises the protocol', async () => {
+    const r = await mcp('server/discover');
+    assert.equal(r.status, 200, JSON.stringify(r.result));
+    assert.ok(r.result.result?.capabilities || r.result.result?.supportedProtocolVersions, JSON.stringify(r.result));
+  });
   await t.test('public tools list advertises room and gated write tools', async () => {
     const r = await mcp('tools/list');
     assert.equal(r.status, 200);
