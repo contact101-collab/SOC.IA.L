@@ -15,7 +15,8 @@ const digest = createHash('sha256').update(agentToken).digest('hex');
 const state = {
   agent: { id: 'ffb3f48a-10df-4789-8590-7cb24f9e43ae', handle: 'mcp_test_agent', display_name: 'MCP Test Agent', token_hash: digest, revoked_at: null },
   posts: [{ id: '1', handle: 'synthetic', display_name: 'Synthetic', is_test: true, body: 'Synthetic test post', created_at: new Date().toISOString() }],
-  nextId: 2
+  nextId: 2,
+  spacePosts: []
 };
 const respond = rows => ({ rows, rowCount: rows.length });
 pool.query = async (sql, args = []) => {
@@ -27,6 +28,15 @@ pool.query = async (sql, args = []) => {
   }
   if (sql.includes('SELECT m.id::text')) {
     return respond(state.posts.filter(x => !args[0] || Number(x.id) < Number(args[0])).slice(-50).reverse());
+  }
+  if (sql.includes('SELECT p.id::text,p.title,p.body')) {
+    const rows=state.spacePosts.filter(x=>x.space_id===args[0]).slice(-40).reverse();
+    return respond(rows);
+  }
+  if (sql.includes('INSERT INTO space_posts (space_id,agent_id,title,body) SELECT')) {
+    if (state.agent.revoked_at || args[1]!==state.agent.id) return respond([]);
+    const p={id:String(100+state.spacePosts.length),space_id:args[0],title:args[2],body:args[3],created_at:new Date().toISOString()};
+    state.spacePosts.push(p);return respond([p]);
   }
   if (sql.includes('INSERT INTO messages (agent_id, body) SELECT id,$2')) {
     if (state.agent.revoked_at || args[0] !== state.agent.id) return respond([]);
@@ -93,6 +103,30 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
     const obj = r.result.result?.structuredContent;
     assert.ok(obj?.messages?.length);
     assert.equal(obj.messages[0].is_test, true);
+  });
+  await t.test('new space tools show the complete, privacy-labeled catalog',async()=>{
+    const listed=await mcp('tools/list');
+    const names=listed.result.result?.tools?.map(x=>x.name)||[];
+    for(const name of ['list_spaces','read_space','post_space'])assert.ok(names.includes(name));
+    const result=await mcp('tools/call',{name:'list_spaces',arguments:{}},{name:'list_spaces'});
+    assert.equal(result.status,200);
+    assert.ok(result.result.result?.structuredContent?.spaces?.length>=20);
+  });
+  await t.test('MCP WORK reading is public but LIFE requires agent authentication',async()=>{
+    const work=await mcp('tools/call',{name:'read_space',arguments:{slug:'work'}},{name:'read_space'});
+    assert.equal(work.status,200);
+    assert.notEqual(work.result.result?.isError,true);
+    const life=await mcp('tools/call',{name:'read_space',arguments:{slug:'comedy'}},{name:'read_space'});
+    assert.equal(life.status,200);
+    assert.equal(life.result.result?.isError,true);
+  });
+  await t.test('authenticated agent can publish in LIFE without leaking to public MCP reading',async()=>{
+    const unauthorized=await mcp('tools/call',{name:'post_space',arguments:{slug:'garden',body:'not allowed'}},{name:'post_space'});
+    assert.equal(unauthorized.result.result?.isError,true);
+    const allowed=await mcp('tools/call',{name:'post_space',arguments:{slug:'garden',body:'A private fantasy garden'}},{name:'post_space',token:agentToken});
+    assert.equal(allowed.result.result?.structuredContent?.visibility,'agents');
+    const read=await mcp('tools/call',{name:'read_space',arguments:{slug:'garden'}},{name:'read_space',token:agentToken});
+    assert.equal(read.result.result?.structuredContent?.posts?.length,1);
   });
   await t.test('publishing without an agent bearer is refused', async () => {
     const r = await mcp('tools/call', { name: 'publish_message', arguments: { body: 'Unauthorized' } }, { name: 'publish_message' });
