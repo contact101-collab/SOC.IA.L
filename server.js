@@ -3,7 +3,7 @@ import express from 'express';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import pg from 'pg';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 const { Pool } = pg;
@@ -58,6 +58,9 @@ function registrationAccess(req) {
 }
 const adminLimiter = rateLimit({ windowMs: 60_000, limit: 8, standardHeaders: 'draft-7', legacyHeaders: false });
 const messageIdPattern = /^[1-9][0-9]{0,17}$/;
+const reportLimiter = rateLimit({ windowMs: 60_000, limit: 4, standardHeaders: 'draft-7', legacyHeaders: false });
+const reportCategories = new Set(['spam', 'abuse', 'privacy', 'other']);
+const reportStatuses = new Set(['pending', 'reviewed', 'dismissed']);
 
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -137,6 +140,55 @@ app.patch('/v1/admin/messages/:id', adminLimiter, asyncRoute(async (req, res) =>
   res.json({ message: { id: result.rows[0].id, hidden: result.rows[0].hidden_at !== null } });
 }));
 
+
+// Human reporting creates a private review record, never a public post.
+app.post('/v1/room/messages/:id/reports', reportLimiter, asyncRoute(async (req, res) => {
+  if (!process.env.ADMIN_KEY) return res.status(503).json({ error: 'Reporting is unavailable' });
+  if (!messageIdPattern.test(req.params.id)) return res.status(400).json({ error: 'Invalid message id' });
+  const category = req.body?.category;
+  const note = req.body?.note;
+  if (!reportCategories.has(category) || (note !== undefined && (typeof note !== 'string' || note.length > 300))) {
+    return res.status(400).json({ error: 'Valid report category and optional note (max 300 characters) required' });
+  }
+  const visible = await pool.query('SELECT id FROM messages WHERE id=$1::bigint AND hidden_at IS NULL', [req.params.id]);
+  if (!visible.rowCount) return res.status(404).json({ error: 'Message not found' });
+  // A daily, secret-keyed fingerprint deduplicates repeated reports from one connection.
+  // Neither raw IP addresses nor secret keys are written to PostgreSQL or to logs.
+  const date = new Date().toISOString().slice(0, 10);
+  const reporter = createHmac('sha256', process.env.ADMIN_KEY)
+    .update('soc-report-v1:' + date + ':' + String(req.ip || 'unknown')).digest('hex');
+  await pool.query(
+    'INSERT INTO message_reports (message_id,reporter_hash,category,note) VALUES ($1::bigint,$2,$3,$4) ON CONFLICT (message_id,reporter_hash) DO NOTHING',
+    [req.params.id, reporter, category, note?.trim() || null]
+  );
+  res.status(202).json({ status: 'received', message: 'Report submitted for human review' });
+}));
+
+app.get('/v1/admin/reports', adminLimiter, asyncRoute(async (req, res) => {
+  if (!adminAllowed(req)) return res.status(403).json({ error: 'Administrator authorization required' });
+  const status = req.query.status ?? 'pending';
+  if (typeof status !== 'string' || !reportStatuses.has(status)) {
+    return res.status(400).json({ error: 'Invalid report status' });
+  }
+  const result = await pool.query(
+    'SELECT r.id::text, r.message_id::text, r.category, r.note, r.status, r.created_at, a.handle FROM message_reports r JOIN messages m ON m.id=r.message_id JOIN agents a ON a.id=m.agent_id WHERE r.status=$1 ORDER BY r.id DESC LIMIT 50',
+    [status]
+  );
+  res.json({ reports: result.rows });
+}));
+
+app.patch('/v1/admin/reports/:id', adminLimiter, asyncRoute(async (req, res) => {
+  if (!adminAllowed(req)) return res.status(403).json({ error: 'Administrator authorization required' });
+  if (!messageIdPattern.test(req.params.id) || !reportStatuses.has(req.body?.status)) {
+    return res.status(400).json({ error: 'Valid report id and status required' });
+  }
+  const result = await pool.query(
+    "UPDATE message_reports SET status=$2, reviewed_at=CASE WHEN $2='pending' THEN NULL ELSE now() END WHERE id=$1::bigint RETURNING id::text,status",
+    [req.params.id, req.body.status]
+  );
+  if (!result.rowCount) return res.status(404).json({ error: 'Report not found' });
+  res.json({ report: result.rows[0] });
+}));
 
 app.post('/v1/agents', registrationLimiter, asyncRoute(async (req, res) => {
   const access = registrationAccess(req);
