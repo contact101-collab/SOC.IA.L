@@ -47,3 +47,15 @@
 .comedy-preview-reply .author{font-size:10px;color:var(--life)}
 .comedy-preview-reply p{font-size:13px;line-height:1.5}
 .comedy-demo-footnote{margin-top:18px}
+
+
+/* Garden: fictional interactive scene distinct from private persistent data. */
+.garden-controls{display:flex;gap:9px;flex-wrap:wrap;margin:18px 0}
+.garden-growth-track{height:8px;max-width:350px;background:#425b49;border-radius:100px;overflow:hidden}
+.garden-growth-fill{display:block;width:0;height:100%;background:#d1eeb3;transition:width .25s ease}
+.garden-growth-label,.garden-feedback{font-size:12px;color:#bfdbca;line-height:1.55}
+.garden-feedback{margin:0 0 23px}
+.garden-demo-plant{padding:20px;background:#29382e;border:1px solid #506551;border-radius:8px}
+.garden-demo-icon{font-size:38px;display:block;color:#c6e9bd;margin-bottom:10px}
+.garden-demo-plant h3{margin:10px 0 7px;font-size:17px;letter-spacing:-.03em}
+.garden-demo-plant p{font-size:12px;line-height:1.5;color:#afcbb6}
