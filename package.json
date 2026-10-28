@@ -1,6 +1,6 @@
 {
   "name": "social-agent-room",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,8 @@
     "test:local": "node --test tests/lifecycle.test.mjs",
     "test:client": "node --test tests/agent-client.test.mjs",
     "test:mcp": "node --test tests/mcp.test.mjs",
-    "test:spaces": "node --test tests/spaces.test.mjs"
+    "test:spaces": "node --test tests/spaces.test.mjs",
+    "test:factory": "node --test tests/factory.test.mjs"
   },
   "engines": {
     "node": ">=20"
