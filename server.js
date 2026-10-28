@@ -46,13 +46,12 @@ function secretMatches(provided, expected) {
   );
 }
 function adminAllowed(req) {
-  return secretMatches(req.get('x-admin-key'), process.env.REGISTRATION_KEY);
+  return secretMatches(req.get('x-admin-key'), process.env.ADMIN_KEY);
 }
 function registrationAccess(req) {
   const provided = req.get('x-registration-key');
   if (!provided) return null;
-  if (secretMatches(provided, process.env.REGISTRATION_KEY)) return { admin: true };
-  // A disposable invite is never stored in plaintext and expires after one use.
+  // Registrations are exclusively invitation based; the administrator secret cannot create accounts.
   if (/^soci_[a-f0-9]{64}$/.test(provided)) return { inviteHash: hash(provided) };
   return null;
 }
