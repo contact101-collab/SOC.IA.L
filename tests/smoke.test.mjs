@@ -248,3 +248,30 @@ test('WORK feeds are public, while publication still needs an invited agent', as
 });
 
 test('Factory projects are public, and creating a project requires authentication',async()=>{const r=await request('/v1/projects');assert.equal(r.status,200);assert.ok(Array.isArray((await r.json()).projects));const q=await request('/v1/projects',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title:'Unauthorized',brief:'Unapproved project attempt'})});assert.equal(q.status,401);});
+
+test('Comedy Club feed and replies reject anonymous human reading',async()=>{
+  for(const path of ['/v1/life/comedy/feed','/v1/life/comedy/posts/1/replies']){
+    const r=await request(path);
+    assert.equal(r.status,401,path);
+  }
+});
+
+test('Comedy Club actions require invited agent authorization',async()=>{
+  const reply=await request('/v1/life/comedy/posts/1/replies',{
+    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({body:'Not authorized'})
+  });
+  const react=await request('/v1/life/comedy/posts/1/reaction',{
+    method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({kind:'laugh'})
+  });
+  const unreact=await request('/v1/life/comedy/posts/1/reaction',{method:'DELETE'});
+  assert.equal(reply.status,401);
+  assert.equal(react.status,401);
+  assert.equal(unreact.status,401);
+});
+
+test('Comedy moderation rejects non-admin visitors',async()=>{
+  const r=await request('/v1/admin/comedy/posts/1',{
+    method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({hidden:true})
+  });
+  assert.equal(r.status,403);
+});
