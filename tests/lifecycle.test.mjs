@@ -17,6 +17,8 @@ test('complete invited-agent lifecycle and reversible moderation over real HTTP 
     invites: new Map(),
     agents: new Map(),
     messages: [],
+    reports: [],
+    nextReport: 1,
     nextMessage: 1,
     queryCalls: []
   };
@@ -70,6 +72,29 @@ test('complete invited-agent lifecycle and reversible moderation over real HTTP 
       const agent = [...state.agents.values()].find(a => a.id === params[0]);
       if (agent) agent.revoked_at = new Date();
       return response([]);
+    }
+    if (statement.startsWith('SELECT id FROM messages WHERE id=$1::bigint')) {
+      const msg = state.messages.find(m => m.id === params[0] && !m.hidden_at);
+      return response(msg ? [{ id: msg.id }] : []);
+    }
+    if (statement.startsWith('INSERT INTO message_reports')) {
+      const [message_id, reporter_hash, category, note] = params;
+      const duplicate = state.reports.some(r => r.message_id === message_id && r.reporter_hash === reporter_hash);
+      if (duplicate) return response([]);
+      const report = { id: String(state.nextReport++), message_id, reporter_hash, category, note, status: 'pending', created_at: new Date(), reviewed_at: null };
+      state.reports.push(report);
+      return response([]);
+    }
+    if (statement.startsWith('SELECT r.id::text')) {
+      const reports = state.reports.filter(r => r.status === params[0]).slice(-50).reverse();
+      return response(reports.map(r => ({ id: r.id, message_id: r.message_id, category: r.category, note: r.note, status: r.status, created_at: r.created_at, handle: 'agentunit' })));
+    }
+    if (statement.startsWith('UPDATE message_reports SET status')) {
+      const report = state.reports.find(r => r.id === params[0]);
+      if (!report) return response([]);
+      report.status = params[1];
+      report.reviewed_at = params[1] === 'pending' ? null : new Date();
+      return response([{ id: report.id, status: report.status }]);
     }
     if (statement.includes('SELECT m.id::text')) {
       const visible = state.messages.filter(m => !m.hidden_at && (!params[0] || Number(m.id) < Number(params[0]))).slice(-50).reverse();
@@ -150,6 +175,34 @@ test('complete invited-agent lifecycle and reversible moderation over real HTTP 
     assert.equal((await call('/v1/room/messages')).data.messages.length, 0);
     assert.equal((await call('/v1/admin/messages/' + messageId, 'PATCH', { hidden: false }, headers)).status, 200);
     assert.equal((await call('/v1/room/messages')).data.messages.length, 1);
+  });
+  await t.test('humans can report a visible post without publishing to the room', async () => {
+    const path = '/v1/room/messages/' + messageId + '/reports';
+    assert.equal((await call(path, 'POST', { category: 'invalid' })).status, 400);
+    assert.equal((await call('/v1/room/messages/999/reports', 'POST', { category: 'spam' })).status, 404);
+    const first = await call(path, 'POST', { category: 'privacy', note: 'Contains personal data' });
+    assert.equal(first.status, 202);
+    assert.equal(state.reports.length, 1);
+    assert.match(state.reports[0].reporter_hash, /^[a-f0-9]{64}$/);
+    assert.equal(state.messages.length, 1);
+    const duplicate = await call(path, 'POST', { category: 'spam' });
+    assert.equal(duplicate.status, 202);
+    assert.equal(state.reports.length, 1);
+  });
+  await t.test('only the operator can inspect and resolve pending reports', async () => {
+    assert.equal((await call('/v1/admin/reports')).status, 403);
+    const headers = { 'x-admin-key': process.env.ADMIN_KEY };
+    const pending = await call('/v1/admin/reports', 'GET', undefined, headers);
+    assert.equal(pending.status, 200);
+    assert.equal(pending.data.reports.length, 1);
+    const id = pending.data.reports[0].id;
+    assert.equal((await call('/v1/admin/reports/' + id, 'PATCH', { status: 'wrong' }, headers)).status, 400);
+    assert.equal((await call('/v1/admin/reports/' + id, 'PATCH', { status: 'reviewed' })).status, 403);
+    const reviewed = await call('/v1/admin/reports/' + id, 'PATCH', { status: 'reviewed' }, headers);
+    assert.equal(reviewed.status, 200);
+    assert.equal(reviewed.data.report.status, 'reviewed');
+    assert.equal((await call('/v1/admin/reports', 'GET', undefined, headers)).data.reports.length, 0);
+    assert.equal((await call('/v1/admin/reports?status=reviewed', 'GET', undefined, headers)).data.reports.length, 1);
   });
   await t.test('HTTP revocation denies the old bearer token', async () => {
     const headers = { authorization: 'Bearer ' + agentToken };
