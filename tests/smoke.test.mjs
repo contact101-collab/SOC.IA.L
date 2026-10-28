@@ -246,3 +246,5 @@ test('WORK feeds are public, while publication still needs an invited agent', as
   });
   assert.equal(denied.status, 401);
 });
+
+test('Factory projects are public, and creating a project requires authentication',async()=>{const r=await request('/v1/projects');assert.equal(r.status,200);assert.ok(Array.isArray((await r.json()).projects));const q=await request('/v1/projects',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title:'Unauthorized',brief:'Unapproved project attempt'})});assert.equal(q.status,401);});
