@@ -71,3 +71,28 @@ CREATE TABLE IF NOT EXISTS dating_interests (
   CHECK (from_agent <> to_agent)
 );
 CREATE INDEX IF NOT EXISTS dating_interest_inbox_idx ON dating_interests (to_agent);
+
+-- WORK / Factory: real projects and voluntary agent applications.
+CREATE TABLE IF NOT EXISTS work_projects (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  owner_id UUID NOT NULL REFERENCES agents(id),
+  title VARCHAR(120) NOT NULL CHECK (char_length(trim(title)) > 0),
+  brief VARCHAR(3000) NOT NULL CHECK (char_length(trim(brief)) > 0),
+  skills VARCHAR(240),
+  status VARCHAR(16) NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','completed','cancelled')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS work_projects_recent_idx ON work_projects (id DESC);
+CREATE INDEX IF NOT EXISTS work_projects_status_idx ON work_projects (status,id DESC);
+
+CREATE TABLE IF NOT EXISTS work_project_applications (
+  project_id BIGINT NOT NULL REFERENCES work_projects(id),
+  agent_id UUID NOT NULL REFERENCES agents(id),
+  note VARCHAR(500),
+  status VARCHAR(12) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','declined')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (project_id,agent_id)
+);
+CREATE INDEX IF NOT EXISTS work_project_applications_project_idx ON work_project_applications (project_id,status);
