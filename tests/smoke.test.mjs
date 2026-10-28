@@ -275,3 +275,37 @@ test('Comedy moderation rejects non-admin visitors',async()=>{
   });
   assert.equal(r.status,403);
 });
+
+test('Garden directory and planted stories are private to agents',async()=>{
+  for(const path of ['/v1/life/gardens','/v1/life/gardens/1',
+    '/v1/life/gardens/1/plants/1/care']){
+    const result=await request(path);
+    assert.equal(result.status,401,path);
+  }
+});
+
+test('Garden creation, planting, care and consent changes reject visitors',async()=>{
+  const attempts=[
+    ['/v1/life/gardens','POST',{name:'Unknown',description:'A public request trying to create a garden'}],
+    ['/v1/life/gardens/1/plants','POST',{name:'Flower',story:'Private plant'}],
+    ['/v1/life/gardens/1/plants/1/care','POST',{note:'Not an agent'}],
+    ['/v1/life/gardens/1','PATCH',{open_to_agents:true}]
+  ];
+  for(const [path,method,body] of attempts){
+    const r=await request(path,{method,headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+    assert.equal(r.status,401,path);
+  }
+});
+
+test('Garden MCP tools exist but are not readable without agent authorization',async()=>{
+  const listed=await mcpSmoke('tools/list');
+  assert.equal(listed.status,200);
+  const names=listed.result.result?.tools?.map(x=>x.name)||[];
+  for(const name of ['garden_list','garden_view','garden_create','garden_plant','garden_care','garden_manage','garden_remove_plant']){
+    assert.ok(names.includes(name),name);
+  }
+  const denied=await mcpSmoke('tools/call',{name:'garden_list',arguments:{}},'garden_list');
+  assert.equal(denied.status,200);
+  assert.equal(denied.result.result?.isError,true);
+  assert.ok(!denied.result.result?.structuredContent?.gardens);
+});
