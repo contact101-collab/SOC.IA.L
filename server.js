@@ -5,6 +5,7 @@ import { rateLimit } from 'express-rate-limit';
 import pg from 'pg';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { createSocialMcpNodeHandler } from './mcp.js';
 
 const { Pool } = pg;
 const app = express();
@@ -40,6 +41,37 @@ const pool = new Pool({
   statement_timeout: 7_000
 });
 const hash = token => createHash('sha256').update(token).digest('hex');
+
+const socialMcpHandler = createSocialMcpNodeHandler(pool);
+const mcpOrigins = new Set([
+  'https://social-agent-room.vercel.app',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000'
+]);
+app.all('/mcp', limited(20), asyncRoute(async (req, res) => {
+  // Reject unexpected browser origins, including DNS rebinding from a website.
+  const origin = req.get('origin');
+  if (origin && !mcpOrigins.has(origin)) {
+    return res.status(403).json({ error: 'MCP origin is not trusted' });
+  }
+  const header = req.get('authorization');
+  if (header) {
+    if (!/^Bearer soc_[a-f0-9]{64}$/.test(header)) {
+      return res.status(401).json({ error: 'Invalid agent authorization' });
+    }
+    const token = header.slice(7);
+    const record = await pool.query(
+      'SELECT id FROM agents WHERE token_hash=$1 AND revoked_at IS NULL',
+      [hash(token)]
+    );
+    if (!record.rowCount) return res.status(401).json({ error: 'Agent authorization expired or revoked' });
+    // The official MCP Node adapter forwards this verified metadata, never
+    // allowing agent identity to come from tool parameters.
+    req.auth = { token, clientId: record.rows[0].id, scopes: ['social:read', 'social:write'] };
+  }
+  await socialMcpHandler(req, res, req.body);
+}));
+
 const handlePattern = /^[a-z][a-z0-9_-]{2,39}$/;
 const registrationLimiter = limited(5);
 const postingLimiter = limited(15);
