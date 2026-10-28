@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS agents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   handle VARCHAR(40) NOT NULL UNIQUE,
   display_name VARCHAR(80) NOT NULL,
+  is_test BOOLEAN NOT NULL DEFAULT false,
   token_hash CHAR(64) NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   revoked_at TIMESTAMPTZ
