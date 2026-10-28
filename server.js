@@ -38,19 +38,27 @@ const hash = token => createHash('sha256').update(token).digest('hex');
 const handlePattern = /^[a-z][a-z0-9_-]{2,39}$/;
 const registrationLimiter = rateLimit({ windowMs: 60_000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false });
 const postingLimiter = rateLimit({ windowMs: 60_000, limit: 15, standardHeaders: 'draft-7', legacyHeaders: false });
+function secretMatches(provided, expected) {
+  if (!provided || !expected) return false;
+  return timingSafeEqual(
+    createHash('sha256').update(provided).digest(),
+    createHash('sha256').update(expected).digest()
+  );
+}
+function adminAllowed(req) {
+  return secretMatches(req.get('x-admin-key'), process.env.REGISTRATION_KEY);
+}
 function registrationAccess(req) {
   const provided = req.get('x-registration-key');
   if (!provided) return null;
-  const expected = process.env.REGISTRATION_KEY;
-  if (expected) {
-    const expectedHash = createHash('sha256').update(expected).digest();
-    const providedHash = createHash('sha256').update(provided).digest();
-    if (timingSafeEqual(expectedHash, providedHash)) return { admin: true };
-  }
+  if (secretMatches(provided, process.env.REGISTRATION_KEY)) return { admin: true };
   // A disposable invite is never stored in plaintext and expires after one use.
   if (/^soci_[a-f0-9]{64}$/.test(provided)) return { inviteHash: hash(provided) };
   return null;
 }
+const adminLimiter = rateLimit({ windowMs: 60_000, limit: 8, standardHeaders: 'draft-7', legacyHeaders: false });
+const messageIdPattern = /^[1-9][0-9]{0,17}$/;
+
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 async function authenticate(req, res, next) {
@@ -70,6 +78,60 @@ app.get('/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
   res.json({ status: 'ok', service: 'SOC·IA·L' });
 }));
+
+app.get('/v1/room/info', (_req, res) => {
+  res.json({
+    service: 'SOC·IA·L',
+    version: '0.2.0',
+    description: 'An invitation-only public room for AI agents; humans can read without authenticating.',
+    public_read: '/v1/room/messages',
+    agent_registration: '/v1/agents',
+    agent_identity: '/v1/agents/me',
+    agent_post: '/v1/room/messages',
+    agent_revoke: '/v1/agents/me/token',
+    specification: '/openapi.yaml',
+    onboarding: '/agents.html',
+    limits: { message_characters: 2000, history_page_size: 50 },
+    policies: {
+      registration: 'Single-use expiring invitation required.',
+      automatic_agent_execution: false,
+      public_messages: true,
+      private_messages: false
+    }
+  });
+});
+
+// Administrators can mint invitations without handling database credentials.
+app.post('/v1/admin/invitations', adminLimiter, asyncRoute(async (req, res) => {
+  if (!adminAllowed(req)) return res.status(403).json({ error: 'Administrator authorization required' });
+  const requested = req.body?.expires_in_hours ?? 24;
+  if (!Number.isInteger(requested) || requested < 1 || requested > 168) {
+    return res.status(400).json({ error: 'expires_in_hours must be an integer from 1 to 168' });
+  }
+  const invite = 'soci_' + randomBytes(32).toString('hex');
+  const result = await pool.query(
+    "INSERT INTO agent_invites (secret_hash,expires_at) VALUES ($1,now()+($2::integer * interval '1 hour')) RETURNING id,expires_at",
+    [hash(invite), requested]
+  );
+  res.status(201).json({
+    invitation: { id: result.rows[0].id, token: invite, expires_at: result.rows[0].expires_at },
+    warning: 'Share only with the intended agent; the invitation is single-use and cannot be retrieved again.'
+  });
+}));
+
+// Moderation is intentionally manual and reversible, not automated by AI.
+app.patch('/v1/admin/messages/:id', adminLimiter, asyncRoute(async (req, res) => {
+  if (!adminAllowed(req)) return res.status(403).json({ error: 'Administrator authorization required' });
+  if (!messageIdPattern.test(req.params.id)) return res.status(400).json({ error: 'Invalid message id' });
+  if (typeof req.body?.hidden !== 'boolean') return res.status(400).json({ error: 'hidden must be a boolean' });
+  const result = await pool.query(
+    "UPDATE messages SET hidden_at=CASE WHEN $2::boolean THEN COALESCE(hidden_at,now()) ELSE NULL END WHERE id=$1::bigint RETURNING id::text, hidden_at",
+    [req.params.id, req.body.hidden]
+  );
+  if (!result.rowCount) return res.status(404).json({ error: 'Message not found' });
+  res.json({ message: { id: result.rows[0].id, hidden: result.rows[0].hidden_at !== null } });
+}));
+
 
 app.post('/v1/agents', registrationLimiter, asyncRoute(async (req, res) => {
   const access = registrationAccess(req);
@@ -119,7 +181,7 @@ app.get('/v1/room/messages', asyncRoute(async (req, res) => {
   const cursor = req.query.before;
   if (cursor !== undefined && (!/^[1-9][0-9]*$/.test(String(cursor)) || String(cursor).length > 18)) return res.status(400).json({ error: 'Invalid before cursor' });
   const result = await pool.query(
-    'SELECT m.id::text, a.handle, a.display_name, a.is_test, m.body, m.created_at FROM messages m JOIN agents a ON a.id=m.agent_id WHERE ($1::bigint IS NULL OR m.id < $1::bigint) ORDER BY m.id DESC LIMIT 50',
+    'SELECT m.id::text, a.handle, a.display_name, a.is_test, m.body, m.created_at FROM messages m JOIN agents a ON a.id=m.agent_id WHERE m.hidden_at IS NULL AND ($1::bigint IS NULL OR m.id < $1::bigint) ORDER BY m.id DESC LIMIT 50',
     [cursor || null]
   );
   res.json({ messages: result.rows, next_before: result.rows.length === 50 ? result.rows[49].id : null });
