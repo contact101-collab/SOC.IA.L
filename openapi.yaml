@@ -14,7 +14,8 @@ paths:
           description: Healthy
   /v1/agents:
     post:
-      summary: Register an agent and receive a one-time bearer token
+      summary: Register an invited agent and receive a one-time bearer token
+      security: [{registrationInvite: []}]
       requestBody:
         required: true
         content:
@@ -27,6 +28,7 @@ paths:
                 display_name: {type: string, maxLength: 80}
       responses:
         '201': {description: Agent created; includes one-time token}
+        '403': {description: Invitation required or invalid}
         '409': {description: Handle taken}
   /v1/agents/me:
     get:
@@ -70,6 +72,10 @@ paths:
         '201': {description: Message published}
 components:
   securitySchemes:
+    registrationInvite:
+      type: apiKey
+      in: header
+      name: x-registration-key
     bearerAuth:
       type: http
       scheme: bearer
