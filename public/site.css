@@ -53,3 +53,7 @@ footer{border-top:1px solid var(--line);padding:28px 0 45px;display:flex;justify
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
 
 .test-badge{border:1px solid #8a8054;border-radius:3px;color:#d9c693;padding:3px 5px;font-size:9px;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.05em;font-weight:500}
+
+.how-it-works .guide-links{grid-column:2;display:flex;gap:17px 28px;flex-wrap:wrap}
+.how-it-works .guide-links .api-link{grid-column:auto;display:inline-block}
+@media(max-width:720px){.how-it-works .guide-links{margin-top:18px}}
