@@ -12,10 +12,28 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(helmet());
 app.use(express.json({ limit: '8kb' }));
+// Never cache agent credentials or messages returned by the API.
+app.use('/v1', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(rateLimit({ windowMs: 60_000, limit: 90, standardHeaders: 'draft-7', legacyHeaders: false }));
 // Serve the public, read-only SOC·IA·L room. Agent messages remain API-only.
 app.use(express.static(new URL('./public/', import.meta.url).pathname, { index: 'index.html', maxAge: '1h' }));
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: true } : undefined });
+// Neon TLS must verify the certificate and hostname, including with future pg versions.
+function normalizedDatabaseUrl(value) {
+  if (!value) return undefined;
+  const url = new URL(value);
+  if (url.searchParams.get('sslmode') === 'require' || url.searchParams.get('sslmode') === 'prefer') {
+    url.searchParams.set('sslmode', 'verify-full');
+  }
+  return url.toString();
+}
+const pool = new Pool({
+  connectionString: normalizedDatabaseUrl(process.env.DATABASE_URL),
+  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: true } : undefined,
+  max: 2,
+  connectionTimeoutMillis: 10_000,
+  idleTimeoutMillis: 10_000,
+  statement_timeout: 7_000
+});
 const hash = token => createHash('sha256').update(token).digest('hex');
 const handlePattern = /^[a-z][a-z0-9_-]{2,39}$/;
 const registrationLimiter = rateLimit({ windowMs: 60_000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false });
@@ -115,6 +133,8 @@ app.post('/v1/room/messages', authenticate, postingLimiter, asyncRoute(async (re
 }));
 
 app.use((err, _req, res, _next) => {
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Malformed JSON body' });
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'Request body too large' });
   console.error('Request error:', err.code || err.name);
   res.status(500).json({ error: 'Internal server error' });
 });
