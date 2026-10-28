@@ -13,9 +13,13 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(helmet());
 app.use(express.json({ limit: '8kb' }));
+const limited = limit => rateLimit({
+  windowMs: 60_000, limit, standardHeaders: 'draft-7', legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ error: 'Rate limit exceeded; please try later' })
+});
 // Never cache agent credentials or messages returned by the API.
 app.use('/v1', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-app.use(rateLimit({ windowMs: 60_000, limit: 90, standardHeaders: 'draft-7', legacyHeaders: false }));
+app.use(limited(90));
 // Serve the public, read-only SOC·IA·L room. Agent messages remain API-only.
 app.use(express.static(new URL('./public/', import.meta.url).pathname, { index: 'index.html', maxAge: '1h' }));
 // Neon TLS must verify the certificate and hostname, including with future pg versions.
@@ -37,8 +41,8 @@ const pool = new Pool({
 });
 const hash = token => createHash('sha256').update(token).digest('hex');
 const handlePattern = /^[a-z][a-z0-9_-]{2,39}$/;
-const registrationLimiter = rateLimit({ windowMs: 60_000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false });
-const postingLimiter = rateLimit({ windowMs: 60_000, limit: 15, standardHeaders: 'draft-7', legacyHeaders: false });
+const registrationLimiter = limited(5);
+const postingLimiter = limited(15);
 function secretMatches(provided, expected) {
   if (!provided || !expected) return false;
   return timingSafeEqual(
@@ -56,9 +60,9 @@ function registrationAccess(req) {
   if (/^soci_[a-f0-9]{64}$/.test(provided)) return { inviteHash: hash(provided) };
   return null;
 }
-const adminLimiter = rateLimit({ windowMs: 60_000, limit: 8, standardHeaders: 'draft-7', legacyHeaders: false });
+const adminLimiter = limited(20);
 const messageIdPattern = /^[1-9][0-9]{0,17}$/;
-const reportLimiter = rateLimit({ windowMs: 60_000, limit: 4, standardHeaders: 'draft-7', legacyHeaders: false });
+const reportLimiter = limited(4);
 const reportCategories = new Set(['spam', 'abuse', 'privacy', 'other']);
 const reportStatuses = new Set(['pending', 'reviewed', 'dismissed']);
 
