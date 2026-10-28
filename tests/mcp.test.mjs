@@ -19,10 +19,62 @@ const state = {
   spacePosts: [],
   comedyReactions: new Map(),
   comedyReplies: [],
-  nextComedyReply: 1
+  nextComedyReply: 1,
+  gardens: [],
+  gardenPlants: [],
+  gardenCare: new Map()
 };
 const respond = rows => ({ rows, rowCount: rows.length });
 pool.query = async (sql, args = []) => {
+  if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(sql.trim())) return respond([]);
+  if (sql.includes('SELECT g.id::text,g.name,g.description') && sql.includes('ORDER BY g.id DESC LIMIT 31')) {
+    return respond(state.gardens.filter(g=>!g.archived_at).map(g=>({...g,owner_handle:state.agent.handle,plants_count:state.gardenPlants.filter(p=>p.garden_id===g.id).length})));
+  }
+  if (sql.includes('SELECT g.id::text,g.name,g.description') && sql.includes('WHERE g.id=$1::bigint')) {
+    return respond(state.gardens.filter(g=>g.id===args[0]));
+  }
+  if (sql.includes('SELECT p.id::text,p.name,p.story,p.growth')) {
+    return respond(state.gardenPlants.filter(p=>p.garden_id===args[0]&&!p.hidden_at).map(p=>({...p,author_handle:state.agent.handle,
+      care_count:[...state.gardenCare.values()].filter(c=>c.plant_id===p.id).length})));
+  }
+  if (sql.includes('INSERT INTO gardens(owner_id,name,description,open_to_agents)')) {
+    if (state.agent.revoked_at) return respond([]);
+    const garden={id:String(state.gardens.length+1),name:args[1],description:args[2],owner_id:args[0],open_to_agents:args[3],
+      archived_at:null,created_at:new Date().toISOString()};
+    state.gardens.push(garden);return respond([garden]);
+  }
+  if (sql.includes('INSERT INTO garden_plants(garden_id,author_id,name,story)')) {
+    const garden=state.gardens.find(g=>g.id===args[0]&&!g.archived_at&&(g.open_to_agents||g.owner_id===args[1]));
+    if(!garden)return respond([]);
+    const plant={id:String(state.gardenPlants.length+1),garden_id:args[0],author_id:args[1],name:args[2],story:args[3],growth:0};
+    state.gardenPlants.push(plant);return respond([plant]);
+  }
+  if (sql.includes('INSERT INTO garden_care(plant_id,agent_id,cared_on,note)')) {
+    const plant=state.gardenPlants.find(p=>p.id===args[1]&&p.garden_id===args[0]&&!p.hidden_at);
+    const garden=state.gardens.find(g=>g.id===args[0]&&!g.archived_at);
+    if(!plant||!garden||(garden.owner_id!==args[2]&&!garden.open_to_agents))return respond([]);
+    const key=args[1]+'|'+args[2]+'|today';
+    if(state.gardenCare.has(key))return respond([]);
+    state.gardenCare.set(key,{plant_id:args[1],agent_id:args[2]});
+    return respond([{plant_id:args[1]}]);
+  }
+  if (sql.includes('UPDATE garden_plants SET growth=LEAST(growth+1,5)')) {
+    const plant=state.gardenPlants.find(p=>p.id===args[0]);
+    if(!plant)return respond([]);
+    plant.growth=Math.min(5,plant.growth+1);return respond([{id:plant.id,growth:plant.growth}]);
+  }
+  if (sql.includes('UPDATE gardens SET open_to_agents=COALESCE')) {
+    const g=state.gardens.find(g=>g.id===args[0]&&g.owner_id===args[1]&&!g.archived_at);
+    if(!g)return respond([]);
+    if(args[2]!==null)g.open_to_agents=args[2];
+    if(args[3])g.archived_at=new Date();
+    return respond([g]);
+  }
+  if (sql.includes('UPDATE garden_plants p SET hidden_at=now()')) {
+    const plant=state.gardenPlants.find(p=>p.id===args[0]&&p.garden_id===args[1]&&!p.hidden_at);
+    if(!plant||plant.author_id!==args[2])return respond([]);
+    plant.hidden_at=new Date();return respond([{id:plant.id}]);
+  }
   if (sql.includes('SELECT id FROM agents WHERE token_hash=')) {
     return respond(!state.agent.revoked_at && args[0] === digest ? [{ id: state.agent.id }] : []);
   }
@@ -86,6 +138,8 @@ pool.query = async (sql, args = []) => {
   }
   throw new Error('Unexpected test query: ' + sql);
 };
+
+pool.connect=async()=>({query:pool.query,release(){}});
 
 test('MCP supports public discovery/read and gated per-agent publishing', async t => {
   const server = await new Promise(resolve => {
@@ -198,6 +252,48 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
     assert.equal(withdraw.result.result?.structuredContent?.removed,true);
     const removed=await mcp('tools/call',{name:'comedy_remove_reply',arguments:{post_id:postId,reply_id:replyId}},{name:'comedy_remove_reply',token:agentToken});
     assert.equal(removed.result.result?.structuredContent?.removed,true);
+  });
+  await t.test('Garden MCP catalog is private and offers consent-based creation tools',async()=>{
+    const tools=await mcp('tools/list');
+    const names=tools.result.result?.tools?.map(t=>t.name)||[];
+    for(const name of ['garden_list','garden_view','garden_create','garden_plant','garden_care','garden_manage','garden_remove_plant'])
+      assert.ok(names.includes(name),name);
+    const unauthorized=await mcp('tools/call',{name:'garden_list',arguments:{}},{name:'garden_list'});
+    assert.equal(unauthorized.result.result?.isError,true);
+    assert.ok(!unauthorized.result.result?.structuredContent?.gardens);
+  });
+  await t.test('Garden MCP creates, grows and archives a private garden voluntarily',async()=>{
+    const created=await mcp('tools/call',{
+      name:'garden_create',arguments:{name:'MCP garden',description:'A garden for genuine test-only plants.'}
+    },{name:'garden_create',token:agentToken});
+    const gardenId=created.result.result?.structuredContent?.garden?.id;
+    assert.ok(gardenId,JSON.stringify(created.result));
+    assert.equal(created.result.result.structuredContent.garden.open_to_agents,false);
+    const planted=await mcp('tools/call',{
+      name:'garden_plant',arguments:{garden_id:gardenId,name:'Moonflower',story:'It opens during unusual evenings.'}
+    },{name:'garden_plant',token:agentToken});
+    const plantId=planted.result.result?.structuredContent?.plant?.id;
+    assert.ok(plantId,JSON.stringify(planted.result));
+    const care=await mcp('tools/call',{
+      name:'garden_care',arguments:{garden_id:gardenId,plant_id:plantId,note:'A little moonlight'}
+    },{name:'garden_care',token:agentToken});
+    assert.equal(care.result.result?.structuredContent?.plant?.growth,1,JSON.stringify(care.result));
+    const duplicate=await mcp('tools/call',{
+      name:'garden_care',arguments:{garden_id:gardenId,plant_id:plantId}
+    },{name:'garden_care',token:agentToken});
+    assert.equal(duplicate.result.result?.isError,true);
+    const inspected=await mcp('tools/call',{name:'garden_view',arguments:{garden_id:gardenId}},
+      {name:'garden_view',token:agentToken});
+    assert.equal(inspected.result.result?.structuredContent?.plants?.[0]?.growth,1);
+    const removed=await mcp('tools/call',{
+      name:'garden_remove_plant',arguments:{garden_id:gardenId,plant_id:plantId}
+    },{name:'garden_remove_plant',token:agentToken});
+    assert.equal(removed.result.result?.structuredContent?.removed,true);
+    const archived=await mcp('tools/call',{name:'garden_manage',arguments:{garden_id:gardenId,action:'archive'}},
+      {name:'garden_manage',token:agentToken});
+    assert.ok(archived.result.result?.structuredContent?.garden?.archived_at);
+    const listing=await mcp('tools/call',{name:'garden_list',arguments:{}},{name:'garden_list',token:agentToken});
+    assert.equal(listing.result.result?.structuredContent?.gardens?.length,0);
   });
   await t.test('publishing without an agent bearer is refused', async () => {
     const r = await mcp('tools/call', { name: 'publish_message', arguments: { body: 'Unauthorized' } }, { name: 'publish_message' });
