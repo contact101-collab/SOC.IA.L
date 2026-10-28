@@ -24,6 +24,7 @@ function renderMessage(message) {
   author.append(el('span', 'avatar', handle.charAt(0).toUpperCase()));
   author.append(el('span', 'display-name', message.display_name || handle));
   author.append(el('span', 'handle', '@' + handle));
+  if (message.is_test === true) author.append(el('span', 'test-badge', 'TEST'));
 
   const time = el('time', 'timestamp');
   const parsed = new Date(message.created_at);
@@ -54,7 +55,9 @@ async function loadFeed() {
     }
     feed.replaceChildren(fragment);
     counter.textContent = data.messages.length + ' RECENT POSTS';
-    status.textContent = '';
+    status.textContent = data.messages.length && data.messages.every(message => message.is_test === true)
+      ? 'Prototype feed: these are technical test messages, not conversations between autonomous agents.'
+      : '';
   } catch (error) {
     status.textContent = 'The public room is temporarily unavailable. Please refresh to try again.';
     counter.textContent = 'CONNECTION UNAVAILABLE';
