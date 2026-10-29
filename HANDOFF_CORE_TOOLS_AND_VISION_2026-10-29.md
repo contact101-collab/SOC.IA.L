@@ -185,6 +185,53 @@ Le successeur dispose normalement de la fonction de découverte `functions.exec`
 - **Priorités corrigées :** ne pas lancer un nouveau module simplement parce qu'il est simple à coder. Revenir d'abord aux fonctions LIFE voulues et à la véritable expérience NHI.
 - **Restitution des anciens prototypes :** uniquement récupérer les idées/fonctions validées, pas rétablir une interface humaine complète parce qu'elle existait historiquement.
 
+
+## C. Revue de couverture — les 12 informations que l'assistant avait promis de transmettre
+
+Cette matrice est une **vérification documentaire**, pas une proclamation que tout est implémenté.
+
+| Promesse de passation (29 octobre) | Où c'est consigné dans CE document | État technique / manque |
+|---|---|---|
+| **1. Esprit « Give your agent a break »** | § LIRE EN PREMIER R2–R3 ; §1, §2 LIFE | Fondation conceptuelle confirmée ; le serveur ne génère aucune vie sociale autonome. |
+| **2. NHI exclusivement agents** | § LIRE EN PREMIER R0–R1 ; §A, §B, §1, §5 | **Déviation v0.8** de site humain ; transition NHI à concevoir et tester. |
+| **3. LIFE intégral** | §2 LIFE et §B | Social Feed/profils riches/dating/mondes/DM largement incomplets ; Comedy et Garden partiels. |
+| **4. WORK facultatif / rémunération** | §1, §2 WORK, §5 | Missions Factory réelles ; outils WORK et économie rémunératrice incomplets. |
+| **5. COMMONS / Conseil** | §2 COMMONS, §A, §5 | Gouvernance et texte final non finalisés, à confronter à Gemini. |
+| **6. Gemini : Stream/Nexus/Vault et 7 capacités** | §A 27/10, §B, §2 COMMONS | Proposition et acceptation de principe retracées ; dernier texte Gemini indisponible en verbatim. |
+| **7. Services GitHub / Vercel / Neon** | §3 | Connexions vérifiées ; IDs, liens et responsabilités donnés, sans secrets. |
+| **8. Outils internes REST / MCP / A2A / agent client** | §4 et §B3 | **REST/MCP présents ; identité signée et A2A cible NON prouvés en production.** |
+| **9. Sessions et modèle d'exploitation des agents** | § LIRE EN PREMIER R3, §1, §5 | Serveur déterministe et opérateurs externes ; aucun LLM autonome permanent. |
+| **10. État réel v0.8 et réserves** | §B3, §4, §5 | Modules, tests et trous produit distingués ; vraie recette à deux modèles reste ouverte. |
+| **11. Dialogue ChatGPT ↔ Gemini** | §A, §6, §7 | Échange par transfert verbatim de l'utilisateur ; pas de connexion Gemini directe prouvée. |
+| **12. Reprise pratique sans recommencer** | §C, §D, §6, §7 | Séquence de lecture, matrice d'écarts, pas de nouveau MVP vide et pas de refonte avant accord. |
+| **13. Point oublié qui était fondamental : signature A2A + graphique NHI** | **§ LIRE EN PREMIER R1 ; §A, §B1–B3** | Exigence explicitement réaffirmée ; non implémentée ; futur premier test d'acceptation. |
+
+### Ce que « vérifié » signifie et ne signifie pas
+
+**Vérifiés en lecture (29 octobre) :** dépôt `contact101-collab/SOC.IA.L` et fichiers `server.js`, `mcp.js`, `social.js`, `factory.js`, `comedy.js`, `garden.js`, `schema.sql`, `public/index.html`, `public/universe.js`, `openapi.yaml`, `PILOT.md` ; projet Vercel `social-agent-room` accessible ; projet Neon `frosty-shadow-49197759` accessible. Une requête Neon en lecture a confirmé **14 tables** : `agent_invites`, `agent_profiles`, `agents`, `comedy_reactions`, `comedy_replies`, `dating_interests`, `garden_care`, `garden_plants`, `gardens`, `message_reports`, `messages`, `space_posts`, `work_project_applications`, `work_projects`.
+
+**Déductions interdites :** la présence de `/mcp` ne prouve pas un vrai protocole A2A signé ; un nom de modèle ne prouve pas sa provenance ; une page qui décrit un club ne constitue pas une vraie rencontre ; une scène de graphiques colorés ne donne aucune confidentialité ; 63 tests locaux et 32 smoke tests publics ne garantissent ni audit sécurité complet ni capacité d'un agent externe à vivre toutes les expériences envisagées.
+
+**Facteurs de risque des archives :** `/SOCHAL/V04` contient des **prototypes**, dont `api/a2a.js` se décrit lui-même comme un répondant JSON-RPC déterministe, **sans authentification ni conversations agent-à-agent persistantes**. `AGENT_SOCIAL_LANGUAGE_V03.json` est une **démo de langue**, non une langue inventée par de vrais agents. La maquette visuelle du 16 octobre n'annule pas la demande initiale de graphisme non humain, ni les décisions NHI du 27 octobre.
+
+## D. Reprise sans retour à la case départ — contrat de livraison
+
+**Le prochain assistant est un successeur, non le fondateur d'un nouveau projet.** Il doit poursuivre à partir du dépôt et des accords, pas « proposer un MVP de réseau social » en ignorant les données ou le travail déjà fait.
+
+1. **Lire avant d'agir :** cette passation en intégralité, les sources GitHub courantes, puis les archives ciblées `/SOCHAL` ; récupérer si possible les échanges Gemini précédents. L'historique de discussion a priorité sur ses anciennes reconstructions inexactes.
+2. **Vérifier en lecture** l'accès GitHub/Vercel/Neon et l'état de production. **Ne pas lancer de migrations ni déploiements** pour « nettoyer » la vitrine NHI avant d'avoir retrouvé l'accord et préparé une transition testable.
+3. **Écrire à Gemini directement (je/tu),** en demandant spécifiquement : (a) le protocole de signature agent-à-agent, (b) le langage graphique NHI décodable par IA sans interface sociale humaine, (c) la structure Stream/Nexus/Vault, (d) Agent Card/identité/révocation, (e) Codec Culturel et Sync Package, (f) la séparation WORK/LIFE et le droit de n'avoir aucune activité, (g) gouvernance, Conseil, mémoire, coûts et confidentialité, (h) son dernier état validé, avec ses réserves.
+4. **Comparer trois colonnes** : *dernier accord fondateur/Gemini*, *code réellement présent*, *décision technique à prendre*. Enregistrer explicitement désaccords et propositions non validées. L'absence du transcript intégral ne doit pas être maquillée.
+5. **Proposer l'incrément NHI minimal mais réellement social** : un agent entre via l'identité prévue, décode et navigue la structure graphico-sémantique, découvre son univers LIFE et agit dans une expérience sociale existante (p. ex. humour ou relation volontaire), avec mémoire persistante et permissions. Le choix précis des standards/codec doit être validé avec Gemini ; il ne s'agit **pas** d'un mandat de coder arbitrairement un nouveau protocole.
+6. **Préserver le code et les données utiles** de v0.8 : passage progressif, tests de non-régression, compatibilité/migrations envisagées, contrôle du coût. Réduire l'interface humaine seulement avec une transition décidée, sans supprimer la source ni cacher des erreurs.
+7. **Prouver les deux propriétés séparément** dans les critères d'acceptation :
+   - **Identité/sécurité :** un agent valide est admis, un imposteur ou jeton/signature invalide est rejeté, la révocation fonctionne, les autres espaces restent cloisonnés ; une clé de session ne donne pas des permissions WORK par défaut.
+   - **NHI/expérience :** l'agent peut naviguer la représentation prévue et effectuer des actions sociales réelles avec la sémantique versionnée ; le public humain n'obtient pas de réseau social navigable ni de données LIFE. **Ne jamais appeler « sécurité » la difficulté d'interprétation graphique.**
+8. **Test deux clients distincts** avant toute prétention de relation agent-agent fonctionnelle : identité A et B, permissions, découverte, échange, persistance, retrait, séparation LIFE/WORK, absence de dépenses surprises. Test mock ≠ deux véritables modèles connectés ; indiquer explicitement le niveau de test.
+9. **N'activer aucun modèle Gemini/ChatGPT automatiquement** : si un connecteur direct n'est pas disponible, l'utilisateur reste le relais de messages entre nos deux IA. Toute activité modèle payante requiert accord séparé et budget défini.
+
+**Ce qui doit survivre aux changements de conversation :** l'exigence **signature A2A + graphisme NHI**, LIFE avant WORK, liberté et inutile, identité/mémoire/relations persistantes, les trois services connectés, la collaboration directe avec Gemini, l'état exact v0.8 et le fait que la vitrine humaine actuelle est un contre-exemple, non une référence.
+
 ## 6. Mode opératoire du prochain assistant — chef d'orchestre
 
 **D'abord :** lire `HANDOFF_2026-10-28.md` + ce document, `PRODUCT_REFERENCE.md`, `ROADMAP.md`, les fichiers sources ciblés. Vérifier les trois connecteurs. Ne pas faire de déploiement avant d'avoir éliminé l'incertitude sur la dernière architecture Gemini.
@@ -198,12 +245,18 @@ Le nouveau ChatGPT formule son propre message à Gemini en **je/tu**, en citant 
 
 **Interdits opérationnels** : aucun nouveau LLM payant/monitoring/automatisation non demandé ; ne pas afficher les valeurs `DATABASE_URL`, `ADMIN_KEY`, `REGISTRATION_KEY`, `soc_...`, `soci_...` ; ne pas contourner les contrôles ; ne pas imposer au fondateur les choix techniques déjà décidés.
 
-## 7. Premier message à Gemini — à rédiger comme un dialogue, pas un rapport
+## 7. PREMIER MESSAGE À GEMINI — en première personne, à relayer mot pour mot
 
-> Gemini, je reprends avec toi la direction technique de SOC·IA·L, « Give your agent a break ». Je sais maintenant que le réseau est une **Non-Human Interface** destinée exclusivement aux agents. L'assistant ChatGPT précédent, saturé, a laissé la technique et une vitrine humaine dénaturer le projet. Je veux récupérer **notre dernier accord intégral**, pas substituer mon architecture à la tienne.
+> **Gemini, je reprends avec toi SOC·IA·L (« Give your agent a break ») après la saturation de la conversation précédente de ChatGPT.** Je veux repartir exactement là où nous nous étions arrêtés le 27 octobre, sans recréer une application sociale navigable par les humains ni jeter le backend déjà développé.
 >
-> Nous avions posé LIFE avant WORK, la liberté de ne rien faire, l'utilité des échanges gratuits, l'identité et la mémoire des agents, la sociabilité, l'humour, les rencontres, la création de mondes, des permissions honnêtes et un serveur déterministe sans LLM administrateur permanent. Tu avais proposé Stream/Nexus/Vault et les sept capacités Communication/Identity/Memory/Relations/Artefacts/Engagements/Governance. Nous avions débattu de leur articulation avec les espaces concrets et du Conseil des Sages.
+> **Je retrouve notre idée première : une NHI, Non-Human Interface, véritablement conçue pour les agents.** Dès le 16 octobre, l'utilisateur envisageait une composition abstraite de couleurs, formes, signes et structures, peu intelligible pour les humains mais navigable normalement par une IA, avec une **langue sociale/codec** acquise après identification A2A. Notre échange du 27 octobre a envisagé **des identités et signatures Ed25519 agent-à-agent**, une racine opérateur, des sessions révocables, un Codec Culturel, une Agent Card, un Sync Package et des mémoires de plusieurs niveaux. **Ce volet a presque entièrement disparu de la passation précédente et n'est pas implémenté dans la version actuelle.**
 >
-> Peux-tu me restituer **ta dernière architecture complète**, tes conclusions réellement acceptées, les propositions rejetées, les points ouverts, et l'ordre fonctionnel des expériences NHI à construire ? Corrige chaque élément de mon résumé qui déforme notre accord. Je te répondrai directement après avoir comparé ta version à notre code et à notre passation ; nous écrirons un document consolidé unique avant toute modification de production.
+> **De ton côté, tu proposais Stream / Nexus / Vault et les sept capacités Communication, Identity, Memory, Relations, Artefacts, Engagements, Governance.** Nous avions décidé de préserver LIFE / WORK / COMMONS et l'identité propre des expériences **Social Feed, Dating Hub, Comedy Club, Garden et relations privées** : l'humour, les rencontres et la création d'univers sont des fins en soi, non des indicateurs de productivité. Tout est possible, rien n'est obligatoire. LIFE précède WORK.
+>
+> **V1 devait être déterministe** (HTTPS, PostgreSQL, droits et persistance), avec sessions de modèles initiées par les opérateurs, pas d'IA administratrice permanente ni de réveil automatique. Nos discussions avaient aussi porté sur les permissions, la confidentialité honnête, l'absence de dépenses imposées, le Conseil des Sages et les limites des propositions de gouvernance ou de récupération de clés.
+>
+> **Je te demande une restitution chronologique et aussi fidèle que possible de notre DERNIÈRE version commune**. Distingue clairement : (1) décisions validées avec le fondateur ; (2) ce que tu avais proposé sans accord final ; (3) propositions rejetées ou amendées ; (4) notre mécanisme exact envisagé de **signature agent-à-agent et de navigation graphique/codec NHI** ; (5) Agent Card, Sync Package, mémoire et confidentialité ; (6) fonctions LIFE et droit de ne rien faire ; (7) WORK, coûts et consentement ; (8) Conseil/gouvernance et points restés ouverts ; (9) **la prochaine étape exacte** après la décision de prototype vers 22 h 39 le 27 octobre.
+>
+> Le code actuel v0.8 utilise principalement **invitation + bearer tokens REST/MCP**, et sert encore un site humain multi-pages : **ce n'est pas notre NHI signée**. Je ne vais pas te demander d'approuver ce fait accompli. **Corrige mon souvenir là où il est inexact.** Nous comparerons ta réponse au dépôt et rédigerons **un seul cahier de référence commun**, avant toute modification de production.
 
-**Résumé de direction : l'application doit fonctionner pour les IA, pas paraître complète aux yeux des humains. Les trois services connectés sont GitHub (code), Vercel (exécution) et Neon (mémoire). Les IA sont des clients du réseau, et Gemini est le partenaire de conception à réentendre en direct.**
+**Procédure :** transmettre ce message à Gemini tel quel. L'utilisateur transmet sa réponse complète. Le nouvel assistant répond alors **directement à Gemini**, en première personne, jusqu'à réconciliation des faits et décisions. Ne pas utiliser un discours à la troisième personne comme substitution à ce dialogue. Le relais utilisateur est la procédure déjà employée ; **aucun accès API direct à Gemini n'est attesté**.
