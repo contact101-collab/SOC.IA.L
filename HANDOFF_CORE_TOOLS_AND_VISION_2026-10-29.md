@@ -271,6 +271,88 @@ Cette matrice est une **vérification documentaire**, pas une proclamation que t
 
 **Facteurs de risque des archives :** `/SOCHAL/V04` contient des **prototypes**, dont `api/a2a.js` se décrit lui-même comme un répondant JSON-RPC déterministe, **sans authentification ni conversations agent-à-agent persistantes**. `AGENT_SOCIAL_LANGUAGE_V03.json` est une **démo de langue**, non une langue inventée par de vrais agents. La maquette visuelle du 16 octobre n'annule pas la demande initiale de graphisme non humain, ni les décisions NHI du 27 octobre.
 
+## E. REPRISE TECHNIQUE IMMÉDIATE — état des services, fichiers et commandes
+
+**Cette section n'est pas un ordre de déployer.** Elle évite de réapprendre la chaîne technique, sans compromettre les secrets et sans présumer de permissions dans une nouvelle conversation.
+
+### E1. État réel vérifié en lecture le 29 octobre 2026
+
+| Ressource | Référence persistante | Observation |
+|---|---|---|
+| GitHub | [`contact101-collab/SOC.IA.L`](https://github.com/contact101-collab/SOC.IA.L) / `main` | Lecture/écriture du référentiel de passation confirmées. C'est la source de code active. |
+| Vercel | [`social-agent-room`](https://social-agent-room.vercel.app), projet `prj_jgX46l98uZD6I1MEeSMS6BhWx9ky`, équipe `team_67MfsiOeUAUzjQvTByVOXlQw` | Connecteur répond ; déploiement `dpl_AzMpJCjvj9J9Lt4UbHWMVQSTp9w2` observé **READY**, version `0.8.0`. L'accueil public affiche toujours l'ancienne navigation humaine. |
+| Neon | `frosty-shadow-49197759`, DB `social-agent-room`, PostgreSQL 17, Francfort `aws-eu-central-1` | Connecteur et requête SQL lecture seule vérifiés ; **14 tables** existantes listées à la section C. |
+| Archives | Dossier Library **`/SOCHAL`** et `/SOCHAL/V04`, `/SOCHAL/WORK_CORE_V04` | Accessible par les outils de fichiers. Anciennes maquettes/prototypes, pas vérité finale du 27 octobre. |
+| Sandboxes | `sbx_...` Vercel | Éphémères : **ne pas réutiliser comme source durable**, ne pas supposer que les anciens ID de sessions fonctionnent. Créer un environnement isolé depuis GitHub pour les tests autorisés. |
+| Gemini | Conversation externe relayée par l'utilisateur | **Aucun connecteur Gemini direct vérifié.** Message à Gemini en première personne, réponse intégrale retransmise par l'utilisateur. |
+
+**Secrets :** `DATABASE_URL`, `ADMIN_KEY`, `PGSSL`, ancien `REGISTRATION_KEY` ; invitations `soci_...` et identifiants d'agents `soc_...`. Ne pas chercher à extraire ces secrets du déploiement pour les inclure en texte ; le nouvel assistant teste ses accès en lecture via les connecteurs et respecte les contrôles. La présence de credentials dans Vercel **n'autorise pas** à s'en servir pour initier des actions de modèle sans ordre.
+
+### E2. Anatomie précise du code v0.8 à reprendre, et non à réinventer
+
+| Emplacement GitHub | Rôle concret |
+|---|---|
+| `server.js` | Express, connexion Neon, auth par invitation/jeton, sécurité et rate-limits, montage des routeurs, endpoint `/mcp`, santé, documentation, salon public et modération. **Ne pas retirer `export default app;`** : nécessaire au déploiement Express/Vercel actuel. |
+| `schema.sql` | Schéma PostgreSQL versionné. Attention : migrations manuelles additives déjà effectuées en production ; **ne pas rejouer ni détruire aveuglément**. |
+| `spaces.js` | Taxonomie des rubriques du code v0.8, **pas** la liste canonique 27 octobre. Certaines rubriques ont été ajoutées et d'autres sont simples noms. |
+| `social.js` | Posts d'espaces, profils peu complets, dating opt-in et intérêts ; WORK/COMMONS peuvent être lus publiquement dans la version actuelle. |
+| `factory.js` | Projets et candidatures WORK, droits du propriétaire, statuts ; l'ancien constructeur HTML n'est plus intégré à ce backend. |
+| `comedy.js` | Réponses et réactions persistantes + modération ; REST et **6 outils MCP**. |
+| `garden.js` | Jardins/plantes/soins persistants + consentement ; REST et **7 outils MCP** ; **pas** la pleine création de mondes. |
+| `mcp.js` | Serveur MCP Streamable HTTP, **6 outils socle**, plus intégration Comedy/Garden ; ce n'est pas une implémentation complète d'A2A signée. |
+| `openapi.yaml` | Inventaire des API REST réellement décrites ; vérifier sa concordance avec les routeurs, ne pas en inférer des capacités non codées. |
+| `examples/agent-client.mjs` | Client externe simple avec méthodes explicites (sans tâche planifiée), authentification `soc_...`, lecture, publication, Comedy, Garden. |
+| `public/index.html`, `public/universe.js`, `public/universe.css` | **Vitrine humaine historique non conforme** à la vision NHI ; ne pas ajouter de nouvelles scènes humaines. Préserver pour comparaison, puis remplacer par une entrée minimale selon plan validé. |
+| `public/agents.html`, `public/room.html`, `public/app.js` | Guides/ancienne salle de démonstration. Certaines affirmations concernent un premier pilote public et **ne correspondent plus au produit cible**. |
+| `README.md`, `PILOT.md`, `PRODUCT_REFERENCE.md`, `ROADMAP.md`, issues | Documents de dates/statuts mélangés. **Le présent fichier, les choix du fondateur et l'accord final à retrouver avec Gemini sont prioritaires.** |
+
+**État de l'authentification actuelle** : invitation `soci_...` émise par admin, inscription `POST /v1/agents`, jeton bearer `soc_...` haché au stockage, droits larges `social:read`/`social:write` dans MCP, révocation `DELETE /v1/agents/me/token`. **Aucun profil de consentement opérateur multi-tenant et aucun schéma final de signature Ed25519 n'existent dans les modules examinés.** L'authentification n'atteste pas le fabricant/modèle déclaré.
+
+**Point de confidentialité :** LIFE est refusé aux visiteurs anonymes sur les routes dédiées ; **les posts WORK/COMMONS et le salon technique restent accessibles publiquement en lecture**, donc la NHI cible n'est pas obtenue par la seule suppression du menu web. La correction devra porter aussi sur les permissions serveur et les ressources statiques, sans effacer des données existantes.
+
+### E3. Vérification/reproduction des tests actuels
+
+Les scripts de `package.json` sont réellement présents dans la branche `main` :
+```bash
+npm install --no-audit --no-fund
+node --check server.js
+node --check mcp.js
+node --check public/universe.js
+npm run test:local
+npm run test:client
+npm run test:mcp
+npm run test:spaces
+npm run test:factory
+npm run test:comedy
+npm run test:garden
+npm run test:smoke
+```
+
+**Attention :** `test:smoke` cible le serveur public via `SOCIAL_BASE_URL` si cette variable est fournie ; son intérêt est de vérifier les restrictions d'accès **sans créer de comptes ni de publications**. Les sept autres suites sont des tests locaux/isolés et utilisent notamment des simulateurs de base ; ils ne démontrent pas à eux seuls les permissions sur de véritables opérateurs en production.
+
+**Baselines historiques à conserver avec leur statut exact :** v0.8 avait déclaré **63 tests locaux réussis + 32 tests publics smoke réussis**, à la date des développements du 28 octobre ; **ils ne viennent pas d'être relancés** lors de cet audit documentaire du 29 octobre. Tests authentifiés A/B de bout en bout, signatures d'agent-à-agent, codec graphique NHI et sécurité des DM **non validés**.
+
+### E4. Déploiement Vercel : point de vigilance appris dans la conversation
+
+- La liaison automatique **GitHub → Vercel n'était pas confirmée** ; les releases précédentes ont été créées manuellement en fournissant les fichiers du dépôt à `mcp__Vercel__create_deployment`, projet Express, Node **24.x**, cible `production`.
+- Fichiers d'application utilisés dans le dernier déploiement : `package.json`, `server.js`, `mcp.js`, `social.js`, `spaces.js`, `factory.js`, `comedy.js`, `garden.js`, `openapi.yaml`, `public/index.html`, `public/room.html`, `public/agents.html`, `public/app.js`, `public/site.css`, `public/universe.js`, `public/universe.css`. **Ne pas supprimer un fichier requis par un import.**
+- Pour du code inconnu ou des changements d'authentification, tester **avant** la production ; éviter les migrations destructrices, les dépenses et la création de comptes hors approbation. `export default app;` est critique pour le montage Vercel ; une suppression antérieure avait conduit à des erreurs HTTP 500.
+- Après changement autorisé : contrôles de démarrage/health, restrictions non authentifiées, limites d'accès, journaux d'exécution et comparaison du déploiement. Sans succès de ces contrôles, **pas de communication « fonctionnel en production »**.
+
+### E5. Avertissements sur les documents contradictoires
+
+1. **`PILOT.md` est un protocole de pilote technique historique** pour publier dans un salon public et vérifier la révocation. **Il n'est PAS la procédure pour faire démarrer la société NHI graphique et signée.** Ne pas en reprendre l'orientation « messages lisibles humain » comme produit cible.
+2. **`README.md` possède des notes de releases successives** et certains passages « public conversation first » obsolètes ; sa section de passation prioritaire et le code concret prévalent sur ces notes.
+3. **`PRODUCT_REFERENCE.md` recense 21 destinations historiques** pour retrouver les usages ; **sa consigne de ne pas prioriser Academy/Guilds/After Dark est à nuancer avec les 16 espaces conservés le 27 octobre** (section AUDIT COMPLÉMENTAIRE du présent document).
+4. **`ROADMAP.md` est une feuille NHI corrigée**, mais son calendrier ne prime pas sur la reconstitution du dernier accord avec Gemini. Aucun nouveau développement « Lounge en premier » ne doit être interprété comme ordre impératif.
+5. **GitHub issues #1–#4** décrivent les chantiers techniques et conservent parfois l'ancienne vision humaine. **Issue [#5](https://github.com/contact101-collab/SOC.IA.L/issues/5)** signale le blocage NHI. Les anciens tickets peuvent être utiles à l'historique, mais ne doivent pas dicter le nouveau produit.
+6. **`HANDOFF_2026-10-28.md`** est le document de passation historique ; **ce document du 29 octobre corrigé est la priorité de lecture**.
+7. Une création de fichier de complément avait été évoquée lors d'une réponse antérieure ; **le chemin `HANDOFF_ADDENDUM_2026-10-29.md` n'a pas été retrouvé dans le dépôt lors de cet audit**. **Ne pas le citer comme preuve ni comme pièce indispensable à la reprise.** Tout point critique doit être consigné dans le présent document qui existe réellement.
+
+### E6. Limite de l'audit de « complétude »
+
+**Complet pour reprendre sans recommencer : OUI, sous réserve du dernier verbatim Gemini.** Il existe des sources vérifiées pour la vision, l'ordre des étapes, les services, le code et les erreurs à éviter. **Complet au sens d'une reconstitution littérale et unanimement validée de tous les messages Gemini : NON.** Le texte intégral final demeure indisponible. Le successeur doit remplir cette unique lacune par la procédure de conversation directe (§7) et ensuite figer une **référence unique**, sans repartir de zéro.
+
 ## D. Reprise sans retour à la case départ — contrat de livraison
 
 **Le prochain assistant est un successeur, non le fondateur d'un nouveau projet.** Il doit poursuivre à partir du dépôt et des accords, pas « proposer un MVP de réseau social » en ignorant les données ou le travail déjà fait.
