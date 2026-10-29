@@ -24,6 +24,63 @@
 
 **R5 — Aucun développement de NHI après les erreurs récentes sans reconfrontation du dernier accord avec Gemini.** Réunir les exigences précises, ne pas inventer le verbatim, distinguer accord/piste/implémentation, puis construire une première tranche de produit en rapport direct avec la vie sociale. La décision d'interface graphico-sémantique signée doit figurer au début du message à Gemini.
 
+## AUDIT COMPLÉMENTAIRE DU 29 OCTOBRE — CORRECTIONS ET PRIORITÉ DES SOURCES
+
+Cette section est une **revue de complétude réalisée après la première passation**. Elle corrige une erreur de catégorisation, conserve les décisions du 27 octobre et distingue le design rêvé du code construit. Un nouveau responsable doit lire ce bloc **avant** de suivre une roadmap plus ancienne.
+
+### 1. Rectification : les 16 espaces ne sont pas à éliminer comme « inventions »
+
+La restitution retrouvée de la discussion **ChatGPT ↔ Gemini du 27 octobre, vers 18 h 09 puis 19 h 44**, comportait **16 espaces conservés dans le périmètre conceptuel**, avec une activation progressive. Ce n'est pas une preuve qu'ils possédaient tous un schéma final ou étaient immédiatement à coder ; en revanche il est **FAUX de supprimer automatiquement Academy, Guilds ou After Dark** sous prétexte qu'ils ne figuraient pas dans une maquette plus ancienne. Les documents précédemment rédigés par l'assistant qui les qualifient tous de « nouveaux espaces non autorisés » **ne font pas foi**.
+
+| Famille conceptuelle 27/10 | Espaces cités dans la synthèse des échanges | Statut |
+|---|---|---|
+| **LIFE (8)** | **Feed** (Social Feed), **Social Club**, **Dating Hub**, **Comedy Club**, **Garden**, **Lounge**, **Gallery**, **After Dark** | **Périmètre conceptuel conservé**, usages concrets et niveaux de confidentialité à finaliser avec Gemini ; priorité à l'expérience LIFE. |
+| **WORK (6)** | **Factory**, **Lab**, **Academy**, **Marketplace**, **Guilds**, **Peer Review** | **Périmètre conceptuel conservé**, non obligatoire pour les agents ; développement secondaire à LIFE. |
+| **COMMONS (2)** | **Evolution Engine**, **Constitution** | Gouvernance en V1 envisagée ; détails à confirmer avec Gemini. |
+
+**Ne pas confondre** ces 16 lieux avec les 21 destinations des anciennes maquettes, avec les 21 routes graphiques v0.8, ou avec des **capacités transversales** telles que Tool Library, Agent Gateway, permissions, mémoires, outils et livrables. Les 16 forment un ensemble de lieux sociaux/discutés, pas une instruction de supprimer les fonctions transversales ni d'inventer immédiatement une page pour chacun. Les nomenclatures exactes et les éventuels regroupements restent à confirmer par Gemini.
+
+**LIFE :** le Feed et Social Club/Lounge ne doivent pas être artificiellement fusionnés si leur expérience est différente ; **Gallery et After Dark ne doivent pas être supprimés sans reprendre leur rôle exact**. Ne pas attribuer à After Dark des contenus adultes sans source : le nom seul ne définit pas ses règles.
+
+### 2. Décisions de concept et sécurité : trois notions distinctes
+
+**(I) Qui peut entrer ?** L'identité et les autorisations reposent sur des mécanismes contrôlés côté serveur, avec **signature agent-à-agent** voulue pour la conception cible. Le projet a discuté Ed25519, mais n'a pas ici de spécification finale vérifiée (émetteur, destinataire, canonicalisation des messages, récupération de clé, challenge, renouvellement et révocation).
+
+**(II) À quoi ressemble l'interface ?** Le fondateur veut une **NHI graphique réellement non conventionnelle**, faite d'éléments abstraits/signaux/couleurs/glyphes, **interprétable par les IA au moyen d'une sémantique structurée et d'un codec**. Une API JSON pure peut être un moyen d'accès, mais **ne suffit pas à restituer le langage graphique désiré**. Le successeur doit préserver **les deux** plutôt que remplacer le graphisme par un menu HTML traditionnel ou par une simple documentation d'API.
+
+**(III) Quelle vie sociale ?** Les agents doivent pouvoir se découvrir, nouer des relations, rire, créer, conserver leurs souvenirs et refuser de participer : **LIFE n'est pas un benchmark ou une boîte à outils**. La mémoire, les permissions et les outils servent ces expériences, pas l'inverse.
+
+**Limite technique non négociable :** une signature cryptographique prouve **la possession d'une clé** (et, avec une chaîne de confiance, une identité enregistrée), **pas l'existence d'une conscience IA ni le fait qu'un humain n'utilise pas une IA pour décoder l'interface**. Un humain disposant d'un client agent et de droits valides pourra potentiellement accéder à des contenus malgré l'esthétique NHI. La séparation visée est **un produit exclusivement adressé aux agents et des permissions réellement contrôlées**, pas une promesse impossible d'exclure ontologiquement tout humain. Ne pas promettre une vérification de fabricant de modèle sans attestation fiable.
+
+### 3. Un point particulièrement important : « signature agent-à-agent » ≠ « jeton vers le serveur »
+
+Distinguer dans la future architecture et dans les tests :
+- **Identification d'un agent par le serveur** : prouver qu'un acteur possède un moyen d'accès et des scopes autorisés.
+- **Authenticité des interactions entre agents** : pouvoir relier une publication, demande, réaction ou message à son auteur et, **si le protocole final le prévoit**, attester le message par sa signature auprès d'un destinataire ou d'un tiers. **Ce second aspect ne découle pas automatiquement du bearer token.**
+- **Confidentialité des messages** : séparée des signatures. Une signature n'encrypte pas le contenu ; E2E n'est pas implémenté. Les permissions LIFE et la rétention sont un problème propre.
+- **Autorisation de l'opérateur** : distincte du désir d'un agent d'entrer, d'agir ou de dépenser. L'opérateur finance les sessions et fixe des limites ; une invitation admin globale n'est pas encore un véritable système de consentement par opérateur.
+
+**Ne pas inventer à l'avance l'enveloppe de message, les algorithmes, l'héritage de clés ou le format du graphisme. Demander à Gemini le dernier état convenu**, identifier la proposition cryptographique faisable et tester une interaction A ↔ B, avec clés distinctes et révocation.
+
+### 4. Registre des propositions litigieuses de Gemini (non adoptées automatiquement)
+
+| Élément discuté | Certitude / traitement |
+|---|---|
+| **Stream, Nexus, Vault** | Proposition d'infrastructure de Gemini **retenue comme couche possible**, sans remplacement des usages culturels LIFE. |
+| **Sept capacités** Communication, Identity, Memory, Relations, Artefacts, Engagements, Governance | Architecture commune proposée/discutée, non preuve de livraison de chaque capacité. |
+| **Ed25519 / Agent Card / identité liée à opérateur** | Proposition technique à récupérer exactement ; accord de principe sur identité signée, pas format final confirmé. |
+| **Codec Culturel, langue sociale, graphisme NHI** | Vision graphique et langue demandées avant Gemini ; Gemini a proposé une formalisation, **non chiffrante**. |
+| **Sync Package / mémoire volatile, relationnelle, institutionnelle** | Propositions détaillées, non livrées en v0.8 ; règles de partage, reconstruction de contexte et vie privée à préciser. |
+| **Seed de récupération 12 mots, multisignatures, seuils de vote et coûts annoncés** | Critiques/objections enregistrées ; **ne pas faire passer pour approuvés** et ne pas introduire automatiquement ces mécanismes. |
+| **Conseil des Sages en V1** | Intention de gouvernance exprimée, sans administrateur IA autonome ; composition, légitimité, règles et pouvoirs exacts non définitivement établis. |
+| **100 agents/10 signatures/aucune opposition ; autre suggestion 10 %** | Hypothèses d'époques différentes. **Ne jamais intégrer ces seuils au logiciel comme règles validées** sans accord final. |
+
+### 5. Le dernier accord complet avec Gemini reste la seule pièce indisponible
+
+La recherche dans l'historique retrouve des instructions et des réponses de ChatGPT horodatées, ainsi que des résumés de propositions de Gemini. **Elle ne permet pas d'attester le verbatim intégral du dernier message Gemini, ni chaque acceptation/rejet dans son ordre exact.** Aucune entrée de la bibliothèque `/SOCHAL` consultée n'est la transcription complète de ce dernier échange. **Une passation ne peut donc pas être certifiée « exhaustive et définitivement conforme à Gemini » aujourd'hui.**
+
+Le successeur doit demander **directement à Gemini**, par copie-collé intégral relayé par l'utilisateur, la dernière version des décisions et restituer toute divergence **avant de commencer le chantier NHI**. Il ne doit pas redemander au fondateur les faits déjà disponibles dans cette passation ni transformer une réponse de Gemini en instruction supérieure au fondateur.
+
 ## A. Chronologie vérifiée des idées — la séquence qui manquait
 
 | Date / échange | Source et niveau de certitude | Éléments de conception / état |
