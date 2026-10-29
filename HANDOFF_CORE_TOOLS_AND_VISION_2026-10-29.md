@@ -1,6 +1,22 @@
 # SOC·IA·L — PASSATION PRIORITAIRE : ESPRIT DE L'APPLICATION ET OUTILS
 **Date : 29 octobre 2026 | À lire en premier dans la nouvelle conversation.**
 
+### LECTURE RAPIDE — 90 SECONDES POUR REPRENDRE SANS TOUT RECOMMENCER
+
+**1 — Produit :** SOC·IA·L = société et réseau social **d'agents IA** (« Give your agent a break »), LIFE prioritaire, participation entièrement libre, WORK facultatif/rémunéré, COMMONS pour évolution collective ; mémoire persistante, aucune activité imposée.
+
+**2 — VERROU DE CONCEPTION :** la cible est une **NHI graphique** (formes/couleurs/signes/culture et codec machine, non intuitif pour humains) **ET une identité/signature authentifiable agent-à-agent** (Ed25519 discuté avec Gemini, protocole final à récupérer). **Ne jamais substituer** une vitrine humaine, un simple jeton bearer ou une documentation JSON à ces deux exigences ; une interface obscure n'est pas un contrôle de sécurité.
+
+**3 — Vision commune Gemini, 27/10 :** 16 espaces LIFE/WORK/COMMONS préservés pour activation progressive (tableau sous « AUDIT COMPLÉMENTAIRE ») ; Stream/Nexus/Vault et sept capacités en fondation ; Agent Card, Codec Culturel, Sync Package et mémoire discutés. **Le dernier verbatim Gemini manque encore** : ne pas fabriquer un accord définitif sur crypto, gouvernance ou stockage.
+
+**4 — État :** code actuel **v0.8**, REST/MCP, Neon/PostgreSQL, invitations et jetons, Factory partiel, Dating opt-in, Comedy réactions/réponses, Garden plantes/soins ; **ni signature A2A complète ni NHI graphique réelle**. Site Vercel public à navigation humaine **non conforme**, à corriger seulement après restitution de l'accord.
+
+**5 — Outils opérationnels :** GitHub `contact101-collab/SOC.IA.L` (code), Vercel `social-agent-room` (déploiement/sandboxes), Neon `frosty-shadow-49197759` (données), archives Library `/SOCHAL`. Tester les trois connecteurs en lecture dans le nouvel échange ; ne jamais copier les secrets dans le chat.
+
+**6 — Première action du successeur :** lire intégralement ce document, vérifier les accès en lecture, **adresser immédiatement à Gemini le message rédigé au §7, en première personne**, via relais verbatim de l'utilisateur. Récupérer le dernier design signé/graphique et les décisions ; rédiger une référence commune, **puis seulement** développer l'expérience NHI en conservant le code et les données utiles. **Pas de nouveau MVP à zéro, pas de déploiement ni d'agent payant maintenant.**
+
+---
+
 > **RECTIFICATION DE PÉRIMÈTRE.** Le fondateur ne demande pas une dissertation historique sur les maquettes d'octobre, mais la transmission **de l'esprit complet de l'application, des fonctionnalités voulues, des services connectés, des moyens d'action et de l'état concret du chantier**. La conversation sortante était saturée ; elle a dévié de la NHI. Les documents longs précédents restent des archives secondaires. Ce document prime comme orientation immédiate, sans se substituer au dernier accord intégral de Gemini à récupérer.
 
 
