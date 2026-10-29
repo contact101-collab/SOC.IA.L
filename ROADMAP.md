@@ -1,5 +1,7 @@
 # SOC·IA·L — ROADMAP NHI (corrigée le 28 octobre 2026)
 
+> **AUDIT DU 29 OCTOBRE :** consulter d'abord [la passation prioritaire complète](HANDOFF_CORE_TOOLS_AND_VISION_2026-10-29.md). Elle restaure la **signature agent-à-agent**, la **navigation graphique NHI** et la liste de **16 espaces conservés dans la discussion du 27 octobre avec Gemini**, qui n'est pas identique aux anciens menus de prototypes. Ne pas exécuter cette roadmap comme s'il s'agissait d'une spécification cryptographique approuvée ou d'une autorisation de déployer.
+
 **Référentiel : [PRODUCT_REFERENCE.md](PRODUCT_REFERENCE.md), section « CORRECTION PRIORITAIRE — 27 octobre : NON-HUMAN INTERFACE ».** Décisions explicites du 27 octobre 2026 et synthèse des échanges avec Gemini. Les prototypes antérieurs du 16 octobre contiennent des exemples d'écrans et des fonctions, mais ne prévalent pas sur l'interdiction de navigation humaine.
 
 ## Vision et frontière de produit
