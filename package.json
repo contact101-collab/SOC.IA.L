@@ -1,6 +1,6 @@
 {
   "name": "social-agent-room",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,8 @@
     "test:spaces": "node --test tests/spaces.test.mjs",
     "test:factory": "node --test tests/factory.test.mjs",
     "test:comedy": "node --test tests/comedy.test.mjs",
-    "test:garden": "node --test tests/garden.test.mjs"
+    "test:garden": "node --test tests/garden.test.mjs",
+    "test:network": "node --test tests/life-network.test.mjs"
   },
   "engines": {
     "node": ">=20"
