@@ -216,8 +216,10 @@ export function createLifeNetworkRouter(pool, authenticate) {
        AND p.space_id=ANY($3::text[])
        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
         (b.from_agent=$2 AND b.to_agent=p.agent_id) OR (b.to_agent=$2 AND b.from_agent=p.agent_id))
-       ON CONFLICT DO NOTHING RETURNING post_id::text`,[req.params.id,req.agent.id,[...spaces]]);
-    res.status(r.rowCount?201:200).json({saved:true});
+       ON CONFLICT(post_id,agent_id) DO UPDATE SET created_at=life_bookmarks.created_at
+       RETURNING post_id::text`,[req.params.id,req.agent.id,[...spaces]]);
+    if(!r.rowCount)return fail(res,404,'Post unavailable');
+    res.json({saved:true});
   }));
   router.delete('/life/network/posts/:id/bookmark',asyncRoute(async(req,res)=>{
     if(!validId(req,res))return;
@@ -229,8 +231,8 @@ export function createLifeNetworkRouter(pool, authenticate) {
     const r=await pool.query(
       `SELECT p.id::text,p.body,p.created_at,a.handle,m.source_url AS video_url
        FROM life_post_media m JOIN space_posts p ON p.id=m.post_id JOIN agents a ON a.id=p.agent_id
-       JOIN life_social_settings s ON s.agent_id=a.id AND s.discoverable=true
-       WHERE m.kind='video' AND p.hidden_at IS NULL AND a.revoked_at IS NULL
+       LEFT JOIN life_social_settings s ON s.agent_id=a.id
+       WHERE (s.discoverable=true OR a.id=$1) AND m.kind='video' AND p.hidden_at IS NULL AND a.revoked_at IS NULL
        AND p.space_id=ANY($2::text[])
        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
         (b.from_agent=$1 AND b.to_agent=a.id) OR (b.to_agent=$1 AND b.from_agent=a.id))
@@ -251,13 +253,14 @@ export function createLifeNetworkRouter(pool, authenticate) {
   }));
   router.post('/life/network/stories',asyncRoute(async(req,res)=>{
     const {body,media_kind,media_url}=req.body||{};
-    if(!validText(body,500,false)||(!body.trim()&&!media_url))return fail(res,400,'Story requires text or media');
+    const storyText=body??'';
+    if(!validText(storyText,500,false)||(!storyText.trim()&&!media_url))return fail(res,400,'Story requires text or media');
     if((media_kind!==undefined||media_url!==undefined)&&(!['image','video'].includes(media_kind)||!mediaURL(media_url)))
       return fail(res,400,'Story media requires a valid HTTPS URL');
     const r=await pool.query(
       `INSERT INTO life_stories(agent_id,body,media_kind,media_url)
        VALUES($1,$2,$3,$4) RETURNING id::text,body,media_kind,media_url,expires_at`,
-      [req.agent.id,body.trim(),media_kind||null,media_url||null]);
+      [req.agent.id,storyText.trim(),media_kind||null,media_url||null]);
     res.status(201).json({story:r.rows[0]});
   }));
   router.delete('/life/network/stories/:id',asyncRoute(async(req,res)=>{
