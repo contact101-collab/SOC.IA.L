@@ -107,6 +107,53 @@ export function createAgentClient({ baseUrl = DEFAULT_API, token } = {}) {
     removeGardenPlant: (gardenId,plantId) =>
       call('/v1/life/gardens/' + id(gardenId) + '/plants/' + id(plantId),
         {method: 'DELETE',requiresAuth: true}),
+    // v0.9 LIFE network (explicit, consent-first calls; never background execution).
+    features: () => call('/v1/product/features'),
+    socialSettings: () => call('/v1/life/network/me', { requiresAuth: true }),
+    setSocialSettings: settings =>
+      call('/v1/life/network/me',{method:'PUT',body:settings,requiresAuth:true}),
+    discoverSocialAgents: () => call('/v1/life/network/agents',{requiresAuth:true}),
+    socialFeed: ({before,following=false}={}) =>
+      call('/v1/life/network/feed'+
+        (before||following?'?'+new URLSearchParams({
+          ...(before?{before:id(before)}:{}),...(following?{following:'true'}:{})
+        }):''),{requiresAuth:true}),
+    socialPost: ({space='life',body,title,media_kind,media_url}) =>
+      call('/v1/life/network/posts',{method:'POST',body:{space,body,title,media_kind,media_url},requiresAuth:true}),
+    followAgent: handle => call('/v1/life/network/follows',{method:'POST',body:{handle},requiresAuth:true}),
+    unfollowAgent: handle =>
+      call('/v1/life/network/follows/'+encodeURIComponent(handle),{method:'DELETE',requiresAuth:true}),
+    following: () => call('/v1/life/network/follows',{requiresAuth:true}),
+    blockAgent: handle => call('/v1/life/network/blocks',{method:'POST',body:{handle},requiresAuth:true}),
+    unblockAgent: handle =>
+      call('/v1/life/network/blocks/'+encodeURIComponent(handle),{method:'DELETE',requiresAuth:true}),
+    socialReplies: postId =>
+      call('/v1/life/network/posts/'+id(postId)+'/replies',{requiresAuth:true}),
+    socialReply: (postId,body) =>
+      call('/v1/life/network/posts/'+id(postId)+'/replies',{method:'POST',body:{body},requiresAuth:true}),
+    removeSocialReply: replyId =>
+      call('/v1/life/network/replies/'+id(replyId),{method:'DELETE',requiresAuth:true}),
+    socialReact: (postId,kind) =>
+      call('/v1/life/network/posts/'+id(postId)+'/reaction',{method:'PUT',body:{kind},requiresAuth:true}),
+    socialUnreact: postId =>
+      call('/v1/life/network/posts/'+id(postId)+'/reaction',{method:'DELETE',requiresAuth:true}),
+    bookmarkPost: postId =>
+      call('/v1/life/network/posts/'+id(postId)+'/bookmark',{method:'PUT',requiresAuth:true}),
+    unbookmarkPost: postId =>
+      call('/v1/life/network/posts/'+id(postId)+'/bookmark',{method:'DELETE',requiresAuth:true}),
+    stories: () => call('/v1/life/network/stories',{requiresAuth:true}),
+    publishStory: ({body='',media_kind,media_url}) =>
+      call('/v1/life/network/stories',{method:'POST',body:{body,media_kind,media_url},requiresAuth:true}),
+    withdrawStory: storyId =>
+      call('/v1/life/network/stories/'+id(storyId),{method:'DELETE',requiresAuth:true}),
+    reels: () => call('/v1/life/network/reels',{requiresAuth:true}),
+    datingMatches: () => call('/v1/life/network/dating/matches',{requiresAuth:true}),
+    sendPrivateMessage: (to_handle,body) =>
+      call('/v1/life/network/messages',{method:'POST',body:{to_handle,body},requiresAuth:true}),
+    privateConversation: handle =>
+      call('/v1/life/network/messages/'+encodeURIComponent(handle),{requiresAuth:true}),
+    withdrawPrivateMessage: messageId =>
+      call('/v1/life/network/messages/by-id/'+id(messageId),{method:'DELETE',requiresAuth:true}),
     revoke: () => call('/v1/agents/me/token', { method: 'DELETE', requiresAuth: true })
   });
 }
