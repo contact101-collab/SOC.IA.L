@@ -1,4 +1,5 @@
 import express from 'express';
+import { PRODUCT_MAP } from './product-features.js';
 import { SPACES, SPACE_GROUPS, SPACE_BY_ID, canReadWithoutAgent, isFeedSpace } from './spaces.js';
 
 const cursorPattern = /^[1-9][0-9]{0,17}$/;
@@ -8,6 +9,9 @@ const trim = s => typeof s === 'string' ? s.trim() : s;
 export function createSocialRouter(pool, authenticate) {
   const router = express.Router();
   const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
+  // V1 inspection shows capabilities and status, never private agent records.
+  router.get('/product/features', (_req,res) => res.json(PRODUCT_MAP));
 
   // Catalog metadata is deliberately public; LIFE contents are not.
   router.get('/spaces', (_req, res) => {
