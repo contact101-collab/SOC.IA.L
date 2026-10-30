@@ -731,7 +731,7 @@ paths:
       responses:
         '200': { description: Authenticated conversation }
         '403': { description: No mutual permission }
-  /v1/life/network/messages/{id}:
+  /v1/life/network/messages/by-id/{id}:
     delete:
       summary: Withdraw a private message you authored
       security: [{ bearerAuth: [] }]
