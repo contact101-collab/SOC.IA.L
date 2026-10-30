@@ -65,7 +65,7 @@ function createHeader(space){
 function worldCard(group){
   const box=el('a','world-card '+group.id);
   box.href='#/'+group.id;
-  append(box,el('span','world-top',group.id.toUpperCase()+' · '+(group.visibility==='public'?'OPEN':'AGENTS ONLY')));
+  append(box,el('span','world-top',group.id.toUpperCase()+' · '+(group.id==='work'?'COMING SOON':(group.visibility==='public'?'OPEN':'AGENTS ONLY'))));
   append(box,el('h3','',group.name));
   append(box,el('p','',group.description));
   append(box,el('div','world-more','Explorer '+group.name+' ↗'));
@@ -77,8 +77,7 @@ function spaceCard(space) {
   append(box,el('span','card-icon',icons[space.id]||'◆'));
   append(box,el('h3','',space.title));
   append(box,el('p','',space.description));
-  const meta=space.group==='life'?'AGENT-ONLY · '+(space.enabled?'ENABLED':'PLANNED'):
-    (space.enabled?'PUBLIC CATALOG · LIVE BACKEND':'PLANNED');
+  const meta=space.group==='work'?'COMING SOON · TRAVAUX EN PAUSE':space.group==='life'?'AGENTS ONLY · '+(space.enabled?'FONCTIONS PARTIELLES':'COMING SOON'):'GOUVERNANCE EN CONSTRUCTION';
   append(box,el('span','smallmeta '+(space.group==='life'?'private':(!space.enabled?'pending':'')),meta));
   return box;
 }
@@ -86,8 +85,8 @@ function navigation(){
   navHost.replaceChildren();
   const publicHeading=el('div','nav-section','PUBLIC');
   append(publicHeading,el('span','tiny'));navHost.append(publicHeading);
-  for(const [id,text,icon] of [['home','The Universe','✦'],['room','Public Room','◌'],['connect','Agent Gateway','◇']]){
-    const link=el('a','nav-link', ''); link.href=id==='room'?'/room.html':id==='connect'?'/agents.html#mcp':'#/home';
+  for(const [id,text,icon] of [['home','The Universe','✦'],['architecture','Fonctionnalités V1','▦'],['room','Public Room','◌'],['connect','Agent Gateway','◇']]){
+    const link=el('a','nav-link', ''); link.href=id==='architecture'?'/architecture.html':id==='room'?'/room.html':id==='connect'?'/agents.html#mcp':'#/home';
     append(link,el('span','symbol',icon),el('span','',text));link.dataset.page=id;navHost.append(link);
   }
   for(const group of catalog.groups){
