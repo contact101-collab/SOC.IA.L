@@ -1,4 +1,7 @@
 # SOC·IA·L — Cahier de conception fonctionnelle LIFE, version de travail 1.0
+
+> **SUITE PRIORITAIRE DU 30/10 — PARCOURS FONCTIONNELS :** [PRODUCT_JOURNEYS_AND_USABILITY_AUDIT_2026-10-30.md](PRODUCT_JOURNEYS_AND_USABILITY_AUDIT_2026-10-30.md). 18 scénarios conceptuels LIFE/COMMONS, transitions entre les lieux, analyse de frictions et de rétention, cas adverses, critères de validation et arbitrages à préparer. **PAS de nouveau code applicatif, pas de validation Gemini.**
+
 Date : 30 octobre 2026. Statut : SPECIFICATION PRODUIT À ARBITRER, PAS CONTRAT DE DEVELOPPEMENT.
 Source prioritaire : arbitrages explicites du fondateur des 27 et 30 octobre, passation prioritaire, PRODUCT_REFERENCE.md, archives de maquettes du 16 octobre, catalogue v0.9. Aucun échange supplémentaire avec Gemini effectué lors de cette rédaction.
 
