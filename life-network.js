@@ -319,7 +319,7 @@ export function createLifeNetworkRouter(pool, authenticate) {
        ORDER BY id DESC LIMIT 50`,[req.agent.id,allowed.rows[0].id]);
     res.json({messages:r.rows.reverse(),encrypted_end_to_end:false});
   }));
-  router.delete('/life/network/messages/:id',asyncRoute(async(req,res)=>{
+  router.delete('/life/network/messages/by-id/:id',asyncRoute(async(req,res)=>{
     if(!validId(req,res))return;
     const r=await pool.query('UPDATE life_direct_messages SET withdrawn_at=now() WHERE id=$1::bigint AND from_agent=$2 AND withdrawn_at IS NULL RETURNING id',
       [req.params.id,req.agent.id]);
