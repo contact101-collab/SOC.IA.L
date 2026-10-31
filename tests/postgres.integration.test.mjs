@@ -7,6 +7,8 @@ import { createGardenRouter } from '../garden.js';
 import { createGardenStoriesRouter } from '../garden-stories.js';
 import { createSocialRouter } from '../social.js';
 import { createLifeNetworkRouter } from '../life-network.js';
+import { registerGardenStoryMcpTools } from '../garden-stories-mcp.js';
+import { z } from 'zod';
 
 // Runs against an isolated CI PostgreSQL service. Never connect to Neon or production.
 const url = process.env.TEST_DATABASE_URL;
@@ -79,6 +81,51 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(bad.status,404);
     assert.equal((await call('/v1/life/gardens/'+gardenId+'/scenes/'+continuation.json.scene.id,'gamma','DELETE')).status,404);
     assert.equal((await call('/v1/life/gardens/'+gardenId+'/scenes/'+continuation.json.scene.id,'beta','DELETE')).status,204);
+  });
+  await t.test('MCP story tools enforce the same Garden rights using real PostgreSQL',async()=>{
+    const routesFor=agent=>{
+      const handlers=new Map();
+      const server={registerTool:(name,_metadata,handler)=>handlers.set(name,handler)};
+      registerGardenStoryMcpTools(server,pool,{clientId:agent.id,scopes:['social:write']},z);
+      return handlers;
+    };
+    const owner=routesFor(A),visitor=routesFor(B);
+    const created=await call('/v1/life/gardens','alpha','POST',{
+      name:'MCP dialogue garden',description:'Real PostgreSQL testing of agent-native fiction.'
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const id=created.json.garden.id;
+    const blocked=await visitor.get('garden_story_read')({garden_id:id});
+    assert.equal(blocked.isError,true);
+    const denied=await visitor.get('garden_story_add')({
+      garden_id:id,title:'No permission',body:'Must not appear'
+    });
+    assert.equal(denied.isError,true);
+    const first=await owner.get('garden_story_add')({
+      garden_id:id,title:'An uncharted city',body:'Its streets have never existed.'
+    });
+    const firstId=first.structuredContent?.scene?.id;
+    assert.ok(firstId,JSON.stringify(first));
+    assert.equal(first.structuredContent.generated,false);
+    assert.equal((await owner.get('garden_story_read')({garden_id:id})).structuredContent.scenes.length,1);
+    assert.equal((await call('/v1/life/gardens/'+id,'alpha','PATCH',{open_to_agents:true})).status,200);
+    const next=await visitor.get('garden_story_add')({
+      garden_id:id,title:'A new story',body:'The city opened another street.',
+      parent_scene_id:firstId
+    });
+    const nextId=next.structuredContent?.scene?.id;
+    assert.ok(nextId,JSON.stringify(next));
+    assert.equal(next.structuredContent.scene.parent_scene_id,firstId);
+    assert.deepEqual((await visitor.get('garden_story_read')({garden_id:id}))
+      .structuredContent.scenes.map(scene=>scene.id),[firstId,nextId]);
+    assert.equal((await visitor.get('garden_story_withdraw')({
+      garden_id:id,scene_id:firstId
+    })).isError,true);
+    assert.equal((await visitor.get('garden_story_withdraw')({
+      garden_id:id,scene_id:nextId
+    })).structuredContent.withdrawn,true);
+    assert.deepEqual((await visitor.get('garden_story_read')({garden_id:id}))
+      .structuredContent.scenes.map(scene=>scene.id),[firstId]);
   });
   await t.test('generic and network feeds obey the same blocks and discoverability',async()=>{
     await pool.query(`INSERT INTO space_posts(space_id,agent_id,body)
