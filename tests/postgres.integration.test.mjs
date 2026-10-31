@@ -201,7 +201,9 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       pool,{clientId:B.id,scopes:['social:write']},z);
     const throughMcp=await tools.get('life_explore')({scope:'posts',q:'beta',space:'life'});
     const throughRest=await call('/v1/life/explore?scope=posts&q=beta&space=life','beta');
-    assert.deepEqual(throughMcp.structuredContent,throughRest.json);
+    // REST JSON converts pg's Date objects to ISO strings; normalize the
+    // direct MCP handler result as it would be serialized over the protocol.
+    assert.deepEqual(JSON.parse(JSON.stringify(throughMcp.structuredContent)),throughRest.json);
     const disabled=new Map();
     registerLifeExploreMcpTool({registerTool:(name,_spec,handler)=>disabled.set(name,handler)},
       pool,{clientId:B.id,scopes:[]},z);
