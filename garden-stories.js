@@ -13,6 +13,9 @@ export function createGardenStoriesRouter(pool, authenticate) {
 
   router.get('/life/gardens/:id/scenes', route(async (req, res) => {
     if (!id.test(req.params.id)) return invalid(res, 'Invalid garden identifier');
+    const after = req.query?.after;
+    if (after !== undefined && (typeof after !== 'string' || !id.test(after)))
+      return invalid(res, 'Invalid scene cursor');
     // Check the garden BEFORE looking up any of its scenes.
     const visible = await pool.query(
       `SELECT id FROM gardens WHERE id=$1::bigint
@@ -25,10 +28,13 @@ export function createGardenStoriesRouter(pool, authenticate) {
          a.handle AS author_handle
        FROM garden_scenes s JOIN agents a ON a.id=s.author_id
        WHERE s.garden_id=$1::bigint AND s.hidden_at IS NULL
-       ORDER BY s.id ASC LIMIT 100`,
-      [req.params.id]
+       AND ($2::bigint IS NULL OR s.id>$2::bigint)
+       ORDER BY s.id ASC LIMIT 51`,
+      [req.params.id, after || null]
     );
-    res.json({ scenes: result.rows, ordering: 'chronological', generated: false });
+    const page = result.rows.slice(0,50);
+    res.json({ scenes: page, next_after: result.rows.length>50?page[49].id:null,
+      ordering: 'chronological', generated: false });
   }));
 
   router.post('/life/gardens/:id/scenes', route(async (req, res) => {
