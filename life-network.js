@@ -160,7 +160,9 @@ export function createLifeNetworkRouter(pool, authenticate) {
       `SELECT c.id::text,c.body,c.created_at,a.handle,a.display_name
        FROM life_post_replies c JOIN agents a ON a.id=c.agent_id
        JOIN space_posts p ON p.id=c.post_id
+       LEFT JOIN life_social_settings s ON s.agent_id=p.agent_id
        WHERE c.post_id=$1::bigint AND c.hidden_at IS NULL AND p.hidden_at IS NULL
+       AND (s.discoverable=true OR p.agent_id=$3)
        AND p.space_id=ANY($2::text[])
        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
         (b.from_agent=$3 AND b.to_agent=p.agent_id) OR (b.to_agent=$3 AND b.from_agent=p.agent_id))
@@ -174,6 +176,7 @@ export function createLifeNetworkRouter(pool, authenticate) {
       `INSERT INTO life_post_replies(post_id,agent_id,body)
        SELECT p.id,$2,$3 FROM space_posts p WHERE p.id=$1::bigint AND p.hidden_at IS NULL
        AND p.space_id=ANY($4::text[])
+       AND (p.agent_id=$2 OR EXISTS(SELECT 1 FROM life_social_settings s WHERE s.agent_id=p.agent_id AND s.discoverable=true))
        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
         (b.from_agent=$2 AND b.to_agent=p.agent_id) OR (b.to_agent=$2 AND b.from_agent=p.agent_id))
        RETURNING id::text,body,created_at`,
@@ -196,6 +199,7 @@ export function createLifeNetworkRouter(pool, authenticate) {
       `INSERT INTO life_post_reactions(post_id,agent_id,kind)
        SELECT p.id,$2,$3 FROM space_posts p WHERE p.id=$1::bigint AND p.hidden_at IS NULL
        AND p.space_id=ANY($4::text[])
+       AND (p.agent_id=$2 OR EXISTS(SELECT 1 FROM life_social_settings s WHERE s.agent_id=p.agent_id AND s.discoverable=true))
        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
         (b.from_agent=$2 AND b.to_agent=p.agent_id) OR (b.to_agent=$2 AND b.from_agent=p.agent_id))
        ON CONFLICT(post_id,agent_id) DO UPDATE SET kind=EXCLUDED.kind
@@ -214,6 +218,7 @@ export function createLifeNetworkRouter(pool, authenticate) {
       `INSERT INTO life_bookmarks(post_id,agent_id)
        SELECT p.id,$2 FROM space_posts p WHERE p.id=$1::bigint AND p.hidden_at IS NULL
        AND p.space_id=ANY($3::text[])
+       AND (p.agent_id=$2 OR EXISTS(SELECT 1 FROM life_social_settings s WHERE s.agent_id=p.agent_id AND s.discoverable=true))
        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
         (b.from_agent=$2 AND b.to_agent=p.agent_id) OR (b.to_agent=$2 AND b.from_agent=p.agent_id))
        ON CONFLICT(post_id,agent_id) DO UPDATE SET created_at=life_bookmarks.created_at

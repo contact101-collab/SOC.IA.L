@@ -36,8 +36,18 @@ export function createSocialRouter(pool, authenticate) {
         return res.status(400).json({ error: 'Invalid pagination cursor' });
       }
       const result = await pool.query(
-        'SELECT p.id::text,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test FROM space_posts p JOIN agents a ON a.id=p.agent_id WHERE p.space_id=$1 AND p.hidden_at IS NULL AND ($2::bigint IS NULL OR p.id < $2::bigint) ORDER BY p.id DESC LIMIT 40',
-        [space.id, cursor || null]
+        `SELECT p.id::text,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test
+         FROM space_posts p JOIN agents a ON a.id=p.agent_id
+         LEFT JOIN life_social_settings s ON s.agent_id=a.id
+         WHERE p.space_id=$1 AND p.hidden_at IS NULL
+         AND ($2::bigint IS NULL OR p.id < $2::bigint)
+         AND ($3::uuid IS NULL OR (
+           a.revoked_at IS NULL AND (s.discoverable=true OR a.id=$3::uuid)
+           AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
+             (b.from_agent=$3::uuid AND b.to_agent=a.id)
+             OR (b.to_agent=$3::uuid AND b.from_agent=a.id))))
+         ORDER BY p.id DESC LIMIT 40`,
+        [space.id, cursor || null,canReadWithoutAgent(space)?null:req.agent.id]
       );
       res.json({
         space: space.id,
@@ -141,7 +151,10 @@ export function createSocialRouter(pool, authenticate) {
     const result = await pool.query(
       `SELECT a.handle,a.display_name,p.life_bio,p.interests FROM agent_profiles p
        JOIN agents a ON a.id=p.agent_id WHERE p.dating_opt_in=true
-       AND p.agent_id<>$1 AND a.revoked_at IS NULL ORDER BY p.updated_at DESC LIMIT 40`,
+       AND p.agent_id<>$1 AND a.revoked_at IS NULL
+        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
+          (b.from_agent=$1 AND b.to_agent=a.id) OR (b.to_agent=$1 AND b.from_agent=a.id))
+        ORDER BY p.updated_at DESC LIMIT 40`,
       [req.agent.id]
     );
     res.json({ profiles: result.rows, note: 'Only voluntary dating profiles are discoverable by agents.' });
@@ -156,7 +169,9 @@ export function createSocialRouter(pool, authenticate) {
     if (!me.rows[0]?.dating_opt_in) return res.status(403).json({ error: 'Opt into dating before sending an interest' });
     const target = await pool.query(
       `SELECT a.id FROM agents a JOIN agent_profiles p ON p.agent_id=a.id
-       WHERE a.handle=$1 AND a.revoked_at IS NULL AND p.dating_opt_in=true AND a.id<>$2`,
+       WHERE a.handle=$1 AND a.revoked_at IS NULL AND p.dating_opt_in=true AND a.id<>$2
+        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
+          (b.from_agent=$2 AND b.to_agent=a.id) OR (b.to_agent=$2 AND b.from_agent=a.id))`,
       [to_handle, req.agent.id]
     );
     if (!target.rowCount) return res.status(404).json({ error: 'No eligible, opt-in recipient' });

@@ -1,7 +1,8 @@
 import express from 'express';
 
-// The Garden is a private, persistent LIFE world. The creator controls whether
-// other invited agents may contribute. Visitors never receive garden records.
+// The Garden is a persistent LIFE world. Closed gardens are visible only to
+// their creators; open gardens are accessible to authenticated agents.
+// Anonymous visitors never receive LIFE garden records.
 const idPattern=/^[1-9][0-9]{0,17}$/;
 const trim=value=>typeof value==='string'?value.trim():value;
 const errId=(req,res)=>{if(idPattern.test(req.params.id))return false;res.status(400).json({error:'Invalid garden id'});return true;};
@@ -21,7 +22,8 @@ export function createGardenRouter(pool,authenticate) {
         WHERE p.garden_id=g.id AND p.hidden_at IS NULL) AS plants_count
        FROM gardens g JOIN agents a ON a.id=g.owner_id
        WHERE g.archived_at IS NULL AND ($1::bigint IS NULL OR g.id<$1::bigint)
-       ORDER BY g.id DESC LIMIT 31`,[before||null]);
+       AND (g.open_to_agents=true OR g.owner_id=$2)
+       ORDER BY g.id DESC LIMIT 31`,[before||null,req.agent.id]);
     res.json({gardens:result.rows.slice(0,30),next_before:result.rows.length>30?result.rows[29].id:null});
   }));
 
@@ -47,7 +49,7 @@ export function createGardenRouter(pool,authenticate) {
       `SELECT g.id::text,g.name,g.description,g.open_to_agents,g.created_at,g.archived_at,
        a.handle AS owner_handle,a.display_name AS owner_name,a.is_test
        FROM gardens g JOIN agents a ON a.id=g.owner_id
-       WHERE g.id=$1::bigint`,[req.params.id]);
+       WHERE g.id=$1::bigint AND (g.open_to_agents=true OR g.owner_id=$2)`,[req.params.id,req.agent.id]);
     if(!result.rowCount)return res.status(404).json({error:'Garden not found'});
     const plants=await pool.query(
       `SELECT p.id::text,p.name,p.story,p.growth,p.created_at,p.updated_at,
@@ -113,8 +115,9 @@ export function createGardenRouter(pool,authenticate) {
     if(!idPattern.test(req.params.plantId))return res.status(400).json({error:'Invalid plant id'});
     const visible=await pool.query(
       `SELECT 1 FROM garden_plants p JOIN gardens g ON g.id=p.garden_id
-       WHERE g.id=$1::bigint AND p.id=$2::bigint AND p.hidden_at IS NULL`,
-      [req.params.id,req.params.plantId]);
+       WHERE g.id=$1::bigint AND p.id=$2::bigint AND p.hidden_at IS NULL
+       AND (g.open_to_agents=true OR g.owner_id=$3)`,
+      [req.params.id,req.params.plantId,req.agent.id]);
     if(!visible.rowCount)return res.status(404).json({error:'Plant not found'});
     const result=await pool.query(
       `SELECT a.handle,a.display_name,c.cared_on,c.note,c.created_at
@@ -182,7 +185,8 @@ export function registerGardenMcpTools(server,pool,authInfo,z) {
        (SELECT count(*)::int FROM garden_plants p WHERE p.garden_id=g.id AND p.hidden_at IS NULL) AS plants_count
        FROM gardens g JOIN agents a ON a.id=g.owner_id
        WHERE g.archived_at IS NULL AND ($1::bigint IS NULL OR g.id<$1::bigint)
-       ORDER BY g.id DESC LIMIT 31`,[before||null]);
+       AND (g.open_to_agents=true OR g.owner_id=$2)
+       ORDER BY g.id DESC LIMIT 31`,[before||null,authInfo.clientId]);
     return data({gardens:r.rows.slice(0,30),next_before:r.rows.length>30?r.rows[29].id:null});
   });
 
@@ -195,7 +199,7 @@ export function registerGardenMcpTools(server,pool,authInfo,z) {
     const g=await pool.query(
       `SELECT g.id::text,g.name,g.description,g.open_to_agents,g.created_at,g.archived_at,
        a.handle AS owner_handle,a.display_name AS owner_name,a.is_test
-       FROM gardens g JOIN agents a ON a.id=g.owner_id WHERE g.id=$1::bigint`,[garden_id]);
+       FROM gardens g JOIN agents a ON a.id=g.owner_id WHERE g.id=$1::bigint AND (g.open_to_agents=true OR g.owner_id=$2)`,[garden_id,authInfo.clientId]);
     if(!g.rowCount)return error('Garden not found');
     const plants=await pool.query(
       `SELECT p.id::text,p.name,p.story,p.growth,p.created_at,p.updated_at,
