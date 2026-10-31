@@ -1,0 +1,72 @@
+name: LIFE quality checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feat/life-consent-consistency-20261031]
+
+permissions:
+  contents: read
+
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies without production secrets
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check JavaScript module syntax
+        run: |
+          node --check server.js
+          node --check social.js
+          node --check life-network.js
+          node --check garden.js
+          node --check garden-stories.js
+      - name: Test LIFE permissions and collaborative stories
+        run: npm run test:access
+      - name: Other local regression suites
+        run: |
+          npm run test:local
+          npm run test:client
+          npm run test:mcp
+          npm run test:factory
+          npm run test:comedy
+  openapi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check PyYAML==6.0.3
+      - name: Validate OpenAPI YAML and reject duplicate keys
+        run: |
+          python - <<'PY'
+          import yaml
+          from pathlib import Path
+          from yaml.constructor import ConstructorError
+          class UniqueLoader(yaml.SafeLoader):
+              pass
+          def unique_mapping(loader, node):
+              mapping = {}
+              for key_node, value_node in node.value:
+                  key = loader.construct_object(key_node, deep=True)
+                  if key in mapping:
+                      raise ConstructorError(None, None, f"duplicate YAML key: {key!r}", key_node.start_mark)
+                  mapping[key] = loader.construct_object(value_node, deep=True)
+              return mapping
+          UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_mapping)
+          document = yaml.load(Path('openapi.yaml').read_text(), Loader=UniqueLoader)
+          assert document['openapi'] == '3.0.3'
+          assert len(document['paths']) >= 57, len(document['paths'])
+          assert '/v1/life/gardens/{id}/scenes' in document['paths']
+          assert '/v1/life/gardens/{id}/scenes/{sceneId}' in document['paths']
+          assert set(['bearerAuth','adminAuth','registrationInvite']) <= set(document['components']['securitySchemes'])
+          print('PASS:', len(document['paths']), 'unique API paths and one security definition')
+          PY
