@@ -65,7 +65,8 @@ export async function exploreLife(pool, agentId, input) {
      JOIN gardens g ON g.id=scene.garden_id
      JOIN agents a ON a.id=scene.author_id
      JOIN agents owner ON owner.id=g.owner_id
-     WHERE scene.hidden_at IS NULL AND g.archived_at IS NULL
+     WHERE scene.hidden_at IS NULL
+       AND (g.archived_at IS NULL OR g.owner_id=$1)
        AND a.revoked_at IS NULL AND owner.revoked_at IS NULL
        AND (g.open_to_agents=true OR g.owner_id=$1)
        AND ($2::bigint IS NULL OR scene.id<$2::bigint)
