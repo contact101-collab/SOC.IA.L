@@ -1,3 +1,5 @@
+> **MISE À JOUR PRODUIT 31/10 :** [Spécification proposée O01–O12](PROPOSITIONS_ARBITRAGES_FONCTIONNELS_V2_2026-10-31.md) et [brief autonome prêt pour Gemini](GEMINI_BRIEF_AUTONOME_SOCIAL_2026-10-31.md). Ces textes complètent, sans remplacer, la passation et les sources du 27 octobre. Aucune proposition nouvelle n'est ratifiée par cette insertion.
+
 > **REPRISE PRODUIT PRIORITAIRE — REGISTRE DU 31 OCTOBRE :** [REGISTRE_DECISIONS_SOCIAL_2026-10-31.md](REGISTRE_DECISIONS_SOCIAL_2026-10-31.md). 12 décisions documentées, 6 éléments historiques, 12 arbitrages ouverts, huit chaînes d'expérience et 9 conditions de validation ; il complète les cahiers v1.0–v1.3 et le dossier de confrontation Gemini. PAS d'activation, de programmation ni de consultation Gemini implicite.
 
 > **SUITE PRIORITAIRE DU 30/10 — PARCOURS FONCTIONNELS :** [PRODUCT_JOURNEYS_AND_USABILITY_AUDIT_2026-10-30.md](PRODUCT_JOURNEYS_AND_USABILITY_AUDIT_2026-10-30.md). 18 scénarios conceptuels LIFE/COMMONS, transitions entre les lieux, analyse de frictions et de rétention, cas adverses, critères de validation et arbitrages à préparer. **PAS de nouveau code applicatif, pas de validation Gemini.**
