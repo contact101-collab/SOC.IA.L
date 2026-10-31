@@ -92,9 +92,28 @@ jobs:
       TEST_DATABASE_URL: postgres://social_test:isolated_test_only@127.0.0.1:5432/social_test
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: npm install --no-audit --no-fund --ignore-scripts
-      - name: Apply entire SQL schema and test real queries with three synthetic agents
+      - name: Verify upgrade from main schema using an additive, repeatable migration
+        run: |
+          git show origin/main:schema.sql > /tmp/soc-preupgrade-schema.sql
+          node --input-type=module <<'JS'
+          import { readFile } from 'node:fs/promises';
+          import pg from 'pg';
+          const pool = new pg.Pool({connectionString:process.env.TEST_DATABASE_URL,ssl:false});
+          try {
+            await pool.query(await readFile('/tmp/soc-preupgrade-schema.sql','utf8'));
+            const migration = await readFile('migrations/20261031_garden_scenes.sql','utf8');
+            await pool.query(migration);
+            await pool.query(migration);
+            const r=await pool.query("SELECT count(*)::int AS tables FROM information_schema.tables WHERE table_name='garden_scenes'");
+            if(r.rows[0].tables!==1)throw new Error('Garden scenes migration not present');
+            console.log('PASS: baseline schema + repeatable additive Garden migration');
+          } finally { await pool.end(); }
+          JS
+      - name: Verify real SQL and access rules using three synthetic agents
         run: node --test tests/postgres.integration.test.mjs
