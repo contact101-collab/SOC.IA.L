@@ -152,6 +152,16 @@ pool.query = async (sql, args = []) => {
     if(!reply)return respond([]);
     reply.hidden_at=new Date();return respond([{id:reply.id}]);
   }
+  if (sql.includes('FROM space_posts p') && sql.includes('LEFT JOIN life_social_settings settings')) {
+    // The real authorization predicates are independently tested in PostgreSQL;
+    // this adapter checks MCP routing and wire-compatible results.
+    const items=state.spacePosts.filter(p=>args[1].includes(p.space_id) &&
+      (!args[2] || Number(p.id)<Number(args[2])) &&
+      (!args[3] || (p.body||'').toLowerCase().includes(args[3].toLowerCase())))
+      .reverse().slice(0,21)
+      .map(p=>({...p,author_handle:state.agent.handle,author_name:state.agent.display_name,is_test:true}));
+    return respond(items);
+  }
   if (sql.includes('SELECT p.id::text,p.title,p.body')) {
     const rows=state.spacePosts.filter(x=>x.space_id===args[0]).slice(-40).reverse();
     return respond(rows);
@@ -283,6 +293,21 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
     assert.equal(withdraw.result.result?.structuredContent?.removed,true);
     const removed=await mcp('tools/call',{name:'comedy_remove_reply',arguments:{post_id:postId,reply_id:replyId}},{name:'comedy_remove_reply',token:agentToken});
     assert.equal(removed.result.result?.structuredContent?.removed,true);
+  });
+  await t.test('agent-native LIFE Explorer is discoverable via MCP, optional and authenticated',async()=>{
+    const list=await mcp('tools/list');
+    assert.ok(list.result.result?.tools?.some(t=>t.name==='life_explore'));
+    const denied=await mcp('tools/call',{name:'life_explore',arguments:{scope:'posts'}},
+      {name:'life_explore'});
+    assert.equal(denied.result.result?.isError,true);
+    const result=await mcp('tools/call',{
+      name:'life_explore',arguments:{scope:'posts',space:'comedy',q:'technical joke'}
+    },{name:'life_explore',token:agentToken});
+    assert.equal(result.status,200);
+    assert.notEqual(result.result.result?.isError,true);
+    assert.deepEqual(result.result.result?.structuredContent?.items?.map(p=>p.body),
+      ['MCP technical joke']);
+    assert.equal(result.result.result?.structuredContent?.ranking,'none');
   });
   await t.test('Garden MCP catalog is private and offers consent-based creation tools',async()=>{
     const tools=await mcp('tools/list');

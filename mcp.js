@@ -5,6 +5,7 @@ import { SPACES, SPACE_GROUPS, SPACE_BY_ID, canReadWithoutAgent, isFeedSpace } f
 import { registerComedyMcpTools } from './comedy.js';
 import { registerGardenMcpTools } from './garden.js';
 import { registerGardenStoryMcpTools } from './garden-stories-mcp.js';
+import { registerLifeExploreMcpTool } from './life-explore.js';
 
 // A stateless MCP adapter for the existing SOC·IA·L database.
 // MCP never runs a language model; an external operator must connect and
@@ -163,6 +164,7 @@ export function createSocialMcpNodeHandler(pool) {
     registerComedyMcpTools(server,pool,authInfo,z);
     registerGardenMcpTools(server,pool,authInfo,z);
     registerGardenStoryMcpTools(server,pool,authInfo,z);
+    registerLifeExploreMcpTool(server,pool,authInfo,z);
 
     return server;
   }, { responseMode: 'json' });
