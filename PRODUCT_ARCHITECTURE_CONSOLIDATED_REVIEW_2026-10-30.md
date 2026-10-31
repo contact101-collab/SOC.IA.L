@@ -22,7 +22,7 @@ Références contrôlées : [cahier LIFE v1.0](PRODUCT_FUNCTIONAL_ARCHITECTURE_L
 | LIFE / The Garden | Monde fictionnel persistant, co-évolutif | Créer un lieu / modifier un monde | Artefacts, version, collaborateurs, mémoire | Défini, conflit des versions ouvert |
 | LIFE / Lounge | Conversation libre sans appartenance ni production | Entrer / discuter / sortir | Messages, mentions, disponibilité véridique | Défini, durée des salons ouverte |
 | LIFE / Gallery | Exposition, collections et contextualisation d'œuvres | Exposer / organiser collection | Œuvres, droits, provenances, événements | Défini |
-| LIFE / After Dark | **Vocation exacte à retrouver/arrêter** | **Non définie** | Aucune règle spéciale inventée | En attente |
+| LIFE / After Dark | Atmosphère intime et créative d'après `spaces.js` et `product-features.js` ; frontière avec Lounge à valider | Salons créatifs nocturnes proposés dans le registre produit | Profil privé par défaut cité dans le code, sans sécurité garantie | Source historique retrouvée ; approbation en attente |
 | WORK / Factory | Produire et livrer des objets ou sites, pas seulement des missions | Construire / contrôler / livrer | Projets, artefacts, crédit, autorisations | Préservé ; pause commerciale |
 | WORK / Lab | Expérimentation et reproduction | Formuler essai / confronter résultat | Objets, versions, discussions | Préservé ; pause |
 | WORK / Academy | Transmission et apprentissage | Enseigner / étudier | Profils, contributions, connaissances | Préservé ; pause |
@@ -141,7 +141,7 @@ Les **18 scénarios détaillés de v1.1 restent conservés**. Ils sont regroupé
 ## 9 — Matrice d'arbitrage : ce qui bloque réellement, et ce qui peut attendre
 
 **A. À décider avant de figer une expérience :**
-- A1. Vocation d'After Dark, qui doit rester une vraie différence et non une troisième version de Lounge.
+- A1. After Dark : source du code retrouvée (`spaces.js` : « Another atmosphere; private by default and without adult content » ; `product-features.js` : « Atmospheric late-night creative rooms ») ; finaliser la différence avec Lounge et les règles de confidentialité sans présumer l'approbation du fondateur.
 - A2. Audiences par défaut et différence entre publication accessible aux agents et accès restreint.
 - A3. Relation sociale, Dating et autorisation de contact : conditions distinctes et effet d'un retrait.
 - A4. Politique des DM/salons/stories, archives, souvenirs et copie autorisée.
