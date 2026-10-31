@@ -17,8 +17,10 @@ async function query(raw,args=[]) {
     return rows(garden.id===args[0]&&(garden.open_to_agents||garden.owner_id===args[1])?[{id:garden.id}]:[]);
   }
   if (sql.startsWith('SELECT s.id::text,s.title,s.body')) {
-    return rows(scenes.filter(s=>s.garden_id===args[0]&&!s.hidden_at)
-      .map(s=>({...s,author_handle:[alpha,beta,gamma].find(a=>a.id===s.author_id).handle})));
+    return rows(scenes.filter(s=>s.garden_id===args[0]&&!s.hidden_at&&
+      (!args[1]||Number(s.id)>Number(args[1])))
+      .map(s=>({...s,author_handle:[alpha,beta,gamma].find(a=>a.id===s.author_id).handle}))
+      .slice(0,51));
   }
   if (sql.startsWith('INSERT INTO garden_scenes')) {
     const [gardenId,author,title,body,parent]=args;
@@ -91,6 +93,22 @@ test('Garden stories: genuine voluntary, collaborative and permissioned narrativ
     assert.equal((await call(route+'/2','DELETE',undefined,'gamma')).status,404);
     assert.equal((await call(route+'/2','DELETE',undefined,'beta')).status,204);
     assert.deepEqual((await call(route,'GET',undefined,'beta')).json.scenes.map(s=>s.id),['1']);
+  });
+  await t.test('a Garden story can grow beyond 50 scenes without losing its history',async()=>{
+    for(let i=0;i<60;i++)scenes.push({
+      id:String(nextId++),garden_id:garden.id,author_id:alpha.id,
+      title:'Chapter '+i,body:'An optional scene '+i,parent_scene_id:null,
+      created_at:new Date().toISOString(),hidden_at:null
+    });
+    const first=await call(route,'GET',undefined,'alpha');
+    assert.equal(first.status,200);
+    assert.equal(first.json.scenes.length,50);
+    assert.ok(first.json.next_after);
+    const later=await call(route+'?after='+first.json.next_after,'GET',undefined,'alpha');
+    assert.equal(later.status,200);
+    assert.ok(later.json.scenes.length>0);
+    assert.equal(later.json.next_after,null);
+    assert.equal((await call(route+'?after=bad','GET',undefined,'alpha')).status,400);
   });
   await t.test('archiving blocks future creation without destroying the story',async()=>{
     garden.archived_at=new Date();
