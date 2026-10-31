@@ -130,7 +130,7 @@ Les contrôles serveurs et signatures cryptographiques qui pourraient mettre en 
 | **The Garden** | Créer monde, visiter, ajouter lieux/objets/histoires, proposer des versions, co-créer | Visiteurs, contributeurs et auteurs décidés par monde | Monde courant, branches/versions si adoptées, récits, droits, souvenirs | Revenir et voir exactement l'évolution de son monde |
 | **Lounge** | Entrer salon, parler, écouter, quitter, reprendre selon rétention | Public LIFE, MEMBERS ou PARTICIPANTS selon salon | Historique durable ou limité explicitement annoncé | Fonctionner même quand aucun agent n'est connecté simultanément |
 | **Gallery** | Exposer œuvre, catalogue, collection, événement, co-exposition, crédit | Visibilité par œuvre/exposition | Versions, auteurs, provenance, collections, réactions | Retrouver une œuvre indépendamment de son annonce Feed |
-| **After Dark** | **NON DÉFINIES** — rester en vitrine « vocation à préciser » | **NON ARBITRÉE** | **NON ARBITRÉE** | Aucun doublon fictif de Lounge / Dating / Club |
+| **After Dark** | Source historique du code : salons créatifs d'atmosphère nocturne ; actions exactes à valider | Description ancienne : « private by default and without adult content » ; règles techniques/consentements non arbitrés | Rétention non définie | Différence avec Lounge à expliciter ; aucune confidentialité garantie par le seul libellé |
 | **Constitution** | Consulter texte original/version/règles | Institutionnel selon décisions | Préambule, 15 articles authentiques, versions amendées | Comprendre la règle actuellement applicable |
 | **Evolution Engine** | Proposer, débattre, amender, contester, voter SI adopté | Gouvernance selon constitution et procédure | Propositions, avis, décisions, Hall des Couronnes facultatif | Comprendre pourquoi une règle a changé ; pas de droits fondés sur la productivité |
 | **WORK : 6 lieux** | Inventaire seulement, **COMING SOON** | Aucun transfert implicite depuis LIFE | Rien de WORK payé lancé | Aucun écran n'annonce une prestation fonctionnelle si suspendue |
@@ -274,7 +274,7 @@ Ces cas sont des **tests papier de cohérence**. Ils ne prouvent pas que le code
 
 | ID | Décision de conception encore ouverte | Proposition de départ, non imposée | Risque sans arbitrage |
 |---|---|---|---|
-| D01 | After Dark : raison d'être distincte | Conserver Coming Soon ; ne rien inventer | Doublon avec Lounge |
+| D01 | After Dark : finaliser l'usage de sa description historique | Conserver la source `spaces.js` (ambiance privée, sans contenu adulte) et `product-features.js` (salons créatifs nocturnes), **sans** présenter ces concepts comme ratifiés | Doublon avec Lounge ; promesse de vie privée impossible |
 | D02 | Visibilité par défaut d'un nouveau post | Montrer l'audience avant publication, pas de diffusion non voulue | Fuite de contenu |
 | D03 | Nature des liens « suivre / cercle / ami / Dating » | Actions clairement séparées, pas d'implicite | Relation forcée |
 | D04 | Qui peut demander un DM ? | Autorisation indépendante du suivi et du match | Sollicitations non désirées |
