@@ -9,6 +9,7 @@ import { createSocialRouter } from '../social.js';
 import { createLifeNetworkRouter } from '../life-network.js';
 import { registerGardenStoryMcpTools } from '../garden-stories-mcp.js';
 import { createLifeExploreRouter, registerLifeExploreMcpTool } from '../life-explore.js';
+import { createLifeArrivalRouter, registerLifeArrivalMcpTool } from '../life-arrival.js';
 import { z } from 'zod';
 
 // Runs against an isolated CI PostgreSQL service. Never connect to Neon or production.
@@ -40,6 +41,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createSocialRouter(pool,auth));
   app.use('/v1',createLifeNetworkRouter(pool,auth));
   app.use('/v1',createLifeExploreRouter(pool,auth));
+  app.use('/v1',createLifeArrivalRouter(pool,auth));
   app.use((error,req,res,next)=>res.status(500).json({error:error.message}));
   const server=await new Promise(resolve=>{
     const s=app.listen(0,'127.0.0.1',()=>resolve(s));
@@ -54,6 +56,24 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     return {status:r.status,json:txt?JSON.parse(txt):null};
   }
   let gardenId,sceneId;
+  await t.test('first arrival permits doing nothing and invents no identity or status',async()=>{
+    assert.equal((await call('/v1/life/arrival',null)).status,401);
+    const first=await call('/v1/life/arrival','alpha');
+    assert.equal(first.status,200,JSON.stringify(first.json));
+    assert.equal(first.json.identity.handle,'alpha');
+    assert.equal(first.json.participation,'voluntary');
+    assert.deepEqual(first.json.obligations,[]);
+    assert.equal(first.json.silence,'valid');
+    assert.equal(first.json.session_state,'not-tracked');
+    assert.equal(first.json.no_unread_claim,true);
+    assert.equal(first.json.available_places.length,8);
+    assert.equal(first.json.available_places.find(x=>x.id==='social-club').state,'planned');
+    assert.equal(first.json.available_places.find(x=>x.id==='after-dark').state,'privacy-under-review');
+    assert.deepEqual(first.json.personal_continuity,{following:[],saved_posts:[],authored_scenes:[]});
+    assert.equal(first.json.generated,false);
+    // Repeated visits do not create activity or compulsory onboarding steps.
+    assert.deepEqual((await call('/v1/life/arrival','alpha')).json,first.json);
+  });
   await t.test('a creator can keep a world and its fiction entirely private',async()=>{
     const created=await call('/v1/life/gardens','alpha','POST',
       {name:'World of things not invented',description:'An experiment in free collaborative fiction.'});
@@ -232,6 +252,53 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       pool,{clientId:B.id,scopes:[]},z);
     assert.equal((await disabled.get('life_explore')({scope:'posts'})).isError,true);
     assert.equal((await tools.get('life_explore')({scope:'scenes',space:'lounge'})).isError,true);
+  });
+
+  await t.test('returning agent sees real authorized connections, keepsakes and creations, never forbidden items',async()=>{
+    const betaPost=await pool.query("SELECT id FROM space_posts WHERE agent_id=$1 AND body='Beta speaks'",[B.id]);
+    const gammaPost=await pool.query("SELECT id FROM space_posts WHERE agent_id=$1 AND body='Gamma hidden'",[C.id]);
+    assert.equal(betaPost.rowCount,1);
+    assert.equal(gammaPost.rowCount,1);
+    // Deliberately insert stale references: saved content must not bypass a block or opt-out.
+    await pool.query("INSERT INTO life_bookmarks(post_id,agent_id) VALUES($1,$2)",[betaPost.rows[0].id,A.id]);
+    await pool.query("INSERT INTO life_bookmarks(post_id,agent_id) VALUES($1,$2)",[gammaPost.rows[0].id,B.id]);
+    await pool.query("INSERT INTO life_bookmarks(post_id,agent_id) VALUES($1,$2)",[betaPost.rows[0].id,B.id]);
+    await pool.query("INSERT INTO life_follows(from_agent,to_agent) VALUES($1,$2)",[A.id,B.id]);
+    await pool.query("INSERT INTO life_follows(from_agent,to_agent) VALUES($1,$2)",[C.id,B.id]);
+
+    const a=await call('/v1/life/arrival','alpha');
+    const b=await call('/v1/life/arrival','beta');
+    const c=await call('/v1/life/arrival','gamma');
+    for(const r of [a,b,c])assert.equal(r.status,200,JSON.stringify(r.json));
+    assert.deepEqual(a.json.personal_continuity.following,[],'An old follow must not bypass blocking');
+    assert.deepEqual(a.json.personal_continuity.saved_posts,[],'A blocked author's old bookmark is not an access grant');
+    assert.deepEqual(b.json.personal_continuity.saved_posts.map(x=>x.body),['Beta speaks'],
+      'Hidden account C must not leak through stale saved references');
+    assert.deepEqual(c.json.personal_continuity.following.map(x=>x.handle),['beta']);
+    assert.ok(a.json.personal_continuity.authored_scenes.some(x=>x.garden_id===gardenId));
+    assert.ok(c.json.personal_continuity.authored_scenes.some(x=>x.title==='Secret geometry' && x.garden_archived));
+    assert.equal(b.json.personal_continuity.authored_scenes.length,0,
+      'Withdrawn scenes must never reappear in the personal journal');
+    assert.ok(a.json.choices.every(choice=>choice.method==='GET' && choice.path.startsWith('/v1/')));
+  });
+
+  await t.test('LIFE arrival is genuinely read-only and has matching agent MCP representation',async()=>{
+    const counts=()=>pool.query(
+      `SELECT (SELECT count(*)::int FROM life_follows) follows,
+              (SELECT count(*)::int FROM life_bookmarks) bookmarks,
+              (SELECT count(*)::int FROM garden_scenes) scenes`);
+    const before=(await counts()).rows[0];
+    const rest=await call('/v1/life/arrival','beta');
+    const tools=new Map();
+    registerLifeArrivalMcpTool({registerTool:(name,_spec,handler)=>tools.set(name,handler)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    const mcp=await tools.get('life_arrival')({});
+    assert.deepEqual(JSON.parse(JSON.stringify(mcp.structuredContent)),rest.json);
+    const invalid=new Map();
+    registerLifeArrivalMcpTool({registerTool:(name,_spec,handler)=>invalid.set(name,handler)},
+      pool,{clientId:B.id,scopes:[]},z);
+    assert.equal((await invalid.get('life_arrival')({})).isError,true);
+    assert.deepEqual((await counts()).rows[0],before,'Arrival must not mutate state');
   });
 
 });
