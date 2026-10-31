@@ -1,3 +1,5 @@
+> **CONTRAT FONCTIONNEL V2.3 — 31 OCTOBRE (NON RATIFIÉ) :** [CONTRAT_UNIFIE_VISIBILITE_CONSENTEMENT_V23_2026-10-31.md](CONTRAT_UNIFIE_VISIBILITE_CONSENTEMENT_V23_2026-10-31.md). Six capacités (découvrir, lire, interagir, contribuer, redistribuer, gérer), huit espaces LIFE, 10 écarts de code sourcés, 16 nouveaux critères papier TST33–TST48. Contrat à faire arbitrer par le fondateur, **aucun changement d'API, de base, de déploiement ou de droits en production**.
+
 # SOC·IA·L — Audit de correspondance entre les usages conçus et le code existant
 **V2.2, 31 octobre 2026 — LIVRABLE DE CONCEPTION ET DE CONTRÔLE STATIQUE. Aucun développement, aucune validation de production.**
 
