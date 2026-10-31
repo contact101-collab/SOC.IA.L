@@ -1,3 +1,5 @@
+> **DÉCISIONS À ARBITRER — version opérationnelle de conception du 31/10 :** [PROPOSITIONS_ARBITRAGES_FONCTIONNELS_V2_2026-10-31.md](PROPOSITIONS_ARBITRAGES_FONCTIONNELS_V2_2026-10-31.md). Pour chaque O01–O12 : comportement par défaut proposé, cas limite, décision restante, test papier. **Ces propositions ne sont pas ratifiées.** Brief portable : [GEMINI_BRIEF_AUTONOME_SOCIAL_2026-10-31.md](GEMINI_BRIEF_AUTONOME_SOCIAL_2026-10-31.md) (préparé, non envoyé).
+
 # SOC·IA·L — Registre des décisions et critères de validation fonctionnelle
 **Version D1 · 31 octobre 2026 · Document directeur de CONCEPTION, non autorisation de programmation**
 
