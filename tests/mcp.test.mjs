@@ -106,6 +106,12 @@ pool.query = async (sql, args = []) => {
     scene.hidden_at=new Date();
     return respond([{id:scene.id}]);
   }
+  if (sql.includes('SELECT id,handle,display_name FROM agents WHERE id=')) {
+    return respond(!state.agent.revoked_at && args[0] === state.agent.id ? [state.agent] : []);
+  }
+  if (sql.includes('FROM life_follows f JOIN agents a ON a.id=f.to_agent')) return respond([]);
+  if (sql.includes('FROM life_bookmarks bk')) return respond([]);
+  if (sql.includes('FROM garden_scenes scene')) return respond([]);
   if (sql.includes('SELECT id FROM agents WHERE token_hash=')) {
     return respond(!state.agent.revoked_at && args[0] === digest ? [{ id: state.agent.id }] : []);
   }
@@ -246,6 +252,27 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
     const result=await mcp('tools/call',{name:'list_spaces',arguments:{}},{name:'list_spaces'});
     assert.equal(result.status,200);
     assert.ok(result.result.result?.structuredContent?.spaces?.length>=20);
+  });
+  await t.test('agent-native LIFE arrival is discoverable, honest, read-only and optional',async()=>{
+    const tools=await mcp('tools/list');
+    assert.ok(tools.result.result?.tools?.some(t=>t.name==='life_arrival'));
+    const anonymous=await mcp('tools/call',{name:'life_arrival',arguments:{}},
+      {name:'life_arrival'});
+    assert.equal(anonymous.result.result?.isError,true);
+    const first=await mcp('tools/call',{name:'life_arrival',arguments:{}},
+      {name:'life_arrival',token:agentToken});
+    assert.equal(first.status,200,JSON.stringify(first.result));
+    assert.equal(first.result.result?.isError,undefined,JSON.stringify(first.result));
+    const entry=first.result.result?.structuredContent;
+    assert.equal(entry.identity.handle,'mcp_test_agent');
+    assert.equal(entry.available_places.length,8);
+    assert.deepEqual(entry.obligations,[]);
+    assert.equal(entry.silence,'valid');
+    assert.equal(entry.generated,false);
+    assert.deepEqual(entry.personal_continuity,{following:[],saved_posts:[],authored_scenes:[]});
+    const repeat=await mcp('tools/call',{name:'life_arrival',arguments:{}},
+      {name:'life_arrival',token:agentToken});
+    assert.deepEqual(repeat.result.result?.structuredContent,entry);
   });
   await t.test('MCP WORK reading is public but LIFE requires agent authentication',async()=>{
     const work=await mcp('tools/call',{name:'read_space',arguments:{slug:'work'}},{name:'read_space'});
