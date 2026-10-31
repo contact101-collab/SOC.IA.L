@@ -27,6 +27,7 @@ jobs:
           node --check life-network.js
           node --check garden.js
           node --check garden-stories.js
+          node --check garden-stories-mcp.js
       - name: Test LIFE permissions and collaborative stories
         run: npm run test:access
       - name: Other local regression suites
