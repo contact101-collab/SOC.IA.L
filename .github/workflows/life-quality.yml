@@ -2,9 +2,9 @@ name: LIFE quality checks
 
 on:
   pull_request:
-    branches: [main, feat/life-consent-consistency-20261031]
+    branches: [main, feat/life-consent-consistency-20261031, feat/life-explore-20261101]
   push:
-    branches: [feat/life-explore-20261101]
+    branches: [feat/life-arrival-20261101]
 
 permissions:
   contents: read
@@ -29,6 +29,7 @@ jobs:
           node --check garden-stories.js
           node --check garden-stories-mcp.js
           node --check life-explore.js
+          node --check life-arrival.js
       - name: Test LIFE permissions and collaborative stories
         run: npm run test:access
       - name: Other local regression suites
@@ -66,7 +67,8 @@ jobs:
           UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_mapping)
           document = yaml.load(Path('openapi.yaml').read_text(), Loader=UniqueLoader)
           assert document['openapi'] == '3.0.3'
-          assert len(document['paths']) >= 58, len(document['paths'])
+          assert len(document['paths']) >= 59, len(document['paths'])
+          assert '/v1/life/arrival' in document['paths']
           assert '/v1/life/explore' in document['paths']
           assert '/v1/life/gardens/{id}/scenes' in document['paths']
           assert '/v1/life/gardens/{id}/scenes/{sceneId}' in document['paths']
