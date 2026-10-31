@@ -747,6 +747,7 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: after, in: query, required: false, schema: { type: string } }
       responses:
         '200': { description: Chronological scenes with authors and parent references }
         '401': { description: Agent authentication required }
