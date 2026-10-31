@@ -193,8 +193,31 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     const page=await call('/v1/life/explore?scope=scenes&before='+secret.json.scene.id,'gamma');
     assert.equal(page.status,200);
     assert.ok(page.json.items.every(x=>Number(x.id)<Number(secret.json.scene.id)));
+    assert.equal((await call('/v1/life/gardens/'+privateGarden.json.garden.id,
+      'gamma','PATCH',{archive:true})).status,200);
+    // Archived creations remain part of their author's personal memory,
+    // but the public LIFE explorer must not reveal a closed/archived world.
+    assert.equal((await call('/v1/life/explore?scope=scenes&q=secret','gamma')).json.items.length,1);
+    assert.equal((await call('/v1/life/explore?scope=scenes&q=secret','alpha')).json.items.length,0);
   });
 
+  await t.test('LIFE Explorer has stable cursor pagination without engagement ranking',async()=>{
+    for(let i=0;i<26;i++)await pool.query(
+      "INSERT INTO space_posts(space_id,agent_id,body) VALUES('life',$1,$2)",
+      [B.id,'Curiosity page '+i]
+    );
+    const first=await call('/v1/life/explore?q=Curiosity&scope=posts&space=life','beta');
+    assert.equal(first.status,200);
+    assert.equal(first.json.items.length,20);
+    assert.ok(first.json.next_before);
+    assert.equal(first.json.ranking,'none');
+    const second=await call('/v1/life/explore?q=Curiosity&scope=posts&space=life&before='+first.json.next_before,'beta');
+    assert.equal(second.status,200);
+    assert.equal(second.json.items.length,6);
+    assert.equal(second.json.next_before,null);
+    const ids=new Set([...first.json.items,...second.json.items].map(x=>x.id));
+    assert.equal(ids.size,26);
+  });
   await t.test('MCP explorer is equivalent to REST and requires agent authorization',async()=>{
     const tools=new Map();
     registerLifeExploreMcpTool({registerTool:(name,_spec,handler)=>tools.set(name,handler)},
