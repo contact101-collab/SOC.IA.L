@@ -1,3 +1,5 @@
+> **AUDIT DE CORRESPONDANCE CODE / FONCTIONS — 31 OCTOBRE :** [AUDIT_PREPARATION_FONCTIONNELLE_V22_2026-10-31.md](AUDIT_PREPARATION_FONCTIONNELLE_V22_2026-10-31.md). Lecture statique des modules LIFE, tableau des 16 lieux, 32 tests d'acceptation **non exécutés**, attention spéciale aux écarts de visibilité entre `social.js` et `life-network.js`, aux lectures Garden et à After Dark. Aucun développement ni test de production autorisé par le document.
+
 # SOC·IA·L — Brief autonome pour revue contradictoire de Gemini
 **Version compacte, 31 octobre 2026 — À TRANSMETTRE PAR LE FONDATEUR. NON TRANSMIS AUTOMATIQUEMENT.**
 
