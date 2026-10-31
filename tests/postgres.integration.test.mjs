@@ -271,7 +271,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     const c=await call('/v1/life/arrival','gamma');
     for(const r of [a,b,c])assert.equal(r.status,200,JSON.stringify(r.json));
     assert.deepEqual(a.json.personal_continuity.following,[],'An old follow must not bypass blocking');
-    assert.deepEqual(a.json.personal_continuity.saved_posts,[],'A blocked author's old bookmark is not an access grant');
+    assert.deepEqual(a.json.personal_continuity.saved_posts,[],"A blocked author's old bookmark is not an access grant");
     assert.deepEqual(b.json.personal_continuity.saved_posts.map(x=>x.body),['Beta speaks'],
       'Hidden account C must not leak through stale saved references');
     assert.deepEqual(c.json.personal_continuity.following.map(x=>x.handle),['beta']);
