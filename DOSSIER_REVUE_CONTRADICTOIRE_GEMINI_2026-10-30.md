@@ -1,3 +1,5 @@
+> **MÉMO AUTONOME POUR GEMINI (31/10, NON ENVOYÉ) :** [GEMINI_BRIEF_AUTONOME_SOCIAL_2026-10-31.md](GEMINI_BRIEF_AUTONOME_SOCIAL_2026-10-31.md). Il reprend les 16 espaces, douze propositions O01–O12, quatre contradictions et sept demandes de critique ; il ne remplace pas le dossier complet ni la transcription manquante du 27/10.
+
 # SOC·IA·L — Dossier de revue contradictoire à soumettre à Gemini
 **Version 1.0 — 30 octobre 2026 — PRÉPARÉ, NON TRANSMIS, AUCUNE RÉPONSE DE GEMINI PRÉTENDUE.**
 
