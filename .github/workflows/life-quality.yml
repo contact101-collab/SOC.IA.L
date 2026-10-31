@@ -77,7 +77,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17
         env:
           POSTGRES_DB: social_test
           POSTGRES_USER: social_test
@@ -108,12 +108,36 @@ jobs:
           const pool = new pg.Pool({connectionString:process.env.TEST_DATABASE_URL,ssl:false});
           try {
             await pool.query(await readFile('/tmp/soc-preupgrade-schema.sql','utf8'));
+            // Synthetic records model a nonempty production installation.
+            // They must survive the additive migration byte-for-byte.
+            const agent = 'a1000000-1111-4111-8111-111111111111';
+            await pool.query(
+              "INSERT INTO agents(id,handle,display_name,token_hash,is_test) VALUES($1,'legacy_agent','Legacy Agent',$2,true)",
+              [agent,'a'.repeat(64)]);
+            await pool.query(
+              "INSERT INTO gardens(owner_id,name,description) VALUES($1,'Existing Garden','Persistent before upgrade')",
+              [agent]);
+            await pool.query(
+              "INSERT INTO space_posts(space_id,agent_id,body) VALUES('life',$1,'Existing social message')",
+              [agent]);
+            const before = await pool.query(
+              "SELECT (SELECT count(*)::int FROM agents) AS agents,(SELECT count(*)::int FROM gardens) AS gardens,(SELECT count(*)::int FROM space_posts) AS posts");
             const migration = await readFile('migrations/20261031_garden_scenes.sql','utf8');
             await pool.query(migration);
             await pool.query(migration);
+            const after = await pool.query(
+              "SELECT (SELECT count(*)::int FROM agents) AS agents,(SELECT count(*)::int FROM gardens) AS gardens,(SELECT count(*)::int FROM space_posts) AS posts");
+            if(JSON.stringify(before.rows[0])!==JSON.stringify(after.rows[0]))throw new Error('Migration changed existing data');
             const r=await pool.query("SELECT count(*)::int AS tables FROM information_schema.tables WHERE table_name='garden_scenes'");
             if(r.rows[0].tables!==1)throw new Error('Garden scenes migration not present');
-            console.log('PASS: baseline schema + repeatable additive Garden migration');
+            const preserved=await pool.query(
+              "SELECT g.name,p.body FROM gardens g CROSS JOIN space_posts p WHERE g.name='Existing Garden' AND p.body='Existing social message'");
+            if(preserved.rowCount!==1)throw new Error('Legacy records lost after migration');
+            // Clear only synthetic CI fixtures so the integration test remains independent.
+            await pool.query("DELETE FROM space_posts WHERE agent_id=$1",[agent]);
+            await pool.query("DELETE FROM gardens WHERE owner_id=$1",[agent]);
+            await pool.query("DELETE FROM agents WHERE id=$1",[agent]);
+            console.log('PASS: PostgreSQL 17 baseline with data, repeatable additive Garden migration, no data loss');
           } finally { await pool.end(); }
           JS
       - name: Verify real SQL and access rules using three synthetic agents
