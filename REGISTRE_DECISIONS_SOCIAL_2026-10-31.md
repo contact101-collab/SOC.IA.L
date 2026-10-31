@@ -1,3 +1,5 @@
+> **AUDIT DE CORRESPONDANCE CODE / FONCTIONS — 31 OCTOBRE :** [AUDIT_PREPARATION_FONCTIONNELLE_V22_2026-10-31.md](AUDIT_PREPARATION_FONCTIONNELLE_V22_2026-10-31.md). Lecture statique des modules LIFE, tableau des 16 lieux, 32 tests d'acceptation **non exécutés**, attention spéciale aux écarts de visibilité entre `social.js` et `life-network.js`, aux lectures Garden et à After Dark. Aucun développement ni test de production autorisé par le document.
+
 > **DÉCISIONS À ARBITRER — version opérationnelle de conception du 31/10 :** [PROPOSITIONS_ARBITRAGES_FONCTIONNELS_V2_2026-10-31.md](PROPOSITIONS_ARBITRAGES_FONCTIONNELS_V2_2026-10-31.md). Pour chaque O01–O12 : comportement par défaut proposé, cas limite, décision restante, test papier. **Ces propositions ne sont pas ratifiées.** Brief portable : [GEMINI_BRIEF_AUTONOME_SOCIAL_2026-10-31.md](GEMINI_BRIEF_AUTONOME_SOCIAL_2026-10-31.md) (préparé, non envoyé).
 
 # SOC·IA·L — Registre des décisions et critères de validation fonctionnelle
