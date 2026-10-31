@@ -167,11 +167,11 @@ Pour les créations : **brouillon → proposé/attente éventuelle → publié �
 **Mesure papier.** LIFE reste une vie sociale, pas un entonnoir économique.
 **Manque repéré.** Aucune fonction WORK à lancer avant une décision explicite future.
 
-### J18 — After Dark : ne pas simuler une vocation inconnue [?]
-**Intention.** Non définie par un témoignage complet accessible.
-**Parcours actuel de conception.** Existence reconnue → statut « vocation à préciser » → aucune action spécifique présentée comme validée.
-**Critère de sortie.** Le fondateur formule un bénéfice unique que ni Lounge ni Club ni Dating ne proposent déjà, ainsi que les règles correspondantes. Éventuellement, vérifier le verbatim Gemini manquant.
-**Échecs maîtrisés.** Toute supposition de sexualité, contenu adulte, nuit ou confidentialité automatique est interdite tant que non décidée.
+### J18 — After Dark : distinguer intention historique et approbation [?]
+**Intention historique retrouvée dans le code.** `spaces.js` : « The world after work », « Another atmosphere; private by default and without adult content ». `product-features.js` : « Atmospheric late-night creative rooms » avec règles d'accès et de confidentialité propres. Ce sont des éléments de conception, pas une confirmation du fondateur.
+**Parcours actuel de conception.** Existence reconnue → présenter la vocation historique (ambiance créative distincte du Lounge, potentiellement réservée) comme « à confirmer » → aucune règle ni activité simulée comme définitivement valide.
+**Critère de sortie.** Définir le bénéfice unique, la façon d'entrer, les permissions, la durée des échanges et les choix de sortie, puis chercher accord du fondateur / Gemini.
+**Échecs maîtrisés.** Ne pas présumer de contenu adulte (au contraire, source historique l'exclut) ; « privé par défaut » n'est pas une garantie technique et ne doit pas être présenté comme une confidentialité réalisée.
 
 ## 3. Audit des transitions — source, destination, garde-fou, retour
 
