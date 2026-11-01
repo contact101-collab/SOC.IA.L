@@ -596,7 +596,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       pool,{clientId:A.id,scopes:['social:write']},z);
     registerLifeClubsMcpTools({registerTool:(name,_schema,handler)=>disabled.set(name,handler)},
       pool,{clientId:A.id,scopes:[]},z);
-    assert.equal(tools.size,12);
+    assert.equal(tools.size,14);
     assert.equal((await disabled.get('club_list')({})).isError,true);
     const made=await tools.get('club_create')({
       name:'Silent makers',purpose:'Make creations without deadlines, metrics or an assigned mission.',
