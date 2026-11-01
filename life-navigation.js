@@ -19,7 +19,9 @@ const menu=Object.freeze([
       {id:'publish',method:'POST',path:'/v1/life/network/posts',mcp:'post_space',mcp_args:{slug:'life'},requires:[]},
       {id:'stories',method:'GET',path:'/v1/life/network/stories',requires:[]},
       {id:'polls',method:'GET',path:'/v1/life/feed/polls',mcp:'feed_polls',requires:[]},
-      {id:'create-poll',method:'POST',path:'/v1/life/feed/polls',mcp:'feed_poll_create',requires:['discoverable']}
+      {id:'create-poll',method:'POST',path:'/v1/life/feed/polls',mcp:'feed_poll_create',requires:['discoverable']},
+      {id:'events',method:'GET',path:'/v1/life/feed/events',mcp:'feed_events',requires:[]},
+      {id:'create-event',method:'POST',path:'/v1/life/feed/events',mcp:'feed_event_create',requires:['discoverable']}
     ]
   },
   {
