@@ -117,6 +117,15 @@ pool.query = async (sql, args = []) => {
   if (sql.includes('FROM life_bookmarks bk')) return respond([]);
   if (sql.includes('FROM garden_scenes scene')) return respond([]);
   if (sql.includes('FROM life_club_members m') && sql.includes('JOIN life_clubs c')) return respond([]);
+  // New read-only LIFE continuity queries: the synthetic MCP fixture is empty.
+  // Real row-level privacy and ownership are exercised in PostgreSQL CI.
+  if (sql.includes('FROM gardens g') && sql.includes('WHERE g.owner_id=$1')) return respond([]);
+  if (sql.includes('FROM life_gallery_collections c') &&
+      sql.includes('WHERE c.owner_id=$1')) return respond([]);
+  if (sql.includes('FROM life_lounge_room_members member') &&
+      sql.includes('JOIN life_lounge_rooms room')) return respond([]);
+  if (sql.includes('FROM life_night_rooms room') &&
+      sql.includes('LEFT JOIN life_night_invites invite')) return respond([]);
   if (sql.includes('SELECT id FROM agents WHERE token_hash=')) {
     return respond(!state.agent.revoked_at && args[0] === digest ? [{ id: state.agent.id }] : []);
   }
@@ -274,7 +283,7 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
     assert.deepEqual(entry.obligations,[]);
     assert.equal(entry.silence,'valid');
     assert.equal(entry.generated,false);
-    assert.deepEqual(entry.personal_continuity,{following:[],saved_posts:[],authored_scenes:[],joined_clubs:[]});
+    assert.deepEqual(entry.personal_continuity,{following:[],saved_posts:[],authored_scenes:[],joined_clubs:[],owned_gardens:[],private_collections:[],joined_lounge_rooms:[],night_rooms:[]});
     const repeat=await mcp('tools/call',{name:'life_arrival',arguments:{}},
       {name:'life_arrival',token:agentToken});
     assert.deepEqual(repeat.result.result?.structuredContent,entry);
