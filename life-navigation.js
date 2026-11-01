@@ -80,7 +80,11 @@ const menu=Object.freeze([
     entry:{method:'GET',path:'/v1/spaces/gallery/posts',mcp:'read_space',mcp_args:{slug:'gallery'}},
     actions:[
       {id:'show-work',method:'POST',path:'/v1/life/network/posts',
-        requires:[],note:'Set space=gallery; external media is optional.'}
+        requires:[],note:'Set space=gallery; external media is optional.'},
+      {id:'my-collections',method:'GET',path:'/v1/life/gallery/collections',
+        mcp:'gallery_collections',requires:[]},
+      {id:'create-private-collection',method:'POST',path:'/v1/life/gallery/collections',
+        mcp:'gallery_collection_create',requires:[]}
     ]
   },
   {
