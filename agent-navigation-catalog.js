@@ -34,7 +34,7 @@ export function buildUniverseCatalog(lifeMenu){
       const state=group.id==='life'?
         (destination.state??(id==='dating-hub'?'opt-in':'available')):
         group.id==='work'?'paused':'design-only';
-      const canEnter=group.id==='life'&&['available','opt-in'].includes(state);
+      const canEnter=group.id==='life'&&['available','opt-in','invite-only-development'].includes(state);
       return {
         id,name:space.name,state,
         entry:canEnter?copyEntry(destination.entry):null,
