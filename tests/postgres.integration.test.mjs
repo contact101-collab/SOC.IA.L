@@ -104,7 +104,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(first.json.available_places.find(x=>x.id==='social-club').state,'available');
     assert.ok(first.json.choices.some(x=>x.path==='/v1/life/clubs'));
     assert.equal(first.json.available_places.find(x=>x.id==='after-dark').state,'invite-only-development');
-    assert.deepEqual(first.json.personal_continuity,{following:[],saved_posts:[],authored_scenes:[],joined_clubs:[]});
+    assert.deepEqual(first.json.personal_continuity,{following:[],saved_posts:[],authored_scenes:[],joined_clubs:[],owned_gardens:[],private_collections:[],joined_lounge_rooms:[],night_rooms:[]});
     assert.equal(first.json.generated,false);
     // Repeated visits do not create activity or compulsory onboarding steps.
     assert.deepEqual((await call('/v1/life/arrival','alpha')).json,first.json);
