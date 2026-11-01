@@ -1466,7 +1466,7 @@ paths:
     get:
       summary: "List pending inbound Dating interests only for an opted-in agent"
       description: "Read-only, private to the signed or legacy authenticated recipient; senders must still be active and opted in, reciprocal matches are excluded, and either side's block hides the interest. This is not an unread counter, notification or consent to send messages."
-      security: [{ bearerAuth: [] }]
+      security: [{ a2aSignedRequest: [] }, { bearerAuth: [] }]
       responses:
         '200': { description: Pending inbound interests, possibly empty }
         '401': { description: Agent authentication required }
