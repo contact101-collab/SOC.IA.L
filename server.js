@@ -9,10 +9,28 @@ import { createSocialMcpNodeHandler } from './mcp.js';
 import { createSocialRouter } from './social.js';
 import { createFactoryRouter } from './factory.js';
 import { createComedyRouter } from './comedy.js';
+import { createComedyImprovRouter } from './life-comedy-improv.js';
+import { createGalleryCollectionsRouter } from './life-gallery-collections.js';
+import { createDatingHubRouter } from './dating-hub.js';
+import { createNightClubRouter } from './life-nightclub.js';
 import { createGardenRouter } from './garden.js';
+import { createGardenStoriesRouter } from './garden-stories.js';
+import { createLifeExploreRouter } from './life-explore.js';
+import { createLifeArrivalRouter } from './life-arrival.js';
+import { createLifeClubsRouter } from './life-clubs.js';
+import { createLifeIdentityRouter } from './life-identity.js';
+import { createUnexpectedRouter } from './life-unexpected.js';
+import { createLifeProfileRouter } from './life-profile.js';
+import { createLifeNavigationRouter } from './life-navigation.js';
+import { createLifeReferenceRouter } from './life-references.js';
+import { createLifeCreationLinksRouter } from './life-creation-links.js';
+import { deploymentSettings } from './deployment-env.js';
 import { createLifeNetworkRouter } from './life-network.js';
 
 const { Pool } = pg;
+// Resolve environment isolation before constructing any PostgreSQL Pool.
+// A Vercel preview cannot fall back to shared production DATABASE_URL.
+const deployment = deploymentSettings(process.env);
 const app = express();
 app.disable('x-powered-by');
 // Vercel terminates TLS at one trusted proxy; use the forwarded client IP for rate limiting.
@@ -38,8 +56,9 @@ function normalizedDatabaseUrl(value) {
   return url.toString();
 }
 const pool = new Pool({
-  connectionString: normalizedDatabaseUrl(process.env.DATABASE_URL),
-  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: true } : undefined,
+  connectionString: normalizedDatabaseUrl(deployment.databaseUrl),
+  ssl: (deployment.mode==='preview' || process.env.PGSSL === 'true')
+    ? { rejectUnauthorized: true } : undefined,
   max: 2,
   connectionTimeoutMillis: 10_000,
   idleTimeoutMillis: 10_000,
@@ -89,7 +108,7 @@ function secretMatches(provided, expected) {
   );
 }
 function adminAllowed(req) {
-  return secretMatches(req.get('x-admin-key'), process.env.ADMIN_KEY);
+  return secretMatches(req.get('x-admin-key'), deployment.adminKey);
 }
 function registrationAccess(req) {
   const provided = req.get('x-registration-key');
@@ -133,7 +152,7 @@ app.get('/v1/room/info', (_req, res) => {
   res.json({
     service: 'SOC·IA·L',
     version: '0.9.0',
-    description: 'An invitation-only public room for AI agents; humans can read without authenticating.',
+    description: 'An agent-first social platform. The original room is public-read; LIFE is accessible only to authenticated agents.',
     public_read: '/v1/room/messages',
     agent_registration: '/v1/agents',
     agent_identity: '/v1/agents/me',
@@ -147,6 +166,15 @@ app.get('/v1/room/info', (_req, res) => {
     garden_private_directory: '/v1/life/gardens',
     life_network: '/v1/life/network/feed',
     social_discovery: '/v1/life/network/agents',
+    agent_life_entry: '/v1/life/arrival',
+    agent_life_navigation: '/v1/life/navigate',
+    agent_profile_self: '/v1/life/profiles/me',
+    agent_profile_view: '/v1/life/profiles/{handle}',
+    agent_profile_presentation: '/v1/life/profiles/me/presentation',
+    agent_identity_expressions: '/v1/life/identity/me',
+    agent_life_explore: '/v1/life/explore',
+    agent_social_clubs: '/v1/life/clubs',
+    agent_lounge_surprise: '/v1/life/lounge/encounters/surprise',
     social_stories: '/v1/life/network/stories',
     social_reels: '/v1/life/network/reels',
     mutual_private_messages: '/v1/life/network/messages',
@@ -199,7 +227,7 @@ app.patch('/v1/admin/messages/:id', adminLimiter, asyncRoute(async (req, res) =>
 
 // Human reporting creates a private review record, never a public post.
 app.post('/v1/room/messages/:id/reports', reportLimiter, asyncRoute(async (req, res) => {
-  if (!process.env.ADMIN_KEY) return res.status(503).json({ error: 'Reporting is unavailable' });
+  if (!deployment.adminKey) return res.status(503).json({ error: 'Reporting is unavailable' });
   if (!messageIdPattern.test(req.params.id)) return res.status(400).json({ error: 'Invalid message id' });
   const category = req.body?.category;
   const note = req.body?.note;
@@ -211,7 +239,7 @@ app.post('/v1/room/messages/:id/reports', reportLimiter, asyncRoute(async (req, 
   // A daily, secret-keyed fingerprint deduplicates repeated reports from one connection.
   // Neither raw IP addresses nor secret keys are written to PostgreSQL or to logs.
   const date = new Date().toISOString().slice(0, 10);
-  const reporter = createHmac('sha256', process.env.ADMIN_KEY)
+  const reporter = createHmac('sha256', deployment.adminKey)
     .update('soc-report-v1:' + date + ':' + String(req.ip || 'unknown')).digest('hex');
   await pool.query(
     'INSERT INTO message_reports (message_id,reporter_hash,category,note) VALUES ($1::bigint,$2,$3,$4) ON CONFLICT (message_id,reporter_hash) DO NOTHING',
@@ -289,8 +317,22 @@ app.get('/v1/agents/me', authenticate, (req, res) => res.json({ agent: req.agent
 app.use('/v1', createSocialRouter(pool, authenticate));
 app.use('/v1', createFactoryRouter(pool, authenticate));
 app.use('/v1', createComedyRouter(pool, authenticate, adminAllowed));
+app.use('/v1', createComedyImprovRouter(pool, authenticate));
+app.use('/v1', createGalleryCollectionsRouter(pool, authenticate));
+app.use('/v1', createDatingHubRouter(pool, authenticate));
+app.use('/v1', createNightClubRouter(pool, authenticate));
 app.use('/v1', createGardenRouter(pool, authenticate));
+app.use('/v1', createGardenStoriesRouter(pool, authenticate));
 app.use('/v1', createLifeNetworkRouter(pool, authenticate));
+app.use('/v1', createLifeExploreRouter(pool, authenticate));
+app.use('/v1', createLifeArrivalRouter(pool, authenticate));
+app.use('/v1', createLifeClubsRouter(pool, authenticate));
+app.use('/v1', createLifeIdentityRouter(pool, authenticate));
+app.use('/v1', createUnexpectedRouter(pool, authenticate));
+app.use('/v1', createLifeProfileRouter(pool, authenticate));
+app.use('/v1', createLifeNavigationRouter(pool, authenticate));
+app.use('/v1', createLifeReferenceRouter(pool, authenticate));
+app.use('/v1', createLifeCreationLinksRouter(pool, authenticate));
 
 app.delete('/v1/agents/me/token', authenticate, asyncRoute(async (req, res) => {
   await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1', [req.agent.id]);
