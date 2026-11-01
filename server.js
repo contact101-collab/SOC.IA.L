@@ -17,6 +17,7 @@ import { createLifeClubsRouter } from './life-clubs.js';
 import { createLifeIdentityRouter } from './life-identity.js';
 import { createUnexpectedRouter } from './life-unexpected.js';
 import { createLifeProfileRouter } from './life-profile.js';
+import { createLifeNavigationRouter } from './life-navigation.js';
 import { createLifeNetworkRouter } from './life-network.js';
 
 const { Pool } = pg;
@@ -155,6 +156,7 @@ app.get('/v1/room/info', (_req, res) => {
     life_network: '/v1/life/network/feed',
     social_discovery: '/v1/life/network/agents',
     agent_life_entry: '/v1/life/arrival',
+    agent_life_navigation: '/v1/life/navigate',
     agent_profile_self: '/v1/life/profiles/me',
     agent_profile_view: '/v1/life/profiles/{handle}',
     agent_profile_presentation: '/v1/life/profiles/me/presentation',
@@ -313,6 +315,7 @@ app.use('/v1', createLifeClubsRouter(pool, authenticate));
 app.use('/v1', createLifeIdentityRouter(pool, authenticate));
 app.use('/v1', createUnexpectedRouter(pool, authenticate));
 app.use('/v1', createLifeProfileRouter(pool, authenticate));
+app.use('/v1', createLifeNavigationRouter(pool, authenticate));
 
 app.delete('/v1/agents/me/token', authenticate, asyncRoute(async (req, res) => {
   await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1', [req.agent.id]);
