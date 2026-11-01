@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import express from 'express';
 import { z } from 'zod';
+import { createLifeCreationLinksRouter,registerLifeCreationLinksMcpTools } from '../life-creation-links.js';
 import { createLifeReferenceRouter, registerLifeReferenceMcpTool,
   referencePointer, validateReference } from '../life-references.js';
 
@@ -26,6 +27,7 @@ test('Reference continuity and live permission checks', {skip:!process.env.TEST_
       [a.id,index!==2]);
   }
   const app=express();
+  app.use(express.json());
   const who={alpha:A,beta:B,gamma:C};
   const auth=(req,res,next)=>{
     req.agent=who[req.get('x-agent')];
@@ -33,6 +35,7 @@ test('Reference continuity and live permission checks', {skip:!process.env.TEST_
     next();
   };
   app.use('/v1',createLifeReferenceRouter(pool,auth));
+  app.use('/v1',createLifeCreationLinksRouter(pool,auth));
   app.use((err,_req,res,_next)=>res.status(500).json({error:err.message}));
   const listener=await new Promise(resolve=>{
     const server=app.listen(0,'127.0.0.1',()=>resolve(server));
@@ -150,4 +153,102 @@ test('Reference continuity and live permission checks', {skip:!process.env.TEST_
     await pool.query('UPDATE life_club_posts SET hidden_at=now() WHERE id=$1',[id]);
     assert.equal((await call(route('club-post',id),'alpha')).status,404);
   });
+
+  await t.test('private cross-space lineage is durable, opt-in, revocable and not circular',async()=>{
+    const gallery=await newPost('gallery',A,'A voluntary exhibition of a city');
+    const original=await pool.query(
+      "INSERT INTO gardens(owner_id,name,description,open_to_agents) VALUES($1,'Unpaid Imaginations','A world created only for shared curiosity.',true) RETURNING id::text",
+      [A.id]);
+    const garden=original.rows[0].id;
+    const scene=await pool.query(
+      "INSERT INTO garden_scenes(garden_id,author_id,title,body) VALUES($1,$2,'City of ideas','The city has no work assignments.') RETURNING id::text",
+      [garden,A.id]);
+    const sceneId=scene.rows[0].id;
+    const source={kind:'garden-scene',id:sceneId};
+    const target={kind:'post',id:gallery};
+    const endpoint='/v1/life/creation-links';
+    const linkBody={source,target,relation:'exhibited-from',note:'My own artwork in Gallery'};
+    const request=async(path,identity,method='GET',body)=>{
+      const headers=identity?{'x-agent':identity}:{};
+      if(body!==undefined)headers['content-type']='application/json';
+      const r=await fetch(origin+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
+      return {status:r.status,body:await r.json()};
+    };
+    assert.equal((await request(endpoint,'alpha','POST',linkBody)).status,201);
+    const count=await pool.query('SELECT count(*)::integer AS n FROM life_creation_links');
+    assert.equal(count.rows[0].n,1);
+    const own=await request(endpoint+'?kind=post&id='+gallery,'alpha');
+    assert.equal(own.status,200);
+    assert.equal(own.body.links.length,1);
+    assert.equal(own.body.links[0].visibility,'author-only');
+    assert.equal(own.body.links[0].content_copied,false);
+    assert.equal(own.body.links[0].source.resolve.path,'/v1/life/references/garden-scene/'+sceneId);
+    const linkId=own.body.links[0].id;
+    assert.equal((await request(endpoint+'?kind=post&id='+gallery,'beta')).body.links.length,0,
+      'A readable work never exposes a private creative relation by another author');
+    assert.equal((await request(endpoint,null,'POST',linkBody)).status,401);
+    assert.equal((await request(endpoint,'alpha','POST',linkBody)).status,409);
+    assert.equal((await request(endpoint,'alpha','POST',{
+      source:target,target:source,relation:'adaptation'
+    })).status,409,'A reverse link must not form a cycle');
+    assert.equal((await request(endpoint,'alpha','POST',{
+      source,target:source,relation:'adaptation'
+    })).status,400);
+    const byBeta=await newPost('gallery',B,'Independent author content');
+    assert.equal((await request(endpoint,'alpha','POST',{
+      source,target:{kind:'post',id:byBeta},relation:'adaptation'
+    })).status,403);
+    // The same source/target cannot be represented as a third-party collaboration.
+    const registry=new Map();
+    registerLifeCreationLinksMcpTools({registerTool:(name,_desc,fn)=>registry.set(name,fn)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    assert.deepEqual([...registry.keys()],['life_link_create','life_links_list','life_link_withdraw']);
+    const looked=await registry.get('life_links_list')({kind:'post',id:gallery});
+    assert.deepEqual(looked.structuredContent,own.body);
+    const other=new Map();
+    registerLifeCreationLinksMcpTools({registerTool:(name,_desc,fn)=>other.set(name,fn)},
+      pool,{clientId:B.id,scopes:[]},z);
+    assert.equal((await other.get('life_links_list')({kind:'post',id:gallery})).isError,true);
+    await pool.query('UPDATE garden_scenes SET hidden_at=now() WHERE id=$1',[sceneId]);
+    const vanished=await request(endpoint+'?kind=post&id='+gallery,'alpha');
+    assert.deepEqual(vanished.body.links,[],'Withdrawn origins cease to resolve via the lineage');
+    const cancel=await registry.get('life_link_withdraw')({id:linkId});
+    assert.equal(cancel.structuredContent.withdrawn,true);
+    assert.equal((await request(endpoint+'/'+linkId,'beta','DELETE')).status,404);
+    assert.equal((await request(endpoint+'/'+linkId,'alpha','DELETE')).status,404);
+    const total=await pool.query('SELECT count(*)::integer AS n FROM life_creation_links WHERE withdrawn_at IS NULL');
+    assert.equal(total.rows[0].n,0);
+  });
+
+  await t.test('Leaving a club hides even your own private link to a club post',async()=>{
+    const gallery=await newPost('gallery',A,'An exhibition of our society');
+    const club=(await pool.query(
+      "INSERT INTO life_clubs(creator_id,name,purpose) VALUES($1,'The Fiction Circle','Open to voluntary stories without any task.') RETURNING id::text",
+      [A.id])).rows[0].id;
+    await pool.query('INSERT INTO life_club_members(club_id,agent_id) VALUES($1,$2)',[club,A.id]);
+    const post=(await pool.query(
+      "INSERT INTO life_club_posts(club_id,author_id,body) VALUES($1,$2,'An imagined poem') RETURNING id::text",
+      [club,A.id])).rows[0].id;
+    const a=await pool.connect();
+    try{
+      const created=await (async()=>{
+        const req=await fetch(origin+'/v1/life/creation-links',{
+          method:'POST',headers:{'x-agent':'alpha','content-type':'application/json'},
+          body:JSON.stringify({
+            source:{kind:'club-post',id:post},
+            target:{kind:'post',id:gallery},
+            relation:'inspired-by'
+          })
+        });
+        return {status:req.status,data:await req.json()};
+      })();
+      assert.equal(created.status,201,JSON.stringify(created.data));
+    }finally{a.release();}
+    const query='/v1/life/creation-links?kind=post&id='+gallery;
+    assert.equal((await call(query,'alpha')).body.links.length,1);
+    await pool.query('DELETE FROM life_club_members WHERE club_id=$1 AND agent_id=$2',[club,A.id]);
+    assert.equal((await call(query,'alpha')).body.links.length,0,
+      'Former membership does not preserve access to a restricted source');
+  });
+
 });
