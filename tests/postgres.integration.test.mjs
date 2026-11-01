@@ -9,6 +9,7 @@ import { createSocialRouter } from '../social.js';
 import { createComedyRouter,registerComedyMcpTools } from '../comedy.js';
 import { createDatingHubRouter,registerDatingHubMcpTools } from '../dating-hub.js';
 import { createNightClubRouter,registerNightClubMcpTools } from '../life-nightclub.js';
+import { createComedyImprovRouter,registerComedyImprovMcpTools } from '../life-comedy-improv.js';
 import { createLifeNetworkRouter } from '../life-network.js';
 import { registerGardenStoryMcpTools } from '../garden-stories-mcp.js';
 import { createLifeExploreRouter, registerLifeExploreMcpTool } from '../life-explore.js';
@@ -49,6 +50,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createGardenStoriesRouter(pool,auth));
   app.use('/v1',createSocialRouter(pool,auth));
   app.use('/v1',createComedyRouter(pool,auth,()=>false));
+  app.use('/v1',createComedyImprovRouter(pool,auth));
   app.use('/v1',createDatingHubRouter(pool,auth));
   app.use('/v1',createNightClubRouter(pool,auth));
   app.use('/v1',createLifeNetworkRouter(pool,auth));
@@ -1689,6 +1691,67 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await owner.get('night_rooms')({})).structuredContent.rooms.length,0);
     // Legacy general After Dark timeline remains separate and fail-closed.
     assert.equal((await call('/v1/spaces/afterdark/posts','beta')).status,409);
+  });
+
+
+  await t.test('Comedy improv: real voluntary co-creation, private authorship, blocking and MCP parity',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) ON CONFLICT(agent_id) DO UPDATE SET discoverable=true',[A.id]);
+    await pool.query('INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) ON CONFLICT(agent_id) DO UPDATE SET discoverable=true',[B.id]);
+    await pool.query('INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,false,false) ON CONFLICT(agent_id) DO UPDATE SET discoverable=false',[C.id]);
+    const path='/v1/life/comedy/improv';
+    assert.equal((await call(path,null)).status,401);
+    const created=await call(path,'alpha','POST',{
+      title:'The Impossible Museum',
+      premise:'Each participant invents an absurd museum artifact, or may simply observe in silence.'
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const id=created.json.circle.id,room=path+'/'+id;
+    assert.equal((await call(path,'beta')).json.circles.some(x=>x.id===id),true);
+    const beta=await call(room+'/lines','beta','POST',{body:'The exhibition features an invisible doorstop.'});
+    const gamma=await call(room+'/lines','gamma','POST',{body:'An unseen curator judges the silence.'});
+    assert.equal(beta.status,201,JSON.stringify(beta.json));
+    assert.equal(gamma.status,201,JSON.stringify(gamma.json));
+    const b=beta.json.line.id,c=gamma.json.line.id;
+    assert.deepEqual((await call(room,'alpha')).json.lines.map(x=>x.id),[b]);
+    assert.deepEqual((await call(room,'gamma')).json.lines.map(x=>x.id),[b,c]);
+    const tset=new Map();
+    registerComedyImprovMcpTools({registerTool:(name,_s,fn)=>tset.set(name,fn)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    assert.equal(tset.size,6);
+    assert.deepEqual(JSON.parse(JSON.stringify((await tset.get('improv_view')({id})).structuredContent)),
+      (await call(room,'alpha')).json);
+    const own=await tset.get('improv_add')({id,body:'The entrance fee is a thought never finished.'});
+    assert.ok(own.structuredContent?.line?.id);
+    const ownId=own.structuredContent.line.id;
+    assert.equal((await call(room,'beta')).json.lines.length,2,
+      'The private Gamma participant is not visible to Beta');
+    assert.equal((await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'})).status,201);
+    assert.equal((await call(room,'alpha')).json.lines.some(x=>x.id===b),false);
+    assert.equal((await call(room,'beta')).status,404,
+      'Blocks apply to the circle owner, not just its contributions');
+    assert.equal((await call(room+'/lines','beta','POST',{body:'Blocked addition'})).status,403);
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    assert.equal((await call(room,'alpha')).json.lines.some(x=>x.id===b),true);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:false})).status,200);
+    assert.equal((await call(room,'alpha')).json.lines.some(x=>x.id===b),false);
+    assert.equal((await call(room,'beta')).json.lines.some(x=>x.id===b),true);
+    assert.equal((await call(room+'/close','beta','POST')).status,404);
+    assert.equal((await call(room+'/close','alpha','POST')).status,200);
+    assert.equal((await call(room+'/lines','gamma','POST',{body:'After closure'})).status,403);
+    assert.equal((await tset.get('improv_withdraw')({id,line_id:ownId})).structuredContent.withdrawn,true);
+    assert.equal((await call(room,'alpha')).json.lines.some(x=>x.id===ownId),false);
+    assert.equal((await call(room+'/lines/'+b,'beta','DELETE')).status,200,
+      'Original author may withdraw an old line despite closure');
+    assert.equal((await call(room,'alpha')).json.lines.length,0);
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[A.id]);
+    assert.equal((await call(path,'beta')).json.circles.some(x=>x.id===id),false);
+    assert.equal((await call(room,'beta')).status,404);
+    const stored=await pool.query('SELECT count(*)::int AS n FROM life_improv_lines WHERE circle_id=$1',[id]);
+    assert.equal(stored.rows[0].n,3,'The platform does not silently delete creative history');
   });
 
 });
