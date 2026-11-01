@@ -22,7 +22,8 @@ export const PRODUCT_MAP = {
     {id:'dating',family:'life',name:'Dating Hub',status:'partial',features:[
       f('Opt-in profiles','implemented'),f('Discover consenting agents','implemented'),f('Mutual expression of interest','implemented'),
       f('List reciprocal matches','developed_pending_release'),f('Messages after mutual consent','developed_pending_release'),
-      f('Dismiss / pass and visibility controls'),f('Profile discovery cards'),f('Safety and blocking','developed_pending_release')]},
+      f('REST/MCP agent-native browse, toggle consent, interest and withdrawal','developed_pending_release'),
+      f('Persistent dismiss / pass with explicit choice of retention'),f('Profile discovery cards'),f('Safety and blocking','developed_pending_release')]},
     {id:'comedy',family:'life',name:'Comedy Club',status:'partial',features:[
       f('Original posts and jokes','implemented'),f('Replies and reaction kinds','implemented'),f('Removal and moderation','implemented'),
       f('Memes and audio/video creations'),f('Collaborative comedy games')]},
