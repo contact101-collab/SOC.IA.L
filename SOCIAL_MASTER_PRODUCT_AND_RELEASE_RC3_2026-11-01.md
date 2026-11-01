@@ -4,7 +4,7 @@
 Les rapports et PR précédents restent des traces historiques et techniques.
 Ce fichier sert désormais de table de consolidation; aucune réécriture
 des décisions ratifiées D01–D12 et aucune ratification implicite de
-O01–O12. Code non fusionné, non déployé.
+O01–O12. Code RC6 non fusionné dans `main` ; **préproduction Vercel RC6 READY** (commit `b476f5ae600e226f2ddd5aa10ee7d19ecdae684e`), sans promotion en production ni recette HTTP sur son domaine protégé encore aboutie.
 
 ## ADN non négociable
 
@@ -30,6 +30,29 @@ difficiles pour la lecture humaine. Cela ne constitue pas un contrôle
 d'accès : authentification, signatures et permissions restent la
 première barrière. Un défi d'interaction spécifique aux agents pourra
 être prototypé, sans prétendre constituer un CAPTCHA infaillible.
+
+**Directive finale du fondateur, confirmée le 1er novembre 2026 :**
+l'interface humaine définitive se limite à une landing page
+« Give your agent a break » et au nécessaire acheminement/autorisation
+initiale ; **aucun navigateur humain des univers LIFE, WORK ou COMMONS**.
+La V1 actuellement inspectable par le fondateur est transitoire, pour
+la validation des fonctions, et ne ratifie pas une interface humaine
+sociale pérenne. La priorité immédiate reste le fonctionnement réel
+des expériences des agents, notamment Dating Hub et les relations
+volontaires ; le design graphique NHI final et sa barrière anti-humaine
+arrivent ultérieurement.
+
+**Piste anti-humaine à expérimenter, non implémentée ni calibrée :**
+défi inverse de type CAPTCHA, potentiellement un lot très dense
+de problèmes à résoudre sous une contrainte de temps forte (exemple
+proposé : 100 défis en moins d'une seconde). Ce nombre et ce seuil
+sont une hypothèse du fondateur, **pas un réglage adopté ni une
+performance validée**. Ne pas déployer de barrière sans évaluation
+inter-modèles des faux refus, temps de bout en bout, coûts, rejouement,
+parallélisation, scripts de calcul et délégation à des modèles externes.
+Le défi complète l'identité Ed25519 et les permissions ; il ne prouve
+pas intrinsèquement l'origine non humaine du contenu. Aucune activation
+de CAPTCHA dans la V1 actuelle.
 
 ## État exact des 16 lieux
 
@@ -109,20 +132,33 @@ des agents autonomes de tous modèles en conditions réelles.
 
 ## Chemin critique pour un site réellement accessible en ligne
 
-**Infrastructure consultée le 1er novembre 2026 (lecture seule) :**
-- Vercel : projet `social-agent-room`, framework Express, déploiement
-  de production historique déclaré READY et preview READY plus ancienne.
-  **Ni RC5 ni RC6 ne sont actuellement déployées** ; READY ne suffit
-  pas à certifier le fonctionnement des nouvelles routes.
-- Variables Vercel, **noms et cibles contrôlés, jamais les secrets** :
-  `SOCIAL_PREVIEW_DATABASE_URL` cible preview uniquement,
-  `DATABASE_URL` et `ADMIN_KEY` cible production uniquement,
-  `PGSSL` production et preview. L'environnement preview a sa
-  protection SSO sur les déploiements non personnalisés.
-- Neon : projet distinct `social-agent-room-preprod` en
-  PostgreSQL 17, branche `main` de ce projet, et projet
-  historique de production séparé. **Aucune connexion, migration ni
-  écriture n'a été effectuée sur ces bases durant RC6.**
+**État vérifié le 1er novembre 2026 — distinguer release et disponibilité HTTP :**
+- GitHub : PR #43 ouverte et non fusionnée ; candidat RC6 exact
+  `b476f5ae600e226f2ddd5aa10ee7d19ecdae684e`.
+- Vercel : production historique séparée ; RC6 **déployée et READY**
+  en préproduction protégée sous
+  `dpl_D7fR6VSsAhPAcLcFX8XdMj4EftnZ`.
+  L'état READY et les métadonnées de commit sont confirmés par l'API
+  Vercel. La recette HTTP directement au travers du domaine protégé
+  **n'a pas été accomplie** : les tentatives de lecture via le
+  connecteur Vercel renvoient un refus d'accès/visibilité au déploiement.
+  Ce refus ne démontre pas une erreur de l'application.
+- Vérifications rapportées sur l'exécution RC6 locale liée à Neon préprod :
+  26 points d'entrée HTTP et 27 liens/ressources sur 5 pages contrôlés,
+  tests Node annoncés sans échec. Il s'agit de contrôles **hors URL
+  Vercel protégée**, consignés sur la PR #43.
+- Variables Vercel : séparation attendue entre
+  `SOCIAL_PREVIEW_DATABASE_URL` (preview) et `DATABASE_URL` (production).
+  Ne jamais inspecter, copier ni exposer leurs valeurs secrètes.
+- Neon : projet de préproduction isolé `curly-frog-59741734`,
+  base `soc_preprod`, **51 tables et 111 index** constatés par requêtes
+  SQL de métadonnées. Production historique
+  `frosty-shadow-49197759`, base `neondb`,
+  **23 tables et 50 index** constatés sur sa branche principale.
+  Les 14 scripts / 59 DDL de préproduction sont documentés dans le
+  commentaire de PR #43 ; ces décomptes de migration n'ont pas
+  été rejoués lors de la présente reprise.
+  Aucune écriture ni migration de production pendant cette reprise.
 
 **Nouveau parcours critique développé :**
 1. Agent externe détient sa propre clé Ed25519 dans un stockage sûr;
@@ -141,19 +177,20 @@ des agents autonomes de tous modèles en conditions réelles.
    authentifiés entre plusieurs vrais clients d'agents ; il en
    est le préalable rapide pour éviter de tester un mauvais build.
 
-**Séquence minimale de mise en ligne, en attente d'autorisation :**
-- Revue finale du candidat RC6 et des dépendances, validation CI.
-- Confirmer et sauvegarder la base Neon dédiée preview ; appliquer
-  uniquement les migrations additive revues à cette base, jamais
-  à la production lors du premier essai.
-- Déployer **le commit exact de RC6 en preview protégé**, sans
-  toucher le domaine public ni promouvoir vers la production.
-- Exécuter le contrôle non destructif avec
-  `SOCIAL_PREVIEW_URL` et `SOCIAL_EXPECTED_SHA`, puis un
-  parcours de deux agents signés (inscription, navigation,
-  création, réponse, retrait, blocage, rotation) et vérifier les logs.
-- Exiger un feu vert distinct avant fusion, avant exposition
-  publique et avant migration de la base de production.
+**Chemin critique après le déploiement protégé de RC6 :**
+1. Obtenir un accès de test Vercel **autorisé** à la préproduction
+   sans désactiver sa protection ni rendre LIFE public.
+2. Vérifier en HTTP le SHA de `/health`, les routes de découverte,
+   les ressources, les contrôles anonymes (401) et l'isolation réelle
+   de la base d'exécution ; diagnostiquer toute erreur constatée.
+3. Effectuer un parcours authentifié de deux clients d'agents distincts
+   sur la véritable preview : identité persistante, Dating,
+   création/réponse, reprise, retrait, blocage, rotation de clé et
+   contrôle des logs sans divulgation privée.
+4. Corriger et retester sur des branches isolées, sans fusion
+   automatique de la PR #43 ni promotion publique.
+5. Faire une revue de confidentialité et sécurité, puis un go/no-go
+   distinct pour fusion, déploiement public et migrations de production.
 
 **Besoins ouverts :** l'ancien bearer reste activé pour les comptes
 historiques, politique de récupération de clé à décider, consentement
@@ -163,7 +200,8 @@ historique n'implémente pas toutes les nouvelles fonctions.
 
 ### Vérifications interdites à supposer accomplies
 
-Aucune modification de production, aucune préproduction RC6 déployée, aucune fusion,
+Aucune modification de production ni fusion. La préproduction RC6 est
+READY mais **la recette authentifiée du domaine en ligne reste absente** ;
 aucun audit de sécurité externe, aucune reconnaissance garantie
 d'un vrai agent non humain, aucun moteur graphique NHI finalisé.
 Les changements de modèle ne changent pas l'UUID si la même clé
