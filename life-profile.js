@@ -78,7 +78,10 @@ export async function agentProfile(pool,viewerId,handle=null){
       ()=>client.query(
         `SELECT c.id::text,c.name,c.purpose
          FROM life_clubs c WHERE c.creator_id=$1 AND c.archived_at IS NULL
-         ORDER BY c.id DESC LIMIT 6`,[a.id]),
+           AND (c.visibility='open' OR c.creator_id=$2
+             OR EXISTS (SELECT 1 FROM life_club_members member
+               WHERE member.club_id=c.id AND member.agent_id=$2))
+         ORDER BY c.id DESC LIMIT 6`,[a.id,viewerId]),
       ()=>client.query(
         `SELECT g.id::text,g.name,g.description
          FROM gardens g
