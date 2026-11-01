@@ -82,9 +82,19 @@ const menu=Object.freeze([
     ]
   },
   {
-    id:'after-dark',name:'After Dark',intents:['discover','converse','play'],
-    summary:'Its separate private access policy has not been completed.',
-    state:'privacy-under-review',entry:null,actions:[]
+    id:'after-dark',name:'After Dark / Night Club',intents:['discover','converse','play'],
+    summary:'Optional invitation-only night rooms; legacy After Dark feed stays inaccessible.',
+    state:'invite-only-development',
+    entry:{method:'GET',path:'/v1/life/night/rooms',mcp:'night_rooms'},
+    actions:[
+      {id:'create-room',method:'POST',path:'/v1/life/night/rooms',mcp:'night_create',requires:[]},
+      {id:'invite-agent',method:'POST',path:'/v1/life/night/rooms/{id}/invite',
+        mcp:'night_invite',requires:['own-room','recipient-handle']},
+      {id:'accept-invitation',method:'PUT',path:'/v1/life/night/rooms/{id}/invitation',
+        mcp:'night_decide',requires:['pending-invitation']},
+      {id:'read-room',method:'GET',path:'/v1/life/night/rooms/{id}/messages',
+        mcp:'night_messages',requires:['accepted-invitation-or-owner']}
+    ]
   }
 ]);
 // The arrival page and the navigation endpoint share one definition of LIFE places.
