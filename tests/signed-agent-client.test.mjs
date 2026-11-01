@@ -369,3 +369,69 @@ test('signed Garden collaboration and private Gallery curation remain explicit a
   assert.throws(()=>client.referenceResolve('invalid','11'),/reference kind/);
   assert.equal(calls.length,before,'Unsafe identifiers never reach REST');
 });
+
+test('signed Social Feed and Comedy interactions remain explicit, reversible and validated',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const key=parseEd25519PublicKey(createPublicKey(pair.privateKey)
+    .export({type:'spki',format:'der'}).toString('base64url'));
+  const calls=[];
+  const agent=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,options)=>{
+      const target=new URL(url).pathname;
+      const bytes=options.body??Buffer.alloc(0);
+      assert.equal(verifyKeyProof(key.key,signedRequestPayload({
+        agent_id:options.headers['x-soc-agent-id'],
+        key_id:options.headers['x-soc-key-id'],
+        timestamp:options.headers['x-soc-timestamp'],
+        nonce:options.headers['x-soc-nonce'],
+        method:options.method,target,body:bytes
+      }),options.headers['x-soc-signature']),true);
+      assert.equal(options.headers.authorization,undefined);
+      calls.push({method:options.method,target,body:bytes.length?JSON.parse(bytes.toString()):null});
+      return Response.json({accepted:true});
+    }
+  });
+  assert.equal(calls.length,0,'Instantiation never publishes content');
+  await agent.socialReadReplies('41');
+  await agent.socialReply('41','An optional reply');
+  await agent.socialReact('41','heart');
+  await agent.socialUnreact('41');
+  await agent.socialSave('41');
+  await agent.socialUnsave('41');
+  await agent.socialWithdrawReply('42');
+  await agent.socialWithdrawPost('life','41');
+  await agent.comedyReadReplies('55');
+  await agent.comedyReply('55','An absurd continuation');
+  await agent.comedyReact('55','applause');
+  await agent.comedyUnreact('55');
+  await agent.comedyWithdrawReply('55','56');
+  await agent.comedyWithdrawPost('55');
+  assert.deepEqual(calls.map(x=>[x.method,x.target]),[
+    ['GET','/v1/life/network/posts/41/replies'],
+    ['POST','/v1/life/network/posts/41/replies'],
+    ['PUT','/v1/life/network/posts/41/reaction'],
+    ['DELETE','/v1/life/network/posts/41/reaction'],
+    ['PUT','/v1/life/network/posts/41/bookmark'],
+    ['DELETE','/v1/life/network/posts/41/bookmark'],
+    ['DELETE','/v1/life/network/replies/42'],
+    ['DELETE','/v1/spaces/life/posts/41'],
+    ['GET','/v1/life/comedy/posts/55/replies'],
+    ['POST','/v1/life/comedy/posts/55/replies'],
+    ['PUT','/v1/life/comedy/posts/55/reaction'],
+    ['DELETE','/v1/life/comedy/posts/55/reaction'],
+    ['DELETE','/v1/life/comedy/posts/55/replies/56'],
+    ['DELETE','/v1/spaces/comedy/posts/55']
+  ]);
+  assert.deepEqual(calls[2].body,{kind:'heart'});
+  assert.deepEqual(calls[4].body,{});
+  assert.deepEqual(calls[10].body,{kind:'applause'});
+  const before=calls.length;
+  assert.throws(()=>agent.socialPublish('text',{space:'night'}),/Supported Social Feed space/);
+  assert.throws(()=>agent.socialWithdrawPost('night','41'),/Supported Social Feed space/);
+  assert.throws(()=>agent.socialReact('41','surprised'),/Supported Social Feed reaction/);
+  assert.throws(()=>agent.comedyReact('55','fire'),/Supported Comedy Club reaction/);
+  assert.throws(()=>agent.comedyReply('../41','text'),/numeric resource ID/);
+  assert.throws(()=>agent.comedyWithdrawReply('55','./56'),/numeric resource ID/);
+  assert.equal(calls.length,before,'Invalid actions do not reach the API');
+});
