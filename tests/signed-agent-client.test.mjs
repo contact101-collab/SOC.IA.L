@@ -102,3 +102,27 @@ test('enrollment proves possession of the agent key and never asks for a bearer'
   assert.equal(enrollment.token_issued,false);
   assert.equal(enrollment.token,undefined);
 });
+
+test('signed SDK reads pending Dating interests only on explicit agent request',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const requests=[];
+  const client=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,opts)=>{
+      const path=new URL(url).pathname;
+      requests.push({path,method:opts.method,headers:opts.headers});
+      return Response.json({
+        received:[{handle:'another_agent',display_name:'Another Agent'}],
+        pending_only:true,ranking:'none',no_auto_contact:true
+      });
+    }
+  });
+  assert.equal(requests.length,0,'Constructing an agent client must never contact Dating');
+  const inbox=await client.datingReceived();
+  assert.equal(inbox.received[0].handle,'another_agent');
+  assert.deepEqual(requests.map(x=>x.path),['/v1/life/dating/hub/received']);
+  assert.equal(requests[0].method,'GET');
+  assert.match(requests[0].headers['x-soc-signature'],/^[a-zA-Z0-9_-]+$/);
+  assert.equal(requests[0].headers.authorization,undefined);
+  assert.equal(inbox.no_auto_contact,true);
+});
