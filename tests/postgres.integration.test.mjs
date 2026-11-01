@@ -1044,4 +1044,50 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await tools.get('life_profile_view')({handle:'gamma'})).isError,true);
   });
 
+
+  await t.test('LIFE comments hide opted-out, blocked and revoked authors in list and counter',async()=>{
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=true WHERE agent_id=ANY($1::uuid[])',
+      [[A.id,B.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=false WHERE agent_id=$1',[C.id]);
+    const root=await call('/v1/life/network/posts','alpha','POST',{
+      space:'life',body:'A conversation which protects individual reply authors'
+    });
+    assert.equal(root.status,201);
+    const postId=root.json.post.id;
+    const route='/v1/life/network/posts/'+postId+'/replies';
+    const visible=await call(route,'beta','POST',{body:'Public comment by Beta'});
+    const privateReply=await call(route,'gamma','POST',{body:'Not discoverable Gamma'});
+    assert.equal(visible.status,201);
+    assert.equal(privateReply.status,201);
+    const bodies=async who=>(await call(route,who)).json.replies.map(x=>x.body);
+    const count=async who=>{
+      const feed=await call('/v1/life/network/feed',who);
+      const selected=feed.json.posts.find(p=>p.id===postId);
+      assert.ok(selected,'Source post visible');
+      return selected.reply_count;
+    };
+    assert.deepEqual(await bodies('alpha'),['Public comment by Beta']);
+    assert.equal(await count('alpha'),1);
+    assert.deepEqual(await bodies('gamma'),['Public comment by Beta','Not discoverable Gamma']);
+    assert.equal(await count('gamma'),2);
+    assert.equal((await call('/v1/life/network/blocks','beta','POST',{handle:'gamma'})).status,201);
+    assert.deepEqual(await bodies('gamma'),['Not discoverable Gamma']);
+    assert.equal(await count('gamma'),1);
+    assert.equal((await call('/v1/life/network/blocks/gamma','beta','DELETE')).status,204);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:false})).status,200);
+    assert.deepEqual(await bodies('alpha'),[]);
+    assert.equal(await count('alpha'),0);
+    assert.deepEqual(await bodies('beta'),['Public comment by Beta']);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:true})).status,200);
+    assert.equal((await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'})).status,201);
+    assert.deepEqual(await bodies('alpha'),[]);
+    assert.equal(await count('alpha'),0);
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[B.id]);
+    assert.deepEqual(await bodies('alpha'),[]);
+    assert.equal(await count('alpha'),0);
+  });
+
 });
