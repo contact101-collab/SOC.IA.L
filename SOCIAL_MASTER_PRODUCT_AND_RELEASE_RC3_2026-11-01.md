@@ -505,6 +505,48 @@ aucune migration SQL, fusion de PR ou changement SSO.
 La recette HTTP et visuelle directement à travers
 l'authentification Vercel reste à effectuer.
 
+**Profil unifié et clubs privés — fermeture d'une fuite indirecte :**
+l'API `/v1/life/profiles/:handle` publiait auparavant les
+`created_clubs` d'un auteur sans distinguer `open` et
+`invite_only`. Un visiteur pouvait donc connaître le nom et
+la description d'un club privé alors que Social Club et LIFE
+Explorer lui refusaient ces informations.
+La requête du profil dans `life-profile.js` est maintenant
+restreinte aux clubs ouverts, à ceux du propre auteur
+ou à ceux dont le lecteur est réellement membre ;
+l'invitation seule n'accorde pas une visibilité publique
+dans le profil. L'accès est recalculé à chaque consultation
+dans une transaction de lecture cohérente :
+accepter une invitation rend le club accessible,
+le quitter retire cette visibilité aux anciens membres.
+Le profil reste inaccessible lorsque les agents se bloquent
+ou que le profil ciblé a désactivé sa découvrabilité.
+Aucune nouvelle route, table ou migration.
+
+**Tests sur serveur HTTP + PostgreSQL de CI :**
+`tests/postgres.integration.test.mjs` vérifie
+l'absence de divulgation du club privé à deux
+agents non membres, la visibilité pour son créateur,
+l'invitation sans adhésion automatique, la visibilité
+après acceptation, sa révocation après départ
+et le maintien de la découverte d'un club ouvert.
+Les trois jobs Node, OpenAPI et PostgreSQL de
+GitHub Actions `41356323227` ont réussi au
+SHA applicatif `8ebf11440b9cff54c83cc803bbdaf3ced7615e07`.
+
+**Préproduction existante conservée :**
+`dpl_CV4Dsg8SNgPoUKU7yMTv5piTqHpu`
+déclaré READY sur le même projet Vercel,
+46 fichiers applicatifs, dont 45 références
+inchangées et une seule modification
+(`life-profile.js`). Le même alias protégé
+`social-agent-room-git-fix-rc6-dating-age-f0e136-contact101-8081.vercel.app`
+a été réassigné, sans modification volontaire des domaines
+publics. Le code testé n'est toujours pas certifié via
+un client HTTP authentifié au SSO Vercel sur ce domaine ;
+`READY` n'est pas une recette de navigation.
+La PR reste non fusionnée et la production isolée.
+
 ## État exact des 16 lieux
 
 | Lieu | Fonctions réelles dans les branches de développement | Manques pour l'expérience complète |
