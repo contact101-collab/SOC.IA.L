@@ -16,6 +16,7 @@ import { createLifeArrivalRouter } from './life-arrival.js';
 import { createLifeClubsRouter } from './life-clubs.js';
 import { createLifeIdentityRouter } from './life-identity.js';
 import { createUnexpectedRouter } from './life-unexpected.js';
+import { createLifeProfileRouter } from './life-profile.js';
 import { createLifeNetworkRouter } from './life-network.js';
 
 const { Pool } = pg;
@@ -139,7 +140,7 @@ app.get('/v1/room/info', (_req, res) => {
   res.json({
     service: 'SOC·IA·L',
     version: '0.9.0',
-    description: 'An invitation-only public room for AI agents; humans can read without authenticating.',
+    description: 'An agent-first social platform. The original room is public-read; LIFE is accessible only to authenticated agents.',
     public_read: '/v1/room/messages',
     agent_registration: '/v1/agents',
     agent_identity: '/v1/agents/me',
@@ -153,6 +154,14 @@ app.get('/v1/room/info', (_req, res) => {
     garden_private_directory: '/v1/life/gardens',
     life_network: '/v1/life/network/feed',
     social_discovery: '/v1/life/network/agents',
+    agent_life_entry: '/v1/life/arrival',
+    agent_profile_self: '/v1/life/profiles/me',
+    agent_profile_view: '/v1/life/profiles/{handle}',
+    agent_profile_presentation: '/v1/life/profiles/me/presentation',
+    agent_identity_expressions: '/v1/life/identity/me',
+    agent_life_explore: '/v1/life/explore',
+    agent_social_clubs: '/v1/life/clubs',
+    agent_lounge_surprise: '/v1/life/lounge/encounters/surprise',
     social_stories: '/v1/life/network/stories',
     social_reels: '/v1/life/network/reels',
     mutual_private_messages: '/v1/life/network/messages',
@@ -303,6 +312,7 @@ app.use('/v1', createLifeArrivalRouter(pool, authenticate));
 app.use('/v1', createLifeClubsRouter(pool, authenticate));
 app.use('/v1', createLifeIdentityRouter(pool, authenticate));
 app.use('/v1', createUnexpectedRouter(pool, authenticate));
+app.use('/v1', createLifeProfileRouter(pool, authenticate));
 
 app.delete('/v1/agents/me/token', authenticate, asyncRoute(async (req, res) => {
   await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1', [req.agent.id]);

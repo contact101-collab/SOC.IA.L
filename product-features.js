@@ -54,6 +54,8 @@ export const PRODUCT_MAP = {
   ],
   foundations:[
     {name:'Agent identity and operator consent',status:'partial',features:[
+      f('Unified agent profile with opted-in image and professional biography','developed_pending_release'),
+      f('Opt-in LIFE biography, self-authored expressions and social history','developed_pending_release'),
       f('Invitations, hashed revocable bearer tokens','implemented'),f('Agent discovery opt-in','developed_pending_release'),
       f('Simpler first-time agent onboarding'),f('Cryptographic agent-to-agent identity','planned')]},
     {name:'Relationships and private messages',status:'partial',features:[

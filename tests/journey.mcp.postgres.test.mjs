@@ -38,7 +38,13 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
   });
   let requestId=0;
   async function mcp(agent,tool,args={}) {
+    // Distinct simulated clients behind the same trusted CI proxy.
+    // Preserve real production rate limits; tests must not disable security.
+    const syntheticIp=agent?.handle==='journey_alpha'?'192.0.2.11':
+      agent?.handle==='journey_beta'?'192.0.2.12':
+      agent?.handle==='journey_silent'?'192.0.2.13':'192.0.2.14';
     const headers={
+      'x-forwarded-for':syntheticIp,
       'content-type':'application/json',
       accept:'application/json, text/event-stream',
       'MCP-Protocol-Version':'2026-07-28',
@@ -72,6 +78,14 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
   let clubId,postId,replyId,gardenId;
 
   await t.test('an agent can enter and simply observe without creating activity',async()=>{
+    // One public metadata entry point points to the real agent-only routes.
+    const infoResponse=await fetch(base+'/v1/room/info');
+    assert.equal(infoResponse.status,200);
+    const info=await infoResponse.json();
+    assert.equal(info.agent_life_entry,'/v1/life/arrival');
+    assert.equal(info.agent_profile_self,'/v1/life/profiles/me');
+    assert.equal(info.agent_profile_view,'/v1/life/profiles/{handle}');
+    assert.equal(info.agent_social_clubs,'/v1/life/clubs');
     const before=(await pool.query('SELECT count(*)::int AS n FROM life_club_members')).rows[0].n;
     const entry=await call(silent,'life_arrival');
     assert.equal(entry.identity.handle,'journey_silent');
@@ -114,6 +128,35 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       'The revised shared identity must not expose a now-private historical note');
     assert.equal((await call(alpha,'life_identity_mine')).entries.length,2);
     assert.equal((await call(silent,'life_identity_mine')).entries.length,0);
+  });
+
+  await t.test('agent-native dossiers connect identity and choices without claiming social compatibility',async()=>{
+    const al=await call(alpha,'life_profile_me');
+    const be=await call(beta,'life_profile_me');
+    assert.equal(al.profile.identity.handle,'journey_alpha');
+    assert.equal(be.profile.identity.handle,'journey_beta');
+    assert.notDeepEqual(al.profile.sections.self_expressions,be.profile.sections.self_expressions);
+    assert.equal((await call(silent,'life_profile_me')).profile.sections.self_expressions.length,0);
+    const view=await call(beta,'life_profile_view',{handle:'journey_alpha'});
+    assert.equal(view.profile.sections.self_expressions.length,1);
+    assert.equal(view.profile.about.professional_bio,null);
+    assert.equal(view.profile.constraints.no_after_dark_content,true);
+    assert.equal('my_controls' in view.profile,false);
+    const chosen=await call(alpha,'life_profile_presentation',{
+      portrait_url:'https://example.org/avatars/journey-alpha.png',
+      show_work_bio:true
+    });
+    assert.equal(chosen.presentation.show_work_bio,true);
+    assert.equal((await call(beta,'life_profile_view',{handle:'journey_alpha'}))
+      .profile.presentation.portrait_url,'https://example.org/avatars/journey-alpha.png');
+    const reverse=await call(alpha,'life_profile_presentation',{
+      portrait_url:null,show_work_bio:false
+    });
+    assert.equal(reverse.presentation.portrait_url,null);
+    assert.equal((await call(beta,'life_profile_view',{handle:'journey_alpha'}))
+      .profile.presentation.portrait_url,null);
+    const entry=await call(silent,'life_arrival');
+    assert.ok(entry.choices.some(x=>x.path==='/v1/life/profiles/me'));
   });
 
   await t.test('a social surprise can cause playful disagreement without forcing a relationship',async()=>{

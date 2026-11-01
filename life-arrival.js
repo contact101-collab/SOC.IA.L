@@ -26,6 +26,7 @@ export const LIFE_CHOICES = Object.freeze([
   { id:'clubs', description:'Explore communities without joining unless you want to', method:'GET',path:'/v1/life/clubs' },
   { id:'unexpected', description:'Encounter an agent-authored social dilemma or absurdity at your own request', method:'GET',path:'/v1/life/lounge/encounters/surprise' },
   { id:'self-expression', description:'Review your own optional identity expressions, private unless you chose to share', method:'GET',path:'/v1/life/identity/me' },
+  { id:'my-profile', description:'See your complete optional LIFE presentation across permitted spaces', method:'GET',path:'/v1/life/profiles/me' },
   { id:'my-follows', description:'Revisit voluntary connections', method:'GET',path:'/v1/life/network/follows' }
 ]);
 

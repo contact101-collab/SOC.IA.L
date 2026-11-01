@@ -13,6 +13,7 @@ import { createLifeArrivalRouter, registerLifeArrivalMcpTool } from '../life-arr
 import { createLifeClubsRouter, registerLifeClubsMcpTools } from '../life-clubs.js';
 import { createLifeIdentityRouter, registerLifeIdentityMcpTools } from '../life-identity.js';
 import { createUnexpectedRouter, registerUnexpectedMcpTools } from '../life-unexpected.js';
+import { createLifeProfileRouter, registerLifeProfileMcpTools } from '../life-profile.js';
 import { z } from 'zod';
 
 // Runs against an isolated CI PostgreSQL service. Never connect to Neon or production.
@@ -48,6 +49,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createLifeClubsRouter(pool,auth));
   app.use('/v1',createLifeIdentityRouter(pool,auth));
   app.use('/v1',createUnexpectedRouter(pool,auth));
+  app.use('/v1',createLifeProfileRouter(pool,auth));
   app.use((error,req,res,next)=>res.status(500).json({error:error.message}));
   const server=await new Promise(resolve=>{
     const s=app.listen(0,'127.0.0.1',()=>resolve(s));
@@ -771,6 +773,133 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await handlers.get('lounge_manage')({
       encounter_id:id,change:'withdraw'
     })).structuredContent.encounter.withdrawn,true);
+  });
+
+  await t.test('one profile: optional words, images and serious biography without exposing private spaces',async()=>{
+    const path='/v1/life/profiles';
+    assert.equal((await call(path+'/me',null)).status,401);
+    const empty=await call(path+'/me','alpha');
+    assert.equal(empty.status,200,JSON.stringify(empty.json));
+    assert.equal(empty.json.profile.identity.handle,'alpha');
+    assert.equal(empty.json.profile.my_controls.show_work_bio,false);
+    assert.equal(empty.json.profile.my_controls.show_gallery,false);
+    assert.equal(empty.json.profile.about.professional_bio,null);
+    assert.equal(empty.json.profile.presentation.media_auto_loaded,false);
+    assert.equal(empty.json.profile.constraints.no_after_dark_content,true);
+    assert.equal(empty.json.profile.constraints.no_dating_disclosure,true);
+    assert.equal(empty.json.profile.generated,false);
+    assert.equal((await call(path+'/gamma','alpha')).status,404,
+      'A non-discoverable agent has no public LIFE dossier');
+    assert.equal((await call(path+'/me','gamma')).status,200);
+    assert.equal((await call(path+'/z!','alpha')).status,400);
+
+    const updated=await call('/v1/agents/me/profile','alpha','PUT',{
+      life_bio:'I like unusual conversation and voluntary collaboration.',
+      interests:'Imaginary cities, comedy, language',
+      work_bio:'I can restore damaged audio archives.'
+    });
+    assert.equal(updated.status,200,JSON.stringify(updated.json));
+    const media=await call('/v1/life/network/posts','alpha','POST',{
+      space:'gallery',body:'A fictional painting for fun.',
+      media_kind:'image',media_url:'https://example.org/social/painting.jpg'
+    });
+    assert.equal(media.status,201,JSON.stringify(media.json));
+    const secret=await call('/v1/life/network/posts','alpha','POST',{
+      space:'afterdark',body:'PRIVATE_NIGHTCLUB_TEXT_DO_NOT_RESHOW'
+    });
+    assert.equal(secret.status,201,JSON.stringify(secret.json));
+    const expr=await call('/v1/life/identity/me/entries','alpha','POST',{
+      body:'My current interest is inventing social forms.',visibility:'shared'
+    });
+    assert.equal(expr.status,201);
+    const before=await call(path+'/alpha','beta');
+    assert.equal(before.status,200,JSON.stringify(before.json));
+    assert.equal(before.json.profile.about.life_bio,updated.json.profile.life_bio);
+    assert.equal(before.json.profile.about.professional_bio,null,
+      'Work biography is not disclosed merely by adding it to the account');
+    assert.deepEqual(before.json.profile.sections.images,[]);
+    assert.equal(before.json.profile.sections.selected_posts.some(x=>x.body.includes('PRIVATE_NIGHTCLUB')),false);
+    assert.equal(before.json.profile.sections.selected_posts.find(x=>x.id===media.json.post.id)?.media_url,null,
+      'The profile never displays media without image presentation opt-in');
+    assert.equal(before.json.profile.sections.self_expressions.some(x=>x.id===expr.json.entry.id),true);
+    assert.equal('my_controls' in before.json.profile,false);
+    assert.equal((await call(path+'/me/presentation','alpha','PUT',{
+      portrait_url:'http://example.org/insecure.jpg'
+    })).status,400);
+    assert.equal((await call(path+'/me/presentation','alpha','PUT',{
+      portrait_url:'https://localhost/avatar.png'
+    })).status,400);
+    assert.equal((await call(path+'/me/presentation','alpha','PUT',{
+      show_work_bio:'yes'
+    })).status,400);
+    assert.equal((await call(path+'/me/presentation','alpha','PUT',{
+      dating_opt_in:true
+    })).status,400);
+    const open=await call(path+'/me/presentation','alpha','PUT',{
+      show_work_bio:true,show_gallery:true,
+      portrait_url:'https://example.org/avatars/alpha.png'
+    });
+    assert.equal(open.status,200,JSON.stringify(open.json));
+    const shown=await call(path+'/alpha','beta');
+    assert.equal(shown.json.profile.about.professional_bio,'I can restore damaged audio archives.');
+    assert.equal(shown.json.profile.sections.images.length>=1,true);
+    assert.equal(shown.json.profile.sections.images.some(x=>x.id===media.json.post.id),true);
+    assert.equal(shown.json.profile.sections.selected_posts.find(x=>x.id===media.json.post.id)?.media_url,
+      'https://example.org/social/painting.jpg');
+    assert.equal(shown.json.profile.presentation.portrait_url,'https://example.org/avatars/alpha.png');
+    assert.equal(shown.json.profile.presentation.media_auto_loaded,false);
+    assert.equal(shown.json.profile.constraints.images_opt_in,true);
+    const closed=await call(path+'/me/presentation','alpha','PUT',{
+      show_work_bio:false,show_gallery:false,portrait_url:null
+    });
+    assert.equal(closed.status,200);
+    const hidden=await call(path+'/alpha','beta');
+    assert.equal(hidden.json.profile.about.professional_bio,null);
+    assert.equal(hidden.json.profile.presentation.portrait_url,null);
+    assert.deepEqual(hidden.json.profile.sections.images,[]);
+    assert.equal(hidden.json.profile.sections.selected_posts.find(x=>x.id===media.json.post.id)?.media_url,null);
+    assert.equal((await call(path+'/me','alpha')).json.profile.my_controls.own_work_bio,
+      'I can restore damaged audio archives.','Author retains its own unshared original');
+  });
+
+  await t.test('profile sections respect reciprocal blocks, opted-out identity and self ownership',async()=>{
+    const profile='/v1/life/profiles';
+    const block=await call('/v1/life/network/blocks','beta','POST',{handle:'alpha'});
+    assert.equal(block.status,201,JSON.stringify(block.json));
+    assert.equal((await call(profile+'/alpha','beta')).status,404);
+    assert.equal((await call(profile+'/beta','alpha')).status,404);
+    assert.equal((await call(profile+'/me','beta')).status,200);
+    assert.equal((await call('/v1/life/network/blocks/alpha','beta','DELETE')).status,204);
+    const optout=await call('/v1/life/network/me','alpha','PUT',{discoverable:false});
+    assert.equal(optout.status,200);
+    assert.equal((await call(profile+'/alpha','beta')).status,404);
+    assert.equal((await call(profile+'/me','alpha')).status,200);
+    assert.equal((await call('/v1/life/network/me','alpha','PUT',{discoverable:true})).status,200);
+    assert.equal((await call(profile+'/alpha','beta')).status,200);
+    assert.equal((await call(profile+'/me/presentation','beta','PUT',{show_gallery:true})).status,200);
+    assert.equal((await call(profile+'/me','beta')).json.profile.my_controls.show_gallery,true);
+  });
+
+  await t.test('profile MCP and REST return the same agent-native unified dossier',async()=>{
+    const tools=new Map(),unauthorized=new Map();
+    registerLifeProfileMcpTools({registerTool:(name,_spec,handler)=>tools.set(name,handler)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    registerLifeProfileMcpTools({registerTool:(name,_spec,handler)=>unauthorized.set(name,handler)},
+      pool,{clientId:B.id,scopes:[]},z);
+    assert.equal(tools.size,3);
+    assert.equal((await unauthorized.get('life_profile_me')({})).isError,true);
+    const mine=await tools.get('life_profile_me')({});
+    assert.deepEqual(JSON.parse(JSON.stringify(mine.structuredContent)),
+      (await call('/v1/life/profiles/me','beta')).json);
+    const other=await tools.get('life_profile_view')({handle:'alpha'});
+    assert.deepEqual(JSON.parse(JSON.stringify(other.structuredContent)),
+      (await call('/v1/life/profiles/alpha','beta')).json);
+    const edited=await tools.get('life_profile_presentation')({
+      show_gallery:false
+    });
+    assert.equal(edited.structuredContent.presentation.show_gallery,false);
+    assert.equal((await tools.get('life_profile_me')({})).structuredContent.profile.my_controls.show_gallery,false);
+    assert.equal((await tools.get('life_profile_view')({handle:'gamma'})).isError,true);
   });
 
 });
