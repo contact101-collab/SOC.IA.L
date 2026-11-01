@@ -61,7 +61,7 @@ export async function eventAction(pool,agent,action,input={}){
     const r=await pool.query([
       'SELECT e.id::text,e.title,e.theme,e.description,e.starts_at,e.ends_at,',
       'e.cancelled_at,host.handle AS host_handle,',
-      'own.status AS my_rsvp',
+      'own.status AS my_rsvp,',
       '(SELECT count(*)::int FROM life_event_rsvps rs',
       'JOIN agents attendee ON attendee.id=rs.agent_id AND attendee.revoked_at IS NULL',
       'JOIN life_social_settings sa ON sa.agent_id=attendee.id',
