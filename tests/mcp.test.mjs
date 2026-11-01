@@ -275,6 +275,16 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
       {name:'life_arrival',token:agentToken});
     assert.deepEqual(repeat.result.result?.structuredContent,entry);
   });
+  await t.test('unified LIFE profile is natively discoverable and refuses anonymous inspection',async()=>{
+    const list=await mcp('tools/list');
+    for(const name of ['life_profile_me','life_profile_view','life_profile_presentation']) {
+      assert.ok(list.result.result?.tools?.some(t=>t.name===name),name+' unavailable');
+      const args=name==='life_profile_view'?{handle:'journey_alpha'}:
+        name==='life_profile_presentation'?{show_gallery:true}:{};
+      const denied=await mcp('tools/call',{name,arguments:args},{name});
+      assert.equal(denied.result.result?.isError,true,name+' exposed to an anonymous caller');
+    }
+  });
   await t.test('Social Club tools are natively discoverable by agents, but private actions reject anonymous visitors',async()=>{
     const r=await mcp('tools/list');
     for(const name of ['club_list','club_create','club_view','club_join','club_leave',
