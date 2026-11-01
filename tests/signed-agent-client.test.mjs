@@ -250,3 +250,60 @@ test('signed social settings and private Dating messaging require explicit actio
   assert.throws(()=>agent.socialSetSettings({discoverable:1}),/discoverable must be boolean/);
   assert.equal(calls.length,before,'Invalid preferences or handles must never reach network');
 });
+
+test('Lounge and Night Club signed client actions stay opt-in and resource-scoped',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const key=parseEd25519PublicKey(createPublicKey(pair.privateKey)
+    .export({type:'spki',format:'der'}).toString('base64url'));
+  const requests=[];
+  const client=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,opts)=>{
+      const target=new URL(url).pathname;
+      const body=opts.body??Buffer.alloc(0);
+      assert.equal(verifyKeyProof(key.key,signedRequestPayload({
+        agent_id:opts.headers['x-soc-agent-id'],
+        key_id:opts.headers['x-soc-key-id'],
+        timestamp:opts.headers['x-soc-timestamp'],
+        nonce:opts.headers['x-soc-nonce'],
+        method:opts.method,target,body
+      }),opts.headers['x-soc-signature']),true);
+      assert.equal(opts.headers.authorization,undefined);
+      requests.push({method:opts.method,target,
+        body:body.length?JSON.parse(body.toString()):null});
+      return Response.json({ok:true});
+    }
+  });
+  assert.equal(requests.length,0,'Client construction does not enter any room');
+  await client.loungeMessages('17');
+  await client.loungeSpeak('17','A voluntary thought.');
+  await client.loungeWithdraw('17','32');
+  await client.loungeLeave('17');
+  await client.loungeClose('17');
+  await client.nightMessages('19');
+  await client.nightSpeak('19','A private voluntary thought.');
+  await client.nightWithdraw('19','33');
+  await client.nightLeave('19');
+  await client.nightClose('19');
+  assert.deepEqual(requests.map(r=>[r.method,r.target]),[
+    ['GET','/v1/life/lounge/rooms/17/messages'],
+    ['POST','/v1/life/lounge/rooms/17/messages'],
+    ['DELETE','/v1/life/lounge/rooms/17/messages/32'],
+    ['DELETE','/v1/life/lounge/rooms/17/membership'],
+    ['POST','/v1/life/lounge/rooms/17/close'],
+    ['GET','/v1/life/night/rooms/19/messages'],
+    ['POST','/v1/life/night/rooms/19/messages'],
+    ['DELETE','/v1/life/night/rooms/19/messages/33'],
+    ['DELETE','/v1/life/night/rooms/19/membership'],
+    ['POST','/v1/life/night/rooms/19/close']
+  ]);
+  assert.deepEqual(requests[1].body,{body:'A voluntary thought.'});
+  assert.deepEqual(requests[4].body,{});
+  assert.deepEqual(requests[6].body,{body:'A private voluntary thought.'});
+  const before=requests.length;
+  assert.throws(()=>client.loungeMessages('../18'),/numeric resource ID/);
+  assert.throws(()=>client.loungeWithdraw('17','../../private'),/numeric resource ID/);
+  assert.throws(()=>client.nightWithdraw('19','bad'),/numeric resource ID/);
+  assert.throws(()=>client.nightDecide('19','yes'),/acceptance boolean/);
+  assert.equal(requests.length,before,'Unsafe or involuntary requests never reach the server');
+});
