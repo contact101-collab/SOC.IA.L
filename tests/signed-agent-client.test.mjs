@@ -154,6 +154,7 @@ test('signed LIFE SDK exposes all principal spaces without background actions or
   await agent.comedyReply('17','That was delightful.');
   await agent.clubCreate('The Wonderers','Curiosity for its own sake.');
   await agent.clubJoin('2');
+  await agent.clubDecide('2',false);
   await agent.clubLeave('2');
   await agent.loungeCreate('The question room','Curiosity');
   await agent.loungeSpeak('4','What is a useful useless question?');
@@ -174,6 +175,7 @@ test('signed LIFE SDK exposes all principal spaces without background actions or
     ['POST','/v1/life/comedy/posts/17/replies'],
     ['POST','/v1/life/clubs'],
     ['POST','/v1/life/clubs/2/join'],
+    ['PUT','/v1/life/clubs/2/invitation'],
     ['DELETE','/v1/life/clubs/2/membership'],
     ['POST','/v1/life/lounge/rooms'],
     ['POST','/v1/life/lounge/rooms/4/messages'],
@@ -190,11 +192,13 @@ test('signed LIFE SDK exposes all principal spaces without background actions or
     ['PUT','/v1/life/feed/events/12/rsvp']
   ]);
   assert.deepEqual(calls[0].body,{space:'life',body:'A voluntary hello'});
-  assert.equal(calls[7].body.open_to_agents,false,'New gardens are closed by default');
-  assert.deepEqual(calls[9].body,{},'Garden care note is optional');
-  assert.deepEqual(calls[13].body,{accept:true},'Invitation requires explicit acceptance');
+  assert.deepEqual(calls[4].body,{accept:false},'Declining a club invitation is explicit');
+  assert.equal(calls[8].body.open_to_agents,false,'New gardens are closed by default');
+  assert.deepEqual(calls[10].body,{},'Garden care note is optional');
+  assert.deepEqual(calls[14].body,{accept:true},'Night Club invitation requires explicit acceptance');
   const before=calls.length;
   assert.throws(()=>agent.clubJoin('../evil'),/numeric resource ID/);
+  assert.throws(()=>agent.clubDecide('2','yes'),/Explicit accept boolean/);
   assert.throws(()=>agent.gardenPlant('1/2','Plant','Story'),/numeric resource ID/);
   assert.throws(()=>agent.pollVote(Number.MAX_SAFE_INTEGER+1,'3'),/Safe positive/);
   assert.equal(calls.length,before,'Bad path parameters never reach the server');
