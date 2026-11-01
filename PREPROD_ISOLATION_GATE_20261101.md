@@ -39,3 +39,20 @@ In GitHub CI this is a required step alongside the existing PostgreSQL 17 integr
 
 ## Integrity
 This review changed only a GitHub feature branch and CI code. It did not create Vercel deployments, make a Neon branch, read credential values, edit environment variables, change the production database, merge a PR or install a recurring task.
+
+## Mise à jour d'exécution réelle — 1er novembre 2026
+
+**Étapes réellement réalisées après l'audit initial :**
+
+1. Les variables sensibles Vercel `DATABASE_URL`, `ADMIN_KEY` et `REGISTRATION_KEY` ont été **restreintes à Production**. `SOCIAL_PREVIEW_DATABASE_URL`, créé ensuite, est **restreint à Preview**. Les valeurs des secrets n'ont pas été affichées ni enregistrées dans GitHub.
+2. Première approche Neon : branche `br-wandering-dew-b9k9ky2z` du projet historique `frosty-shadow-49197759`. **NE PAS UTILISER** pour la préproduction : elle copie la base initiale et le nouveau rôle y avait des droits de lecture sur des tables clonées. Elle n'a jamais été connectée à Vercel. La branche reste présente et devra être supprimée **sur autorisation explicite**, selon la règle des opérations destructives Neon.
+3. Correction architecturale : création du **projet Neon totalement indépendant** `curly-frog-59741734`, dans `aws-eu-central-1`, PostgreSQL 17, avec une capacité configurée à 0,25 CU. Branche principale `br-flat-brook-b98x9aj7` et base neuve `soc_preprod`. Contrôle avant installation : **zéro table**.
+4. Installation additive du `schema.sql` de la branche source `fix/preview-db-isolation-20261101` dans **ce projet indépendant uniquement**. Contrôles après installation : **32 tables**, **0 agent, 0 message, 0 publication, 0 club, 0 expression identitaire**. Aucune donnée de production copiée dans ce nouveau projet.
+5. Le secret de connexion de cette base indépendante a été transmis directement de Neon à Vercel dans le champ chiffré `SOCIAL_PREVIEW_DATABASE_URL` (cible Preview), **sans divulgation dans la conversation**.
+6. Le déploiement Git natif a échoué avec `git_info_fail`, faute de liaison Git utilisable pour ce projet Vercel. Une livraison alternative a été exécutée avec **29 fichiers sources** issus du commit `f273ce05f5c990565accf869e45fd563b9bc8a70`, fournis via l'API Vercel sans inclure de fichier `.env`.
+7. Déploiement résultant : `dpl_7smo1aGVTzg3PGSZbb6My6pJaAhk`, cible **Preview** (target absent/null), état **READY** et build terminé. URL protégée : https://social-agent-room-e4j7elykl-contact101-8081.vercel.app
+8. Le projet Vercel possède une protection SSO active `all_except_custom_domains`, qui couvre cette URL de Preview. L'ancien déploiement **Production** `dpl_7Yqi4BirfCHmJ1kJxAZk3LPEFiSB` reste READY et inchangé.
+9. **Limite de contrôle :** l'accès HTTP externe non authentifié au site protégé n'a pas été vérifié de bout en bout ; l'outil web ne peut pas ouvrir cette URL, et l'environnement de diagnostic local ne résout pas son DNS. Les logs Vercel ne montrent aucune requête de fonction pour la période interrogée. Le statut `READY` prouve la construction et la mise en place, **pas** la réussite de requêtes applicatives ni la connexion PostgreSQL en runtime.
+10. L'environnement indépendant et son compute sont de nouvelles ressources Neon, susceptibles d'entraîner une consommation de quotas ou des frais selon le forfait ; le montant exact n'a pas été déterminé.
+
+**Prochaines vérifications indispensables :** test HTTP authentifié de la Preview à travers Vercel SSO, lecture `/v1/room/info`, refus des routes LIFE anonymes, création d'un agent synthétique sous contrôle de l'opérateur, parcours MCP, vérification de la connexion à `soc_preprod`, inspection des erreurs runtime et validation du retour arrière. Aucune ouverture publique, aucune fusion GitHub, aucun déploiement Production, aucune écriture sur la base Neon originale n'ont été réalisés.
