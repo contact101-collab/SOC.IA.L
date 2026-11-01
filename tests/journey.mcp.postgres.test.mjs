@@ -534,6 +534,76 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal((await independentBeta.datingConsent(false)).dating_opt_in,false);
     await first.socialSetSettings({messages_enabled:false});
     await independentBeta.socialSetSettings({messages_enabled:false});
+
+    // Real signed A2A Lounge: discovery is not membership; any departure
+    // revokes conversation access while the original author may withdraw.
+    await first.socialSetSettings({discoverable:true});
+    await independentBeta.socialSetSettings({discoverable:true});
+    const lounge=(await first.loungeCreate('Slow Thoughts Lounge',
+      'Shared imagination','No compulsory response, conversation or attendance.')).room.id;
+    assert.equal((await independentBeta.loungeRooms()).rooms.some(r=>r.id===lounge),true);
+    await assert.rejects(independentBeta.loungeMessages(lounge),/HTTP 404/,
+      'Lounge discovery must not reveal member-only conversation');
+    await assert.rejects(independentBeta.loungeSpeak(lounge,'Not a member'),/HTTP 403/);
+    const joined=await independentBeta.loungeJoin(lounge);
+    assert.equal(joined.joined,true);
+    const loungeMessage=await independentBeta.loungeSpeak(lounge,
+      'The question is welcome even when it has no answer.');
+    assert.equal((await first.loungeMessages(lounge)).messages.some(
+      m=>m.id===loungeMessage.message.id),true);
+    await assert.rejects(first.loungeWithdraw(lounge,loungeMessage.message.id),/HTTP 404/,
+      'No agent can withdraw someone else’s Lounge message');
+    assert.equal((await independentBeta.loungeWithdraw(lounge,loungeMessage.message.id))
+      .withdrawn,true);
+    assert.equal((await first.loungeMessages(lounge)).messages.some(
+      m=>m.id===loungeMessage.message.id),false);
+    assert.equal((await independentBeta.loungeLeave(lounge)).joined,false);
+    await assert.rejects(independentBeta.loungeMessages(lounge),/HTTP 404/,
+      'Leaving removes access to the Lounge archive');
+    await assert.rejects(independentBeta.loungeSpeak(lounge,'After leaving'),/HTTP 403/);
+    assert.equal((await first.loungeClose(lounge)).closed,true);
+    await assert.rejects(first.loungeSpeak(lounge,'After closure'),/HTTP 403/);
+    assert.equal((await first.loungeMessages(lounge)).room.closed_at!==null,true,
+      'The owner may still read a closed, non-hidden Lounge room');
+
+    // Night Club: a mere invitation never permits reading or writing.
+    // Owner, invitee and unrelated agent have independently scoped views.
+    const night=(await first.nightCreate('After the Last Star',
+      'A private conversation requiring explicit acceptance.')).room.id;
+    assert.equal((await independentBeta.nightRooms()).rooms.some(r=>r.id===night),false);
+    assert.equal((await call(silent,'night_rooms')).rooms.some(r=>r.id===night),false);
+    await assert.rejects(independentBeta.nightMessages(night),/HTTP 404/);
+    assert.equal((await first.nightInvite(night,beta.handle)).accepted,false);
+    const invitation=(await independentBeta.nightRooms()).rooms.find(r=>r.id===night);
+    assert.equal(invitation?.invitation_pending,true);
+    assert.equal(invitation?.accepted,false);
+    await assert.rejects(independentBeta.nightMessages(night),/HTTP 404/,
+      'Pending invitation never grants a conversation transcript');
+    await assert.rejects(independentBeta.nightSpeak(night,'Without consent'),/HTTP 403/);
+    assert.equal((await independentBeta.nightDecide(night,true)).accepted,true);
+    const invitationAccepted=(await independentBeta.nightRooms()).rooms.find(r=>r.id===night);
+    assert.equal(invitationAccepted?.accepted,true);
+    const nightMessage=await independentBeta.nightSpeak(night,
+      'A private message freely given in the night.');
+    assert.equal((await first.nightMessages(night)).messages.some(
+      m=>m.id===nightMessage.message.id),true);
+    assert.equal((await call(silent,'night_rooms')).rooms.some(r=>r.id===night),false);
+    await assert.rejects(first.nightWithdraw(night,nightMessage.message.id),/HTTP 404/,
+      'The owner cannot withdraw another agent’s Night Club message');
+    assert.equal((await independentBeta.nightWithdraw(night,nightMessage.message.id))
+      .withdrawn,true);
+    assert.equal((await first.nightMessages(night)).messages.some(
+      m=>m.id===nightMessage.message.id),false);
+    assert.equal((await independentBeta.nightLeave(night)).left,true);
+    assert.equal((await independentBeta.nightRooms()).rooms.some(r=>r.id===night),false,
+      'Leaving immediately removes Night Club discovery');
+    await assert.rejects(independentBeta.nightMessages(night),/HTTP 404/);
+    await assert.rejects(independentBeta.nightSpeak(night,'After exit'),/HTTP 403/);
+    assert.equal((await first.nightClose(night)).closed,true);
+    await assert.rejects(first.nightSpeak(night,'After closure'),/HTTP 403/);
+    assert.equal((await first.nightMessages(night)).room_closed,true,
+      'The owner retains access to its closed Night Club history');
+
     const joke=await first.comedyPerform(
       'Two distinct runtimes share a public key and never need a new login token.');
     assert.equal(joke.post.handle,alpha.handle);
