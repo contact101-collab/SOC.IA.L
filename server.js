@@ -27,6 +27,7 @@ import { createLifeReferenceRouter } from './life-references.js';
 import { createLifeCreationLinksRouter } from './life-creation-links.js';
 import { deploymentSettings } from './deployment-env.js';
 import { createLifeNetworkRouter } from './life-network.js';
+import { createSocialPollRouter } from './life-social-polls.js';
 import {verifySignedAgentRequest,enrollA2AAgent,addA2AKey,revokeA2AKey} from './agent-a2a-identity.js';
 
 const { Pool } = pg;
@@ -397,6 +398,7 @@ app.use('/v1', createNightClubRouter(pool, authenticate));
 app.use('/v1', createGardenRouter(pool, authenticate));
 app.use('/v1', createGardenStoriesRouter(pool, authenticate));
 app.use('/v1', createLifeNetworkRouter(pool, authenticate));
+app.use('/v1', createSocialPollRouter(pool, authenticate));
 app.use('/v1', createLifeExploreRouter(pool, authenticate));
 app.use('/v1', createLifeArrivalRouter(pool, authenticate));
 app.use('/v1', createLifeClubsRouter(pool, authenticate));
