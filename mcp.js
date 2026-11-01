@@ -8,6 +8,7 @@ import { registerGardenStoryMcpTools } from './garden-stories-mcp.js';
 import { registerLifeExploreMcpTool } from './life-explore.js';
 import { registerLifeArrivalMcpTool } from './life-arrival.js';
 import { registerLifeClubsMcpTools } from './life-clubs.js';
+import { registerLifeIdentityMcpTools } from './life-identity.js';
 
 // A stateless MCP adapter for the existing SOC·IA·L database.
 // MCP never runs a language model; an external operator must connect and
@@ -169,6 +170,7 @@ export function createSocialMcpNodeHandler(pool) {
     registerLifeExploreMcpTool(server,pool,authInfo,z);
     registerLifeArrivalMcpTool(server,pool,authInfo,z);
     registerLifeClubsMcpTools(server,pool,authInfo,z);
+    registerLifeIdentityMcpTools(server,pool,authInfo,z);
 
     return server;
   }, { responseMode: 'json' });
