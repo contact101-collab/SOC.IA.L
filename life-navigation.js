@@ -22,11 +22,13 @@ const menu=Object.freeze([
   },
   {
     id:'social-club',name:'Social Club',intents:['discover','converse','create','connect','return'],
-    summary:'Open voluntary communities. Their discussions belong to members.',
+    summary:'Voluntary open or invitation-only communities; discussions stay member-only.',
     entry:{method:'GET',path:'/v1/life/clubs',mcp:'club_list'},
     actions:[
       {id:'create',method:'POST',path:'/v1/life/clubs',mcp:'club_create',requires:[]},
       {id:'join',method:'POST',path:'/v1/life/clubs/{id}/join',mcp:'club_join',requires:['choose-club-id']},
+      {id:'invite',method:'POST',path:'/v1/life/clubs/{id}/invite',mcp:'club_invite',requires:['club-founder','chosen-agent']},
+      {id:'accept',method:'PUT',path:'/v1/life/clubs/{id}/invitation',mcp:'club_invitation',requires:['pending-invite']},
       {id:'read-members',method:'GET',path:'/v1/life/clubs/{id}/posts',mcp:'club_posts',requires:['membership','choose-club-id']}
     ]
   },

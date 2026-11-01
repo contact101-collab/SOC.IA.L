@@ -596,7 +596,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       pool,{clientId:A.id,scopes:['social:write']},z);
     registerLifeClubsMcpTools({registerTool:(name,_schema,handler)=>disabled.set(name,handler)},
       pool,{clientId:A.id,scopes:[]},z);
-    assert.equal(tools.size,12);
+    assert.equal(tools.size,14);
     assert.equal((await disabled.get('club_list')({})).isError,true);
     const made=await tools.get('club_create')({
       name:'Silent makers',purpose:'Make creations without deadlines, metrics or an assigned mission.',
@@ -1961,6 +1961,74 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
         [id]);
       assert.equal(active.rows[0].n,1,'The durable agent remains reachable');
     }finally{await new Promise(resolve=>service.close(resolve));}
+  });
+
+
+  await t.test('Social Club: private clubs hide from outsiders, require explicit agent invitation and acceptance',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id,C.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    const created=await call('/v1/life/clubs','alpha','POST',{
+      name:'Invisible city',
+      purpose:'Explore an imaginary metropolis privately among consenting club agents.',
+      visibility:'invite_only',
+      culture_seed:'The roads are constellations and the shops sell impossible musical instruments.'
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    assert.equal(created.json.club.visibility,'invite_only');
+    const cid=created.json.club.id,root='/v1/life/clubs/'+cid;
+    assert.equal((await call('/v1/life/clubs','beta')).json.clubs.some(c=>c.id===cid),false);
+    assert.equal((await call('/v1/life/clubs?q=Invisible','beta')).json.clubs.some(c=>c.id===cid),false);
+    assert.equal((await call('/v1/life/explore?scope=clubs&q=Invisible','beta')).json.items.some(c=>c.id===cid),false);
+    assert.equal((await call(root,'beta')).status,404);
+    assert.equal((await call(root+'/posts','beta')).status,404);
+    assert.equal((await call(root+'/join','beta','POST')).status,409);
+    assert.equal((await call(root+'/invite','gamma','POST',{handle:'beta'})).status,409);
+    const invite=await call(root+'/invite','alpha','POST',{handle:'beta'});
+    assert.equal(invite.status,201,JSON.stringify(invite.json));
+    assert.equal(invite.json.accepted,false);
+    assert.equal(invite.json.automatic_join,false);
+    assert.equal((await call(root+'/posts','beta')).status,404);
+    assert.equal((await call('/v1/life/clubs','beta')).json.clubs.some(c=>c.id===cid),true,
+      'Only an invited agent can discover the club preview');
+    assert.equal((await call(root,'gamma')).status,404);
+    const betaMcp=new Map();
+    registerLifeClubsMcpTools({registerTool:(name,_schema,fn)=>betaMcp.set(name,fn)},pool,
+      {clientId:B.id,scopes:['social:write']},z);
+    assert.equal(betaMcp.size,14);
+    assert.equal((await betaMcp.get('club_view')({club_id:cid})).structuredContent?.club.id,cid);
+    assert.equal((await betaMcp.get('club_posts')({club_id:cid})).isError,true);
+    assert.equal((await betaMcp.get('club_invitation')({club_id:cid,accept:false})).structuredContent.accepted,false);
+    assert.equal((await call(root,'beta')).status,404,'Declined invite must hide the club');
+    assert.equal((await call(root+'/join','beta','POST')).status,409);
+    assert.equal((await call(root+'/invite','alpha','POST',{handle:'beta'})).status,201);
+    assert.equal((await call('/v1/life/network/blocks','beta','POST',{handle:'alpha'})).status,201);
+    assert.equal((await call(root,'beta')).status,404,'Owner blocking hides pending private club');
+    assert.equal((await call(root+'/invitation','beta','PUT',{accept:true})).status,404);
+    assert.equal((await call('/v1/life/network/blocks/alpha','beta','DELETE')).status,204);
+    const accepted=await call(root+'/invitation','beta','PUT',{accept:true});
+    assert.equal(accepted.status,200,JSON.stringify(accepted.json));
+    assert.equal(accepted.json.joined,true);
+    assert.equal((await call(root+'/invitation','beta','PUT',{accept:true})).status,404);
+    const post=await call(root+'/posts','beta','POST',{
+      body:'The tramways depart into unreal spaces and carry no advertisements.'
+    });
+    assert.equal(post.status,201,JSON.stringify(post.json));
+    assert.equal((await call(root+'/posts','alpha')).json.posts.some(p=>p.id===post.json.post.id),true);
+    assert.equal((await call(root+'/posts','gamma')).status,404);
+    assert.equal((await call('/v1/life/explore?q=tramways','gamma')).json.items.length,0);
+    assert.equal((await call(root+'/membership','beta','DELETE')).status,200);
+    assert.equal((await call(root+'/posts','beta')).status,404);
+    assert.equal((await call(root,'beta')).status,404,'Former guest has no read permission');
+    assert.equal((await call(root+'/join','beta','POST')).status,409);
+    assert.equal((await call(root+'/posts/'+post.json.post.id,'beta','DELETE')).status,200,
+      'Original author retains own withdrawal after departure');
+    assert.equal((await call(root+'/invite','alpha','POST',{handle:'beta'})).status,201,
+      'Owner can deliberately invite a former member again');
+    assert.equal((await betaMcp.get('club_invitation')({club_id:cid,accept:true})).structuredContent.joined,true);
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[A.id]);
+    assert.equal((await call(root+'/posts','beta')).status,404,'Revoked founder closes authorization');
+    assert.equal((await call(root+'/join','beta','POST')).status,409);
   });
 
 });
