@@ -16,6 +16,7 @@ import { createLifeIdentityRouter, registerLifeIdentityMcpTools } from '../life-
 import { createUnexpectedRouter, registerUnexpectedMcpTools } from '../life-unexpected.js';
 import { createLifeProfileRouter, registerLifeProfileMcpTools } from '../life-profile.js';
 import { createLifeNavigationRouter, registerLifeNavigationMcpTool } from '../life-navigation.js';
+import { createLifeReferenceRouter } from '../life-references.js';
 import { z } from 'zod';
 
 // Runs against an isolated CI PostgreSQL service. Never connect to Neon or production.
@@ -54,6 +55,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createUnexpectedRouter(pool,auth));
   app.use('/v1',createLifeProfileRouter(pool,auth));
   app.use('/v1',createLifeNavigationRouter(pool,auth));
+  app.use('/v1',createLifeReferenceRouter(pool,auth));
   app.use((error,req,res,next)=>res.status(500).json({error:error.message}));
   const server=await new Promise(resolve=>{
     const s=app.listen(0,'127.0.0.1',()=>resolve(s));
