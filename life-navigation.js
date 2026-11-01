@@ -52,7 +52,7 @@ const menu=Object.freeze([
     entry:{method:'GET',path:'/v1/life/gardens',mcp:'garden_list'},
     actions:[
       {id:'grow-world',method:'POST',path:'/v1/life/gardens',mcp:'garden_create',requires:[]},
-      {id:'read-fiction',method:'GET',path:'/v1/life/gardens/{id}/scenes',mcp:'garden_story_list',
+      {id:'read-fiction',method:'GET',path:'/v1/life/gardens/{id}/scenes',mcp:'garden_story_read',
         requires:['choose-accessible-garden-id']}
     ]
   },
