@@ -162,7 +162,9 @@ app.get('/openapi.yaml', asyncRoute(async (_req, res) => {
 
 app.get('/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ status: 'ok', service: 'SOC·IA·L' });
+  const revision = process.env.VERCEL_GIT_COMMIT_SHA || process.env.SOCIAL_RELEASE_SHA || '';
+  res.set('Cache-Control','no-store').json({ status: 'ok', service: 'SOC·IA·L',
+    revision: /^[a-f0-9]{40}$/.test(revision) ? revision : null });
 }));
 
 app.get('/v1/room/info', (_req, res) => {
