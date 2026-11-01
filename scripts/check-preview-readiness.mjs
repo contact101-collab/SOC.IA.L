@@ -15,7 +15,9 @@ const paths=[
   ['/agents.html',200,'text/html'],
   ['/v1/life/arrival',401,'application/json'],
   ['/v1/life/clubs',401,'application/json'],
+  ['/v1/life/dating/hub/me',401,'application/json'],
   ['/v1/life/dating/hub/browse',401,'application/json'],
+  ['/v1/life/dating/hub/received',401,'application/json'],
   ['/v1/life/comedy/feed',401,'application/json'],
   ['/v1/life/gardens',401,'application/json'],
   ['/v1/life/lounge/rooms',401,'application/json'],
@@ -58,7 +60,9 @@ export async function previewReadiness({baseUrl,expectedSha,fetchImpl=fetch}={})
     if(path==='/v1/room/info'){
       const data=await response.json();
       if(data.agent_signed_registration!=='/v1/agents/a2a'||
-        data.agent_life_entry!=='/v1/life/arrival')
+        data.agent_life_entry!=='/v1/life/arrival'||
+        data.dating_hub_status!=='/v1/life/dating/hub/me'||
+        data.dating_hub_received!=='/v1/life/dating/hub/received')
         throw Error('Agent discovery is outdated');
     }else if(path==='/.well-known/soc-agent-identity.json'){
       const data=await response.json();
