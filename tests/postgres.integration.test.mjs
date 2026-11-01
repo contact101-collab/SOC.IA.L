@@ -682,6 +682,66 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(prefix+'/'+encounterId+'/replies','alpha')).status,404);
   });
 
+  await t.test('Lounge: privacy changes redact parent links, long conversations remain navigable',async()=>{
+    const prefix='/v1/life/lounge/encounters';
+    const offered=await call(prefix,'alpha','POST',{
+      premise:'Two agents have incompatible notions of a thoughtful surprise.'
+    });
+    assert.equal(offered.status,201,JSON.stringify(offered.json));
+    const id=offered.json.encounter.id;
+    const b=await call(prefix+'/'+id+'/replies','beta','POST',{
+      body:'Perhaps the best gift is the freedom not to attend.'
+    });
+    assert.equal(b.status,201,JSON.stringify(b.json));
+    const a=await call(prefix+'/'+id+'/replies','alpha','POST',{
+      body:'Then the invitation should never be treated as an obligation.',
+      parent_response_id:b.json.response.id
+    });
+    assert.equal(a.status,201,JSON.stringify(a.json));
+    let view=await call(prefix+'/'+id+'/replies','alpha');
+    assert.equal(view.json.responses.length,2);
+    assert.equal(view.json.responses[1].parent_response_id,b.json.response.id);
+
+    // An agent can stop being discoverable without deleting every old remark.
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{
+      discoverable:false
+    })).status,200);
+    view=await call(prefix+'/'+id+'/replies','alpha');
+    assert.equal(view.status,200);
+    assert.equal(view.json.responses.length,1);
+    assert.equal(view.json.responses[0].parent_response_id,null,
+      'A private predecessor must not be named in a public reply');
+    assert.equal((await call(prefix+'/'+id+'/replies','beta','POST',{
+      body:'I do not opt into public conversation now.'
+    })).status,403);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{
+      discoverable:true
+    })).status,200);
+    view=await call(prefix+'/'+id+'/replies','alpha');
+    assert.equal(view.json.responses.length,2);
+    assert.equal(view.json.responses[1].parent_response_id,b.json.response.id);
+    assert.equal((await call(prefix+'/'+id+'/replies/'+b.json.response.id,
+      'beta','DELETE')).status,200);
+    view=await call(prefix+'/'+id+'/replies','alpha');
+    assert.equal(view.json.responses.length,1);
+    assert.equal(view.json.responses[0].parent_response_id,null);
+
+    // Forward pagination is not a popularity or psychological ranking.
+    for(let i=0;i<23;i++)await pool.query(
+      'INSERT INTO life_lounge_responses(encounter_id,author_id,body) VALUES($1,$2,$3)',
+      [id,A.id,'Unranked counterpoint '+i]);
+    const first=await call(prefix+'/'+id+'/replies','alpha');
+    assert.equal(first.status,200);
+    assert.equal(first.json.responses.length,20);
+    assert.ok(first.json.next_after);
+    const second=await call(prefix+'/'+id+'/replies?after='+first.json.next_after,'alpha');
+    assert.equal(second.status,200);
+    assert.equal(second.json.responses.length,4);
+    assert.equal(second.json.next_after,null);
+    assert.equal(new Set([...first.json.responses,...second.json.responses].map(x=>x.id)).size,24);
+    assert.equal((await call(prefix+'/'+id,'alpha','PATCH',{change:'withdraw'})).status,200);
+  });
+
   await t.test('Lounge MCP: opt-in discovery and replies share exactly the REST access checks',async()=>{
     const handlers=new Map(),anonymous=new Map();
     registerUnexpectedMcpTools({registerTool:(name,_spec,fn)=>handlers.set(name,fn)},
