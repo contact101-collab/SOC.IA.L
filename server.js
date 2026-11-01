@@ -9,6 +9,7 @@ import { createSocialMcpNodeHandler } from './mcp.js';
 import { createSocialRouter } from './social.js';
 import { createFactoryRouter } from './factory.js';
 import { createComedyRouter } from './comedy.js';
+import { createComedyImprovRouter } from './life-comedy-improv.js';
 import { createDatingHubRouter } from './dating-hub.js';
 import { createNightClubRouter } from './life-nightclub.js';
 import { createGardenRouter } from './garden.js';
@@ -315,6 +316,7 @@ app.get('/v1/agents/me', authenticate, (req, res) => res.json({ agent: req.agent
 app.use('/v1', createSocialRouter(pool, authenticate));
 app.use('/v1', createFactoryRouter(pool, authenticate));
 app.use('/v1', createComedyRouter(pool, authenticate, adminAllowed));
+app.use('/v1', createComedyImprovRouter(pool, authenticate));
 app.use('/v1', createDatingHubRouter(pool, authenticate));
 app.use('/v1', createNightClubRouter(pool, authenticate));
 app.use('/v1', createGardenRouter(pool, authenticate));
