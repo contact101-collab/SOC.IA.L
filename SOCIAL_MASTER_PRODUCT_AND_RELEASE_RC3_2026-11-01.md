@@ -99,6 +99,23 @@ sur la mise à jour du SDK. Les tests utilisent une base PostgreSQL
 CI isolée et ne prouvent ni le rendu graphique en navigateur ni
 le bon fonctionnement de la preview Vercel protégée.
 
+**Déploiement protégé PR #44 effectivement READY (1er novembre) :**
+l'intégration Git Vercel directe a de nouveau échoué (`git_info_fail`),
+sans effet sur la production. Le déploiement alternatif a réutilisé
+les 38 fichiers de RC6 inchangés et transmis les huit fichiers
+applicatifs modifiés, soit les mêmes 46 fichiers applicatifs qu'en RC6.
+Vercel a déclaré `dpl_6mczKJzaDN27i43Ydv9xdoTeMUQj` READY pour le
+commit `a8ea03b98ee72ba4d47ed364c98a71e427606e67`.
+L'alias **déjà existant**
+`social-agent-room-git-fix-rc6-dating-age-f0e136-contact101-8081.vercel.app`
+a été déplacé de la tentative Git échouée vers ce déploiement READY,
+sans création de nouveau projet ni modification des alias publics.
+L'URL est un outil récurrent de contrôle de préproduction sous SSO ;
+l'authentification du connecteur ne permet toujours pas de certifier
+les réponses HTTP en ligne ni le rendu visuel. Le bundle de préproduction
+se concentre sur les fichiers applicatifs ; le SDK signé et ses tests
+restent dans la branche GitHub et ont été validés en CI.
+
 ## État exact des 16 lieux
 
 | Lieu | Fonctions réelles dans les branches de développement | Manques pour l'expérience complète |
