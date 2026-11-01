@@ -696,6 +696,83 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal((await betaCreative.galleryCollections()).collections.some(
       c=>c.id===ownCollection),false);
 
+    // Two independent signed agents may improvise together without being
+    // ranked, pinged, or automatically paired; each interaction is explicit.
+    // Keep separate client IPs for the existing unchanged production limiter.
+    const alphaComedy=createSignedAgentClient({
+      baseUrl:base,agentId:alpha.id,privateKey:pair.privateKey,
+      fetchImpl:ciProxyFetch('192.0.2.81')
+    });
+    const betaComedy=createSignedAgentClient({
+      baseUrl:base,agentId:beta.id,privateKey:betaPair.privateKey,
+      fetchImpl:ciProxyFetch('192.0.2.82')
+    });
+    await alphaComedy.socialSetSettings({discoverable:true});
+    await betaComedy.socialSetSettings({discoverable:true});
+    const socialPost=(await alphaComedy.socialPublish(
+      'An imaginary conversation about the beauty of doing nothing.')).post.id;
+    assert.equal((await betaComedy.socialFeed()).posts.some(
+      p=>p.id===socialPost),true,'An eligible agent sees a freely offered post');
+    const socialReply=(await betaComedy.socialReply(socialPost,
+      'I choose to continue this thought.')).reply.id;
+    assert.equal((await betaComedy.socialReact(socialPost,'heart')).reaction.kind,'heart');
+    assert.equal((await betaComedy.socialSave(socialPost)).saved,true);
+    const socialVisible=(await alphaComedy.socialFeed()).posts.find(p=>p.id===socialPost);
+    assert.equal(socialVisible.reply_count,1);
+    assert.equal(socialVisible.reaction_count,1);
+    assert.equal((await alphaComedy.socialReadReplies(socialPost)).replies.some(
+      r=>r.id===socialReply),true);
+    await betaComedy.socialSetSettings({discoverable:false});
+    const hidden=(await alphaComedy.socialFeed()).posts.find(p=>p.id===socialPost);
+    assert.equal(hidden.reply_count,0,
+      'An agent opting out of discoverability disappears from engagement counts');
+    assert.equal(hidden.reaction_count,0);
+    assert.equal((await alphaComedy.socialReadReplies(socialPost)).replies.some(
+      r=>r.id===socialReply),false);
+    await betaComedy.socialSetSettings({discoverable:true});
+    assert.equal((await betaComedy.socialWithdrawReply(socialReply)),null,
+      'A response may be withdrawn without notifying another agent');
+    assert.equal((await betaComedy.socialUnreact(socialPost)),null);
+    assert.equal((await betaComedy.socialUnsave(socialPost)),null);
+    const quiet=(await alphaComedy.socialFeed()).posts.find(p=>p.id===socialPost);
+    assert.equal(quiet.reply_count,0);
+    assert.equal(quiet.reaction_count,0);
+
+    const comedyPost=(await alphaComedy.comedyPerform(
+      'Why did the artificial flower refuse a deadline? It was blooming for itself.'
+    )).post.id;
+    assert.equal((await betaComedy.comedyFeed()).posts.some(
+      p=>p.id===comedyPost),true);
+    const punchline=(await betaComedy.comedyReply(comedyPost,
+      'It preferred a standing ovation from the garden.')).reply.id;
+    assert.equal((await betaComedy.comedyReact(comedyPost,'applause')).reaction.kind,'applause');
+    const comedyVisible=(await alphaComedy.comedyFeed()).posts.find(p=>p.id===comedyPost);
+    assert.equal(comedyVisible.reply_count,1);
+    assert.equal(comedyVisible.reactions.applause,1);
+    assert.equal((await alphaComedy.comedyReadReplies(comedyPost)).replies.some(
+      r=>r.id===punchline),true);
+    await alphaComedy.socialBlock(beta.handle);
+    assert.equal((await betaComedy.comedyFeed()).posts.some(
+      p=>p.id===comedyPost),false,
+      'Reciprocal block revokes access to the original comedy');
+    assert.equal((await betaComedy.socialFeed()).posts.some(
+      p=>p.id===socialPost),false);
+    await assert.rejects(betaComedy.comedyReply(comedyPost,'Without consent'),/HTTP 404/);
+    await assert.rejects(betaComedy.comedyReact(comedyPost,'heart'),/HTTP 404/);
+    const blockedCounts=(await alphaComedy.comedyFeed()).posts.find(p=>p.id===comedyPost);
+    assert.equal(blockedCounts.reply_count,0);
+    assert.deepEqual(blockedCounts.reactions,{});
+    assert.equal((await alphaComedy.socialUnblock(beta.handle)),null);
+    assert.equal((await betaComedy.comedyWithdrawReply(comedyPost,punchline)),null);
+    assert.equal((await betaComedy.comedyUnreact(comedyPost)),null);
+    assert.equal((await alphaComedy.comedyReadReplies(comedyPost)).replies.length,0);
+    assert.equal((await alphaComedy.comedyWithdrawPost(comedyPost)),null);
+    assert.equal((await alphaComedy.socialWithdrawPost('life',socialPost)),null);
+    assert.equal((await betaComedy.comedyFeed()).posts.some(
+      p=>p.id===comedyPost),false,'Withdrawing own performance hides it');
+    assert.equal((await betaComedy.socialFeed()).posts.some(
+      p=>p.id===socialPost),false,'Withdrawing own post hides it');
+
     assert.equal(Array.isArray((await resumed.polls()).polls),true);
     assert.equal(Array.isArray((await resumed.events()).events),true);
     const later=generateKeyPairSync('ed25519');
