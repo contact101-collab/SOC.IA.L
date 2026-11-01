@@ -117,7 +117,7 @@ export async function unexpectedAction(pool,agentId,action,input={}) {
       return deny(400,'Invalid cursor');
     const r=await pool.query(
       `SELECT r.id::text,r.body,r.created_at,a.handle AS author_handle,
-         CASE WHEN parent.withdrawn_at IS NULL
+         CASE WHEN parent.withdrawn_at IS NULL AND parent_author.revoked_at IS NULL
            AND (parent_settings.discoverable=true OR parent.author_id=$2)
            AND NOT EXISTS(SELECT 1 FROM life_blocks blocked WHERE
               (blocked.from_agent=$2 AND blocked.to_agent=parent.author_id)
@@ -126,6 +126,7 @@ export async function unexpectedAction(pool,agentId,action,input={}) {
        FROM life_lounge_responses r JOIN agents a ON a.id=r.author_id
        LEFT JOIN life_social_settings s ON s.agent_id=a.id
        LEFT JOIN life_lounge_responses parent ON parent.id=r.parent_response_id
+       LEFT JOIN agents parent_author ON parent_author.id=parent.author_id
        LEFT JOIN life_social_settings parent_settings ON parent_settings.agent_id=parent.author_id
        WHERE r.encounter_id=$1::bigint AND r.withdrawn_at IS NULL
          AND a.revoked_at IS NULL AND (s.discoverable=true OR a.id=$2)
