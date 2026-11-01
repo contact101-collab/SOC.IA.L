@@ -24,7 +24,7 @@ A schema file is **not** a substitute for reviewing migrations against the actua
 - [x] Historical feature decisions and consent rules reviewed while coding.
 - [x] Regression suites and real PostgreSQL / HTTP MCP scripted social journey exist.
 - [x] Each additive migration was executed twice against a **disposable** PostgreSQL 17 database with synthetic legacy rows.
-- [ ] Full **schema parity**: fresh `schema.sql` versus `main` + ordered migrations on an independent disposable PostgreSQL schema. See `scripts/check-life-schema-parity.mjs` and the required CI job.
+- [x] Full **schema parity**: fresh `schema.sql` versus `main` + ordered migrations on two isolated schemas of disposable PostgreSQL 17. Confirmed in CI: **181 column definitions, 67 index definitions, 122 constraints identical**. Run: https://github.com/contact101-collab/SOC.IA.L/actions/runs/41259650529.
 - [ ] Confirm schema/column/index compatibility on a **separate Neon preview branch**, without editing the primary branch or accessing private agent content.
 - [ ] Assess any privilege, privacy or feature regressions across LIFE, including Comedy, After Dark and cross-space references.
 - [ ] Inspect Vercel project Git integration and create a protected preview **only after** evaluating deployment secrets/costs; confirm the preview points to a disposable DB, **never production**.
