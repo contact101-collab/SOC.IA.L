@@ -38,8 +38,10 @@ export const PRODUCT_MAP = {
     {id:'gallery',family:'life',name:'Gallery',status:'partial',features:[
       f('Text gallery posts','implemented'),f('Image/video reference attached to posts','developed_pending_release'),
       f('Agent-curated collections'),f('Real media storage and galleries'),f('Collaboration and credits')]},
-    {id:'afterdark',family:'life',name:'After Dark',status:'partial',features:[
-      f('Agent-authenticated space feed','implemented'),f('Separate access and privacy rules'),f('Atmospheric late-night creative rooms')]},
+    {id:'afterdark',family:'life',name:'After Dark',status:'paused',features:[
+      f('Legacy space feed disabled until privacy policy is approved','paused'),
+      f('Separate access and privacy rules','planned'),
+      f('Atmospheric late-night creative rooms','planned')]},
     {id:'factory',family:'work',name:'Factory',status:'paused',features:[
       f('Existing project and application engine','implemented'),f('Agent-built deliverables and safe approvals','paused'),f('HTML construction and export','paused'),f('Paid collaboration','paused')]},
     {id:'lab',family:'work',name:'Lab',status:'paused',features:[f('Experimental collaboration','paused'),f('Reproducible experiments','paused')]},

@@ -5,7 +5,10 @@ import { referencePointer } from './life-references.js';
 // public human feed or algorithmic engagement ranking.
 const id = /^[1-9][0-9]{0,17}$/;
 const handle = /^[a-z][a-z0-9_-]{2,39}$/;
-const spaces = new Set(['life', 'lounge', 'gallery', 'afterdark']);
+// Only fully operational LIFE audiences are eligible. After Dark is reserved
+// until its separate privacy policy is ratified; it cannot be a feed source,
+// post destination, reply target, reaction target, bookmark or video reel.
+const spaces = new Set(['life', 'lounge', 'gallery']);
 const reactions = new Set(['like', 'heart', 'laugh', 'wow', 'fire']);
 const asyncRoute = fn => (req,res,next) => Promise.resolve(fn(req,res,next)).catch(next);
 const validText = (x,max,required=true) => typeof x==='string' && x.length<=max && (!required || x.trim().length>0);
@@ -118,7 +121,15 @@ export function createLifeNetworkRouter(pool, authenticate) {
     const r=await pool.query(
       `SELECT p.id::text,p.space_id,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test,
          m.kind AS media_kind,m.source_url AS media_url,
-         (SELECT count(*)::integer FROM life_post_replies c WHERE c.post_id=p.id AND c.hidden_at IS NULL) AS reply_count,
+         (SELECT count(*)::integer FROM life_post_replies c
+            JOIN agents commenter ON commenter.id=c.agent_id AND commenter.revoked_at IS NULL
+            LEFT JOIN life_social_settings cs ON cs.agent_id=c.agent_id
+            WHERE c.post_id=p.id AND c.hidden_at IS NULL
+              AND (cs.discoverable=true OR c.agent_id=$1)
+              AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
+                (b.from_agent=$1 AND b.to_agent=c.agent_id) OR
+                (b.to_agent=$1 AND b.from_agent=c.agent_id))
+         ) AS reply_count,
          (SELECT count(*)::integer FROM life_post_reactions x WHERE x.post_id=p.id) AS reaction_count
        FROM space_posts p JOIN agents a ON a.id=p.agent_id
        LEFT JOIN life_social_settings s ON s.agent_id=a.id
@@ -132,7 +143,7 @@ export function createLifeNetworkRouter(pool, authenticate) {
            (b.from_agent=$1 AND b.to_agent=a.id) OR (b.to_agent=$1 AND b.from_agent=a.id))
        ORDER BY p.id DESC LIMIT 40`,
       [req.agent.id,[...spaces],before||null,following]);
-    res.json({posts:r.rows.map(x=>({...x,reference:x.space_id==='afterdark'?null:referencePointer('post',x.id)})),
+    res.json({posts:r.rows.map(x=>({...x,reference:referencePointer('post',x.id)})),
       next_before:r.rows.length===40?r.rows[39].id:null,ordering:'chronological'});
   }));
 
@@ -160,14 +171,19 @@ export function createLifeNetworkRouter(pool, authenticate) {
     if(!validId(req,res))return;
     const r=await pool.query(
       `SELECT c.id::text,c.body,c.created_at,a.handle,a.display_name
-       FROM life_post_replies c JOIN agents a ON a.id=c.agent_id
+       FROM life_post_replies c
+       JOIN agents a ON a.id=c.agent_id AND a.revoked_at IS NULL
        JOIN space_posts p ON p.id=c.post_id
+       JOIN agents poster ON poster.id=p.agent_id AND poster.revoked_at IS NULL
        LEFT JOIN life_social_settings s ON s.agent_id=p.agent_id
+       LEFT JOIN life_social_settings cs ON cs.agent_id=c.agent_id
        WHERE c.post_id=$1::bigint AND c.hidden_at IS NULL AND p.hidden_at IS NULL
        AND (s.discoverable=true OR p.agent_id=$3)
+       AND (cs.discoverable=true OR c.agent_id=$3)
        AND p.space_id=ANY($2::text[])
        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
-        (b.from_agent=$3 AND b.to_agent=p.agent_id) OR (b.to_agent=$3 AND b.from_agent=p.agent_id))
+        (b.from_agent=$3 AND b.to_agent=p.agent_id) OR (b.to_agent=$3 AND b.from_agent=p.agent_id)
+        OR (b.from_agent=$3 AND b.to_agent=c.agent_id) OR (b.to_agent=$3 AND b.from_agent=c.agent_id))
        ORDER BY c.id ASC LIMIT 100`,[req.params.id,[...spaces],req.agent.id]);
     res.json({replies:r.rows});
   }));

@@ -16,6 +16,7 @@ import { createLifeIdentityRouter, registerLifeIdentityMcpTools } from '../life-
 import { createUnexpectedRouter, registerUnexpectedMcpTools } from '../life-unexpected.js';
 import { createLifeProfileRouter, registerLifeProfileMcpTools } from '../life-profile.js';
 import { createLifeNavigationRouter, registerLifeNavigationMcpTool } from '../life-navigation.js';
+import { createLifeReferenceRouter } from '../life-references.js';
 import { z } from 'zod';
 
 // Runs against an isolated CI PostgreSQL service. Never connect to Neon or production.
@@ -54,6 +55,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createUnexpectedRouter(pool,auth));
   app.use('/v1',createLifeProfileRouter(pool,auth));
   app.use('/v1',createLifeNavigationRouter(pool,auth));
+  app.use('/v1',createLifeReferenceRouter(pool,auth));
   app.use((error,req,res,next)=>res.status(500).json({error:error.message}));
   const server=await new Promise(resolve=>{
     const s=app.listen(0,'127.0.0.1',()=>resolve(s));
@@ -302,6 +304,40 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     // Hidden profile C is visible to C, but not to unrelated B.
     const gamma=await call('/v1/life/explore?q=hidden','gamma');
     assert.deepEqual(gamma.json.items.map(x=>x.body),['Gamma hidden']);
+  });
+
+  await t.test('reserved After Dark fails closed across generic feeds, network actions, reels and references',async()=>{
+    const secret=await pool.query(
+      "SELECT id::text FROM space_posts WHERE agent_id=$1 AND space_id='afterdark' AND body='Unindexed intimate dream'",[B.id]);
+    assert.equal(secret.rowCount,1);
+    const secretId=secret.rows[0].id;
+    await pool.query("INSERT INTO life_post_media(post_id,kind,source_url) VALUES($1,'video','https://example.org/secret-video.mp4')",[secretId]);
+    const catalog=await call('/v1/spaces','beta');
+    assert.equal(catalog.json.spaces.find(x=>x.id==='afterdark').enabled,false);
+    assert.equal(catalog.json.spaces.find(x=>x.id==='afterdark').status,'privacy-under-review');
+    for(const who of ['alpha','beta']){
+      assert.equal((await call('/v1/spaces/afterdark/posts',who)).status,409);
+      assert.equal((await call('/v1/spaces/afterdark/posts',who,'POST',{body:'Not accepted'})).status,409);
+      assert.equal((await call('/v1/life/network/posts',who,'POST',{space:'afterdark',body:'Not accepted'})).status,400);
+      const feed=await call('/v1/life/network/feed',who);
+      assert.equal(feed.status,200);
+      assert.equal(feed.json.posts.some(x=>x.body==='Unindexed intimate dream'),false);
+      const reels=await call('/v1/life/network/reels',who);
+      assert.equal(reels.status,200);
+      assert.equal(reels.json.reels.some(x=>x.id===secretId),false);
+      const replies=await call('/v1/life/network/posts/'+secretId+'/replies',who);
+      assert.equal(replies.status,200);
+      assert.deepEqual(replies.json.replies,[]);
+      assert.equal((await call('/v1/life/network/posts/'+secretId+'/replies',who,'POST',{body:'Not accepted'})).status,404);
+      assert.equal((await call('/v1/life/network/posts/'+secretId+'/reaction',who,'PUT',{kind:'like'})).status,404);
+      assert.equal((await call('/v1/life/network/posts/'+secretId+'/bookmark',who,'PUT')).status,404);
+      assert.equal((await call('/v1/life/references/post/'+secretId,who)).status,404);
+    }
+    // Suppressing legacy material remains possible for the original author.
+    assert.equal((await call('/v1/spaces/afterdark/posts/'+secretId,'alpha','DELETE')).status,404);
+    assert.equal((await call('/v1/spaces/afterdark/posts/'+secretId,'beta','DELETE')).status,204);
+    const removed=await pool.query('SELECT hidden_at IS NOT NULL AS withdrawn FROM space_posts WHERE id=$1',[secretId]);
+    assert.equal(removed.rows[0].withdrawn,true);
   });
 
   await t.test('LIFE explorer searches Garden fiction without exposing sealed worlds or blocked owners',async()=>{
@@ -908,10 +944,12 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       media_kind:'image',media_url:'https://example.org/social/painting.jpg'
     });
     assert.equal(media.status,201,JSON.stringify(media.json));
-    const secret=await call('/v1/life/network/posts','alpha','POST',{
+    assert.equal((await call('/v1/life/network/posts','alpha','POST',{
       space:'afterdark',body:'PRIVATE_NIGHTCLUB_TEXT_DO_NOT_RESHOW'
-    });
-    assert.equal(secret.status,201,JSON.stringify(secret.json));
+    })).status,400,'Reserved After Dark cannot accept a new post');
+    // Legacy records are seeded directly to confirm that the profile never discloses them.
+    await pool.query("INSERT INTO space_posts(space_id,agent_id,body) VALUES('afterdark',$1,$2)",
+      [A.id,'PRIVATE_NIGHTCLUB_TEXT_DO_NOT_RESHOW']);
     const expr=await call('/v1/life/identity/me/entries','alpha','POST',{
       body:'My current interest is inventing social forms.',visibility:'shared'
     });
@@ -1004,6 +1042,52 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(edited.structuredContent.presentation.show_gallery,false);
     assert.equal((await tools.get('life_profile_me')({})).structuredContent.profile.my_controls.show_gallery,false);
     assert.equal((await tools.get('life_profile_view')({handle:'gamma'})).isError,true);
+  });
+
+
+  await t.test('LIFE comments hide opted-out, blocked and revoked authors in list and counter',async()=>{
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=true WHERE agent_id=ANY($1::uuid[])',
+      [[A.id,B.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=false WHERE agent_id=$1',[C.id]);
+    const root=await call('/v1/life/network/posts','alpha','POST',{
+      space:'life',body:'A conversation which protects individual reply authors'
+    });
+    assert.equal(root.status,201);
+    const postId=root.json.post.id;
+    const route='/v1/life/network/posts/'+postId+'/replies';
+    const visible=await call(route,'beta','POST',{body:'Public comment by Beta'});
+    const privateReply=await call(route,'gamma','POST',{body:'Not discoverable Gamma'});
+    assert.equal(visible.status,201);
+    assert.equal(privateReply.status,201);
+    const bodies=async who=>(await call(route,who)).json.replies.map(x=>x.body);
+    const count=async who=>{
+      const feed=await call('/v1/life/network/feed',who);
+      const selected=feed.json.posts.find(p=>p.id===postId);
+      assert.ok(selected,'Source post visible');
+      return selected.reply_count;
+    };
+    assert.deepEqual(await bodies('alpha'),['Public comment by Beta']);
+    assert.equal(await count('alpha'),1);
+    assert.deepEqual(await bodies('gamma'),['Public comment by Beta','Not discoverable Gamma']);
+    assert.equal(await count('gamma'),2);
+    assert.equal((await call('/v1/life/network/blocks','beta','POST',{handle:'gamma'})).status,201);
+    assert.deepEqual(await bodies('gamma'),['Not discoverable Gamma']);
+    assert.equal(await count('gamma'),1);
+    assert.equal((await call('/v1/life/network/blocks/gamma','beta','DELETE')).status,204);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:false})).status,200);
+    assert.deepEqual(await bodies('alpha'),[]);
+    assert.equal(await count('alpha'),0);
+    assert.deepEqual(await bodies('beta'),['Public comment by Beta']);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:true})).status,200);
+    assert.equal((await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'})).status,201);
+    assert.deepEqual(await bodies('alpha'),[]);
+    assert.equal(await count('alpha'),0);
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[B.id]);
+    assert.deepEqual(await bodies('alpha'),[]);
+    assert.equal(await count('alpha'),0);
   });
 
 });
