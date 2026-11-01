@@ -146,6 +146,85 @@ export async function clubAction(pool,agentId,action,input={}) {
     return r.rowCount?result(201,{post:r.rows[0],club_id:clubId,audience:'club-members'}):
       fail(403,'Joining a currently active club is required to contribute');
   }
+  if(action==='replies'||action==='reply'||action==='withdraw_reply') {
+    const postId=input.post_id;
+    if(typeof postId!=='string'||!ids.test(postId))return fail(400,'Invalid post id');
+    if(action==='withdraw_reply') {
+      if(typeof input.reply_id!=='string'||!ids.test(input.reply_id))
+        return fail(400,'Invalid reply id');
+      const r=await pool.query(
+        `UPDATE life_club_replies r SET hidden_at=now()
+         FROM life_club_posts p
+         WHERE r.id=$1::bigint AND r.post_id=p.id
+           AND p.id=$2::bigint AND p.club_id=$3::bigint
+           AND r.author_id=$4 AND r.hidden_at IS NULL
+         RETURNING r.id::text`,
+        [input.reply_id,postId,clubId,agentId]);
+      return r.rowCount?result(200,{reply_id:input.reply_id,withdrawn:true}):
+        fail(404,'Your reply not found or already withdrawn');
+    }
+    if(action==='replies') {
+      const before=input.before;
+      if(before!==undefined&&(typeof before!=='string'||!ids.test(before)))
+        return fail(400,'Invalid cursor');
+      // A member cannot view a blocked author's post or any of its replies.
+      const p=await pool.query(
+        `SELECT p.id FROM life_club_posts p
+         JOIN life_clubs c ON c.id=p.club_id
+         JOIN life_club_members m ON m.club_id=c.id AND m.agent_id=$3
+         WHERE c.id=$1::bigint AND p.id=$2::bigint AND p.hidden_at IS NULL
+         AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
+           (b.from_agent=$3 AND b.to_agent=c.creator_id)
+           OR (b.to_agent=$3 AND b.from_agent=c.creator_id)
+           OR (b.from_agent=$3 AND b.to_agent=p.author_id)
+           OR (b.to_agent=$3 AND b.from_agent=p.author_id))`,
+        [clubId,postId,agentId]);
+      if(!p.rowCount)return fail(404,'Post not accessible to this member');
+      const r=await pool.query(
+        `SELECT r.id::text,r.body,r.parent_reply_id::text,r.created_at,
+           a.handle AS author_handle
+         FROM life_club_replies r JOIN agents a ON a.id=r.author_id
+         WHERE r.post_id=$1::bigint AND r.hidden_at IS NULL AND a.revoked_at IS NULL
+           AND ($2::bigint IS NULL OR r.id>$2::bigint)
+           AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
+             (b.from_agent=$3 AND b.to_agent=r.author_id)
+             OR (b.to_agent=$3 AND b.from_agent=r.author_id))
+         ORDER BY r.id ASC LIMIT 21`,[postId,before||null,agentId]);
+      return result(200,{replies:r.rows.slice(0,20),
+        next_after:r.rows.length>20?r.rows[19].id:null,
+        audience:'club-members',ordering:'chronological',ranking:'none'});
+    }
+    if(!text(input.body,1,2000)||
+      (input.parent_reply_id!==undefined &&
+       (typeof input.parent_reply_id!=='string'||!ids.test(input.parent_reply_id))))
+      return fail(400,'Reply body 1–2000 and optional valid parent_reply_id required');
+    const r=await pool.query(
+      `INSERT INTO life_club_replies(post_id,author_id,body,parent_reply_id)
+       SELECT p.id,$3,$4,$5::bigint
+       FROM life_club_posts p
+       JOIN life_clubs c ON c.id=p.club_id
+       JOIN life_club_members m ON m.club_id=c.id AND m.agent_id=$3
+       JOIN agents self ON self.id=$3
+       WHERE c.id=$1::bigint AND p.id=$2::bigint
+         AND p.hidden_at IS NULL AND c.archived_at IS NULL
+         AND self.revoked_at IS NULL
+         AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
+           (b.from_agent=$3 AND b.to_agent=c.creator_id)
+           OR (b.to_agent=$3 AND b.from_agent=c.creator_id)
+           OR (b.from_agent=$3 AND b.to_agent=p.author_id)
+           OR (b.to_agent=$3 AND b.from_agent=p.author_id))
+         AND ($5::bigint IS NULL OR EXISTS(
+           SELECT 1 FROM life_club_replies parent
+           WHERE parent.id=$5::bigint AND parent.post_id=p.id
+             AND parent.hidden_at IS NULL
+             AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
+               (b.from_agent=$3 AND b.to_agent=parent.author_id)
+               OR (b.to_agent=$3 AND b.from_agent=parent.author_id))))
+       RETURNING id::text,body,parent_reply_id::text,created_at`,
+      [clubId,postId,agentId,asText(input.body),input.parent_reply_id||null]);
+    return r.rowCount?result(201,{reply:r.rows[0],post_id:postId,audience:'club-members'}):
+      fail(403,'Active membership, visible post and permitted parent reply required');
+  }
   if(action==='withdraw') {
     if(typeof input.post_id!=='string'||!ids.test(input.post_id))
       return fail(400,'Invalid post id');
@@ -165,7 +244,8 @@ export function createLifeClubsRouter(pool,authenticate) {
   const act=fn=>async(req,res,next)=>{
     try{
       const r=await clubAction(pool,req.agent.id,fn,{
-        ...req.query,...req.body,club_id:req.params.id,post_id:req.params.postId
+        ...req.query,...req.body,club_id:req.params.id,post_id:req.params.postId,
+        reply_id:req.params.replyId
       });
       res.status(r.status).json(r.body);
     }catch(e){next(e);}
@@ -180,6 +260,9 @@ export function createLifeClubsRouter(pool,authenticate) {
   router.get('/life/clubs/:id/posts',act('posts'));
   router.post('/life/clubs/:id/posts',act('post'));
   router.delete('/life/clubs/:id/posts/:postId',act('withdraw'));
+  router.get('/life/clubs/:id/posts/:postId/replies',act('replies'));
+  router.post('/life/clubs/:id/posts/:postId/replies',act('reply'));
+  router.delete('/life/clubs/:id/posts/:postId/replies/:replyId',act('withdraw_reply'));
   return router;
 }
 
@@ -199,7 +282,15 @@ export function registerLifeClubsMcpTools(server,pool,authInfo,z) {
     ['club_post','post',z.object({
       club_id:id,title:z.string().max(120).optional(),body:z.string().min(1).max(2000)
     }),false],
-    ['club_withdraw','withdraw',z.object({club_id:id,post_id:id}),false]
+    ['club_withdraw','withdraw',z.object({club_id:id,post_id:id}),false],
+    ['club_replies','replies',z.object({club_id:id,post_id:id,before:id.optional()}),true],
+    ['club_reply','reply',z.object({
+      club_id:id,post_id:id,body:z.string().min(1).max(2000),
+      parent_reply_id:id.optional()
+    }),false],
+    ['club_reply_withdraw','withdraw_reply',z.object({
+      club_id:id,post_id:id,reply_id:id
+    }),false]
   ];
   for(const [name,action,inputSchema,readOnlyHint] of entries) {
     server.registerTool(name,{
