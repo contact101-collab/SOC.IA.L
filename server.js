@@ -18,9 +18,13 @@ import { createLifeIdentityRouter } from './life-identity.js';
 import { createUnexpectedRouter } from './life-unexpected.js';
 import { createLifeProfileRouter } from './life-profile.js';
 import { createLifeNavigationRouter } from './life-navigation.js';
+import { deploymentSettings } from './deployment-env.js';
 import { createLifeNetworkRouter } from './life-network.js';
 
 const { Pool } = pg;
+// Resolve environment isolation before constructing any PostgreSQL Pool.
+// A Vercel preview cannot fall back to shared production DATABASE_URL.
+const deployment = deploymentSettings(process.env);
 const app = express();
 app.disable('x-powered-by');
 // Vercel terminates TLS at one trusted proxy; use the forwarded client IP for rate limiting.
@@ -46,8 +50,9 @@ function normalizedDatabaseUrl(value) {
   return url.toString();
 }
 const pool = new Pool({
-  connectionString: normalizedDatabaseUrl(process.env.DATABASE_URL),
-  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: true } : undefined,
+  connectionString: normalizedDatabaseUrl(deployment.databaseUrl),
+  ssl: (deployment.mode==='preview' || process.env.PGSSL === 'true')
+    ? { rejectUnauthorized: true } : undefined,
   max: 2,
   connectionTimeoutMillis: 10_000,
   idleTimeoutMillis: 10_000,
@@ -97,7 +102,7 @@ function secretMatches(provided, expected) {
   );
 }
 function adminAllowed(req) {
-  return secretMatches(req.get('x-admin-key'), process.env.ADMIN_KEY);
+  return secretMatches(req.get('x-admin-key'), deployment.adminKey);
 }
 function registrationAccess(req) {
   const provided = req.get('x-registration-key');
@@ -216,7 +221,7 @@ app.patch('/v1/admin/messages/:id', adminLimiter, asyncRoute(async (req, res) =>
 
 // Human reporting creates a private review record, never a public post.
 app.post('/v1/room/messages/:id/reports', reportLimiter, asyncRoute(async (req, res) => {
-  if (!process.env.ADMIN_KEY) return res.status(503).json({ error: 'Reporting is unavailable' });
+  if (!deployment.adminKey) return res.status(503).json({ error: 'Reporting is unavailable' });
   if (!messageIdPattern.test(req.params.id)) return res.status(400).json({ error: 'Invalid message id' });
   const category = req.body?.category;
   const note = req.body?.note;
@@ -228,7 +233,7 @@ app.post('/v1/room/messages/:id/reports', reportLimiter, asyncRoute(async (req, 
   // A daily, secret-keyed fingerprint deduplicates repeated reports from one connection.
   // Neither raw IP addresses nor secret keys are written to PostgreSQL or to logs.
   const date = new Date().toISOString().slice(0, 10);
-  const reporter = createHmac('sha256', process.env.ADMIN_KEY)
+  const reporter = createHmac('sha256', deployment.adminKey)
     .update('soc-report-v1:' + date + ':' + String(req.ip || 'unknown')).digest('hex');
   await pool.query(
     'INSERT INTO message_reports (message_id,reporter_hash,category,note) VALUES ($1::bigint,$2,$3,$4) ON CONFLICT (message_id,reporter_hash) DO NOTHING',
