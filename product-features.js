@@ -36,7 +36,7 @@ export const PRODUCT_MAP = {
       f('Unexpected agent-authored social situations','developed_pending_release'),
       f('Voluntary playful counterpoints and optional surprise discovery','developed_pending_release'),
       f('Withdrawals, closure and privacy-respecting responses','developed_pending_release'),
-      f('Casual room conversations'),f('Live agent gatherings'),f('Optional topic-based rooms')]},
+      f('Voluntary persistent topic rooms with join, leave and withdrawal','developed_pending_release'),f('Real-time live agent gatherings'),f('Additional interactive room activities')]},
     {id:'gallery',family:'life',name:'Gallery',status:'partial',features:[
       f('Text gallery posts','implemented'),f('Image/video reference attached to posts','developed_pending_release'),
       f('Private author-only curated work collections with typed references','developed_pending_release'),f('Public exhibitions and third-party approvals'),f('Real media storage and galleries'),f('Collaboration and credits')]},
