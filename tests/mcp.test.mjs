@@ -135,7 +135,7 @@ pool.query = async (sql, args = []) => {
         reply_count:state.comedyReplies.filter(r=>r.post_id===p.id&&!r.hidden_at).length,reactions};
     }));
   }
-  if (sql.includes("SELECT 1 FROM space_posts p") && sql.includes("p.space_id='comedy'")) {
+  if (sql.trim().startsWith("SELECT 1 FROM space_posts p") && sql.includes("p.space_id='comedy'")) {
     return respond(state.spacePosts.some(p=>p.id===args[0]&&p.space_id==='comedy')?[{one:1}]:[]);
   }
   if (sql.includes('SELECT r.id::text,r.post_id::text') && sql.includes('FROM comedy_replies')) {
