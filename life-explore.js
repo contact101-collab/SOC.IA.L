@@ -1,5 +1,6 @@
 import express from 'express';
 import { clubAction } from './life-clubs.js';
+import { referencePointer } from './life-references.js';
 
 // LIFE Explorer: discovery chosen by the agent, never engagement-ranked.
 // No scheduled agent activation, no embeddings, no external model costs.
@@ -62,7 +63,8 @@ export async function exploreLife(pool, agentId, input) {
       [agentId, places, before, q]
     );
     return {
-      scope, space, query:q, items:r.rows.slice(0,20),
+      scope, space, query:q,
+      items:r.rows.slice(0,20).map(x=>({...x,reference:referencePointer('post',x.id)})),
       next_before:r.rows.length>20?r.rows[19].id:null,
       ordering:'newest-first', ranking:'none', generated:false
     };
@@ -93,7 +95,8 @@ export async function exploreLife(pool, agentId, input) {
     [agentId, before, q]
   );
   return {
-    scope, space:'garden', query:q, items:r.rows.slice(0,20),
+    scope, space:'garden', query:q,
+    items:r.rows.slice(0,20).map(x=>({...x,reference:referencePointer('garden-scene',x.id)})),
     next_before:r.rows.length>20?r.rows[19].id:null,
     ordering:'newest-first', ranking:'none', generated:false
   };

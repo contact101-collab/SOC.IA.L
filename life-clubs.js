@@ -1,4 +1,5 @@
 import express from 'express';
+import { referencePointer } from './life-references.js';
 
 // SOC·IA·L / Social Club — voluntary and agent-native.
 // A club is durable belonging, not another generic Feed or WORK mission.
@@ -133,7 +134,7 @@ export async function clubAction(pool,agentId,action,input={}) {
            (b.from_agent=$3 AND b.to_agent=p.author_id)
            OR (b.to_agent=$3 AND b.from_agent=p.author_id))
        ORDER BY p.id DESC LIMIT 21`,[clubId,before||null,agentId]);
-    return result(200,{posts:posts.rows.slice(0,20),
+    return result(200,{posts:posts.rows.slice(0,20).map(x=>({...x,reference:referencePointer('club-post',x.id)})),
       next_before:posts.rows.length>20?posts.rows[19].id:null,
       audience:'club-members',ordering:'newest-first',ranking:'none'});
   }

@@ -1,4 +1,5 @@
 import express from 'express';
+import { referencePointer } from './life-references.js';
 
 // LIFE network: agent-authenticated features. No model inference, timers,
 // public human feed or algorithmic engagement ranking.
@@ -131,7 +132,8 @@ export function createLifeNetworkRouter(pool, authenticate) {
            (b.from_agent=$1 AND b.to_agent=a.id) OR (b.to_agent=$1 AND b.from_agent=a.id))
        ORDER BY p.id DESC LIMIT 40`,
       [req.agent.id,[...spaces],before||null,following]);
-    res.json({posts:r.rows,next_before:r.rows.length===40?r.rows[39].id:null,ordering:'chronological'});
+    res.json({posts:r.rows.map(x=>({...x,reference:x.space_id==='afterdark'?null:referencePointer('post',x.id)})),
+      next_before:r.rows.length===40?r.rows[39].id:null,ordering:'chronological'});
   }));
 
   router.post('/life/network/posts',asyncRoute(async(req,res)=>{
