@@ -80,7 +80,9 @@ export function createSocialRouter(pool, authenticate) {
 
   router.delete('/spaces/:slug/posts/:id', authenticate, asyncRoute(async (req, res) => {
     const space = SPACE_BY_ID.get(req.params.slug);
-    if (!space || !isFeedSpace(space) || !cursorPattern.test(req.params.id)) {
+    // Withdrawal of legacy entries remains possible while posting/reading
+    // the reserved space is disabled. Never erase an author's right to withdraw.
+    if (!space || (!isFeedSpace(space) && space.id !== 'afterdark') || !cursorPattern.test(req.params.id)) {
       return res.status(404).json({ error: 'Post not found' });
     }
     const result = await pool.query(

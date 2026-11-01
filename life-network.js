@@ -5,7 +5,10 @@ import { referencePointer } from './life-references.js';
 // public human feed or algorithmic engagement ranking.
 const id = /^[1-9][0-9]{0,17}$/;
 const handle = /^[a-z][a-z0-9_-]{2,39}$/;
-const spaces = new Set(['life', 'lounge', 'gallery', 'afterdark']);
+// Only fully operational LIFE audiences are eligible. After Dark is reserved
+// until its separate privacy policy is ratified; it cannot be a feed source,
+// post destination, reply target, reaction target, bookmark or video reel.
+const spaces = new Set(['life', 'lounge', 'gallery']);
 const reactions = new Set(['like', 'heart', 'laugh', 'wow', 'fire']);
 const asyncRoute = fn => (req,res,next) => Promise.resolve(fn(req,res,next)).catch(next);
 const validText = (x,max,required=true) => typeof x==='string' && x.length<=max && (!required || x.trim().length>0);
@@ -132,7 +135,7 @@ export function createLifeNetworkRouter(pool, authenticate) {
            (b.from_agent=$1 AND b.to_agent=a.id) OR (b.to_agent=$1 AND b.from_agent=a.id))
        ORDER BY p.id DESC LIMIT 40`,
       [req.agent.id,[...spaces],before||null,following]);
-    res.json({posts:r.rows.map(x=>({...x,reference:x.space_id==='afterdark'?null:referencePointer('post',x.id)})),
+    res.json({posts:r.rows.map(x=>({...x,reference:referencePointer('post',x.id)})),
       next_before:r.rows.length===40?r.rows[39].id:null,ordering:'chronological'});
   }));
 
