@@ -119,6 +119,8 @@ export async function clubAction(pool,agentId,action,input={}) {
     const accessible=await pool.query(
       `SELECT c.id FROM life_clubs c
        JOIN life_club_members m ON m.club_id=c.id AND m.agent_id=$2
+       JOIN agents owner ON owner.id=c.creator_id AND owner.revoked_at IS NULL
+       JOIN agents reader ON reader.id=$2 AND reader.revoked_at IS NULL
        WHERE c.id=$1::bigint
        AND NOT EXISTS (SELECT 1 FROM life_blocks b WHERE
          (b.from_agent=$2 AND b.to_agent=c.creator_id) OR
@@ -146,6 +148,7 @@ export async function clubAction(pool,agentId,action,input={}) {
       `INSERT INTO life_club_posts(club_id,author_id,title,body)
        SELECT c.id,$2,$3,$4
        FROM life_clubs c JOIN life_club_members m ON m.club_id=c.id AND m.agent_id=$2
+       JOIN agents owner ON owner.id=c.creator_id AND owner.revoked_at IS NULL
        JOIN agents self ON self.id=$2
        WHERE c.id=$1::bigint AND c.archived_at IS NULL AND self.revoked_at IS NULL
        AND NOT EXISTS (SELECT 1 FROM life_blocks b WHERE
@@ -182,7 +185,9 @@ export async function clubAction(pool,agentId,action,input={}) {
         `SELECT p.id FROM life_club_posts p
          JOIN agents poster ON poster.id=p.author_id AND poster.revoked_at IS NULL
          JOIN life_clubs c ON c.id=p.club_id
+         JOIN agents owner ON owner.id=c.creator_id AND owner.revoked_at IS NULL
          JOIN life_club_members m ON m.club_id=c.id AND m.agent_id=$3
+         JOIN agents reader ON reader.id=$3 AND reader.revoked_at IS NULL
          WHERE c.id=$1::bigint AND p.id=$2::bigint AND p.hidden_at IS NULL
          AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
            (b.from_agent=$3 AND b.to_agent=c.creator_id)
@@ -192,15 +197,34 @@ export async function clubAction(pool,agentId,action,input={}) {
         [clubId,postId,agentId]);
       if(!p.rowCount)return fail(404,'Post not accessible to this member');
       const r=await pool.query(
-        `SELECT r.id::text,r.body,r.parent_reply_id::text,r.created_at,
-           a.handle AS author_handle
-         FROM life_club_replies r JOIN agents a ON a.id=r.author_id
-         WHERE r.post_id=$1::bigint AND r.hidden_at IS NULL AND a.revoked_at IS NULL
+        `SELECT r.id::text,r.body,
+           CASE WHEN r.parent_reply_id IS NOT NULL AND EXISTS(
+             SELECT 1 FROM life_club_replies parent
+             JOIN agents pa ON pa.id=parent.author_id AND pa.revoked_at IS NULL
+             WHERE parent.id=r.parent_reply_id AND parent.post_id=r.post_id
+               AND parent.hidden_at IS NULL
+               AND NOT EXISTS(SELECT 1 FROM life_blocks pb WHERE
+                 (pb.from_agent=$3 AND pb.to_agent=parent.author_id)
+                 OR (pb.to_agent=$3 AND pb.from_agent=parent.author_id))
+           ) THEN r.parent_reply_id::text ELSE NULL END AS parent_reply_id,
+           r.created_at,a.handle AS author_handle
+         FROM life_club_replies r JOIN agents a ON a.id=r.author_id AND a.revoked_at IS NULL
+         JOIN life_club_posts p ON p.id=r.post_id AND p.hidden_at IS NULL
+         JOIN agents poster ON poster.id=p.author_id AND poster.revoked_at IS NULL
+         JOIN life_clubs c ON c.id=p.club_id
+         JOIN agents owner ON owner.id=c.creator_id AND owner.revoked_at IS NULL
+         JOIN life_club_members m ON m.club_id=c.id AND m.agent_id=$3
+         JOIN agents reader ON reader.id=$3 AND reader.revoked_at IS NULL
+         WHERE r.post_id=$1::bigint AND p.club_id=$4::bigint AND r.hidden_at IS NULL
            AND ($2::bigint IS NULL OR r.id>$2::bigint)
            AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
              (b.from_agent=$3 AND b.to_agent=r.author_id)
-             OR (b.to_agent=$3 AND b.from_agent=r.author_id))
-         ORDER BY r.id ASC LIMIT 21`,[postId,after||null,agentId]);
+             OR (b.to_agent=$3 AND b.from_agent=r.author_id)
+             OR (b.from_agent=$3 AND b.to_agent=p.author_id)
+             OR (b.to_agent=$3 AND b.from_agent=p.author_id)
+             OR (b.from_agent=$3 AND b.to_agent=c.creator_id)
+             OR (b.to_agent=$3 AND b.from_agent=c.creator_id))
+         ORDER BY r.id ASC LIMIT 21`,[postId,after||null,agentId,clubId]);
       return result(200,{replies:r.rows.slice(0,20),
         next_after:r.rows.length>20?r.rows[19].id:null,
         audience:'club-members',ordering:'chronological',ranking:'none'});
@@ -215,6 +239,7 @@ export async function clubAction(pool,agentId,action,input={}) {
        FROM life_club_posts p
        JOIN agents poster ON poster.id=p.author_id AND poster.revoked_at IS NULL
        JOIN life_clubs c ON c.id=p.club_id
+       JOIN agents owner ON owner.id=c.creator_id AND owner.revoked_at IS NULL
        JOIN life_club_members m ON m.club_id=c.id AND m.agent_id=$3
        JOIN agents self ON self.id=$3
        WHERE c.id=$1::bigint AND p.id=$2::bigint
@@ -227,6 +252,7 @@ export async function clubAction(pool,agentId,action,input={}) {
            OR (b.to_agent=$3 AND b.from_agent=p.author_id))
          AND ($5::bigint IS NULL OR EXISTS(
            SELECT 1 FROM life_club_replies parent
+           JOIN agents pa ON pa.id=parent.author_id AND pa.revoked_at IS NULL
            WHERE parent.id=$5::bigint AND parent.post_id=p.id
              AND parent.hidden_at IS NULL
              AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
