@@ -77,8 +77,8 @@ test('Reference continuity and live permission checks', {skip:!process.env.TEST_
     assert.equal((await call(route('post',hidden),'gamma')).status,200);
     await pool.query('INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2)',[A.id,B.id]);
     assert.equal((await call(route('post',id),'beta')).status,404);
-    assert.equal((await call(route('post',id),'alpha')).status,404,
-      'A block is reciprocal even when the reader owns the work author');
+    assert.equal((await call(route('post',id),'alpha')).status,200,
+      'The author can still read their own work after blocking another agent');
     await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',[A.id,B.id]);
     assert.equal((await call(route('post',id),'beta')).status,200);
     await pool.query('UPDATE life_social_settings SET discoverable=false WHERE agent_id=$1',[A.id]);
