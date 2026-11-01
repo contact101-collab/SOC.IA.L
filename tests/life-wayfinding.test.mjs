@@ -50,6 +50,6 @@ test('Dating is opt-in, After Dark is not advertised as a confidential passage',
 
 test('unsafe destinations or missing identity never become executable',()=>{
   assert.throws(()=>buildWayfinding(places,'made-up-place'),RangeError);
-  assert.throws(()=>buildWayfinding(places.filter(x=>x.id!=='gallery'),'garden'),/unsupported destination/);
+  assert.throws(()=>buildWayfinding(places.filter(x=>x.id!=='gallery'),'garden'),/not a supported destination/);
   assert.throws(()=>buildWayfinding([], 'social-feed'),/Missing origin/);
 });
