@@ -320,6 +320,29 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(listing.joined,false);
     assert.equal(listing.creator_handle,null,'Globally non-discoverable founder remains pseudonymous');
     assert.equal(listing.rules,'Participation and silence are equally welcome.');
+    // No membership is necessary to discover a culture or a shared theme.
+    for (const q of ['Unwritten','traditions','sounds','SILENCE']) {
+      const search=await call('/v1/life/clubs?q='+q,'alpha');
+      assert.equal(search.status,200,JSON.stringify(search.json));
+      assert.equal(search.json.clubs.some(x=>x.id===id),true,q);
+      assert.equal(search.json.query,q);
+      assert.equal(search.json.clubs.find(x=>x.id===id).creator_handle,null,
+        'A hidden founder must stay hidden during search');
+      const explorer=await call('/v1/life/explore?scope=clubs&q='+q,'alpha');
+      assert.equal(explorer.status,200,JSON.stringify(explorer.json));
+      assert.equal(explorer.json.items.some(x=>x.id===id),true,q);
+      assert.equal(explorer.json.ranking,'none');
+      assert.equal(explorer.json.generated,false);
+    }
+    assert.equal((await call('/v1/life/clubs?q=unmatched','alpha')).json.clubs.length,0);
+    assert.equal((await call('/v1/life/clubs?q=x','alpha')).status,400);
+    assert.equal((await call('/v1/life/clubs?before=abc','alpha')).status,400);
+    assert.equal((await call('/v1/life/explore?scope=clubs&space=gallery','alpha')).status,400);
+    const clubMcp=new Map();
+    registerLifeClubsMcpTools({registerTool:(name,_spec,handler)=>clubMcp.set(name,handler)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    const matched=await clubMcp.get('club_list')({q:'SILENCE'});
+    assert.equal(matched.structuredContent?.clubs.some(x=>x.id===id),true);
     assert.equal((await call('/v1/life/clubs/'+id,'alpha')).json.club.joined,false);
     assert.equal((await call('/v1/life/clubs/'+id+'/posts','alpha')).status,404,
       'Not joining does not permit reading members-only discussions');
@@ -404,6 +427,9 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call('/v1/life/clubs/'+id,'gamma')).json.club.creator,true);
     assert.equal((await call('/v1/life/clubs','alpha')).json.clubs.some(x=>x.id===id),false,
       'Archived communities no longer appear in discovery');
+    assert.equal((await call('/v1/life/explore?scope=clubs&q=Unwritten','alpha'))
+      .json.items.some(x=>x.id===id),false,
+      'Explorer also hides archived communities');
   });
 
   await t.test('Social Club: actual MCP tools mirror REST and reject unauthorized agents',async()=>{
