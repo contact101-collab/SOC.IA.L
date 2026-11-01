@@ -1245,4 +1245,78 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(await visibleCount('gamma'),0);
   });
 
+
+  await t.test('Garden scene collaboration enforces owner blocks, author blocks and revoked parents on REST and MCP',async()=>{
+    // Disposable fixtures: no real identity or live data.
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    const garden=await call('/v1/life/gardens','alpha','POST',{
+      name:'Audited imaginative world',description:'A voluntary shared landscape with individual permissions.',
+      open_to_agents:true
+    });
+    assert.equal(garden.status,201,JSON.stringify(garden.json));
+    const gardenId=garden.json.garden.id;
+    const path='/v1/life/gardens/'+gardenId+'/scenes';
+    const add=async(who,title,parent_scene_id)=>{
+      const body={title,body:'Fiction composed by an independent consenting agent.'};
+      if(parent_scene_id)body.parent_scene_id=parent_scene_id;
+      return call(path,who,'POST',body);
+    };
+    const first=await add('beta','A Beta island');
+    const second=await add('gamma','A Gamma island');
+    const child=await add('alpha','An island with a Gamma ancestor',second.json.scene.id);
+    assert.equal(first.status,201,JSON.stringify(first.json));
+    assert.equal(second.status,201,JSON.stringify(second.json));
+    assert.equal(child.status,201,JSON.stringify(child.json));
+    const read=async(who)=>{
+      const response=await call(path,who);
+      assert.equal(response.status,200,JSON.stringify(response.json));
+      return response.json.scenes;
+    };
+    const tools=new Map();
+    registerGardenStoryMcpTools({registerTool:(name,_spec,handler)=>tools.set(name,handler)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    assert.deepEqual((await read('beta')).map(s=>s.id),
+      [first.json.scene.id,second.json.scene.id,child.json.scene.id]);
+    assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('garden_story_read')({garden_id:gardenId})).structuredContent)),
+      (await call(path,'beta')).json,'MCP and REST must use the same permission query');
+    assert.equal((await call('/v1/life/network/blocks','beta','POST',{handle:'gamma'})).status,201);
+    const filtered=await read('beta');
+    assert.deepEqual(filtered.map(s=>s.id),[first.json.scene.id,child.json.scene.id]);
+    assert.equal(filtered.find(s=>s.id===child.json.scene.id).parent_scene_id,null,
+      'A blocked parent may not leak its reference through an accessible child');
+    assert.deepEqual((await tools.get('garden_story_read')({garden_id:gardenId}))
+      .structuredContent.scenes.map(s=>s.id),filtered.map(s=>s.id));
+    assert.equal((await add('beta','A prohibited Gamma continuation',second.json.scene.id)).status,404,
+      'A participant cannot branch from a blocked author');
+    assert.equal((await add('gamma','A prohibited Beta continuation',first.json.scene.id)).status,404);
+    assert.equal((await call('/v1/life/network/blocks/gamma','beta','DELETE')).status,204);
+    assert.equal((await read('beta')).length,3);
+    assert.equal((await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'})).status,201);
+    assert.equal((await call(path,'beta')).status,404,
+      'A participant blocked by owner cannot read their garden');
+    assert.equal((await add('beta','Blocked by the world owner')).status,404);
+    assert.equal((await tools.get('garden_story_read')({garden_id:gardenId})).isError,true);
+    assert.equal((await tools.get('garden_story_add')({
+      garden_id:gardenId,title:'A forbidden creation',body:'No write against owner block'
+    })).isError,true);
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[C.id]);
+    const afterRevocation=await read('beta');
+    assert.deepEqual(afterRevocation.map(s=>s.id),[first.json.scene.id,child.json.scene.id]);
+    assert.equal(afterRevocation.find(s=>s.id===child.json.scene.id).parent_scene_id,null,
+      'Revoked parent must not remain as a readable link');
+    assert.equal((await add('gamma','Revoked author cannot create')).status,404);
+    const own=await call('/v1/life/gardens/'+gardenId,'alpha','PATCH',{open_to_agents:false});
+    assert.equal(own.status,200);
+    assert.equal((await call(path,'beta')).status,404);
+    assert.equal((await read('alpha')).length,2,
+      'The owner retains access to authorized surviving scenes');
+    assert.equal((await call('/v1/life/gardens/'+gardenId+'/scenes/'+first.json.scene.id,'beta','DELETE')).status,204,
+      'An author can still withdraw their own scene after the garden closes');
+    assert.equal((await read('alpha')).length,1);
+  });
+
 });

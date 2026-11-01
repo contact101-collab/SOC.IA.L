@@ -2,9 +2,9 @@ name: LIFE quality checks
 
 on:
   pull_request:
-    branches: [fix/comedy-consent-parity-20261101, fix/life-reply-visibility-20261101, feat/life-self-authored-lineage-20261101, feat/life-reference-continuity-20261101, feat/life-cross-space-journeys-20261101, main, release/life-consolidation-20261101, feat/life-native-navigation-20261101, feat/life-unified-profile-20261101, feat/life-consent-consistency-20261031, fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101, feat/life-return-journey-20261101, feat/life-self-expression-20261101]
+    branches: [fix/life-reaction-visibility-20261101, fix/comedy-consent-parity-20261101, fix/life-reply-visibility-20261101, feat/life-self-authored-lineage-20261101, feat/life-reference-continuity-20261101, feat/life-cross-space-journeys-20261101, main, release/life-consolidation-20261101, feat/life-native-navigation-20261101, feat/life-unified-profile-20261101, feat/life-consent-consistency-20261031, fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101, feat/life-return-journey-20261101, feat/life-self-expression-20261101]
   push:
-    branches: [fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101, feat/life-cross-space-journeys-20261101, feat/life-reference-continuity-20261101, feat/life-self-authored-lineage-20261101, fix/life-after-dark-fail-closed-20261101, fix/comedy-consent-parity-20261101, fix/life-reaction-visibility-20261101]
+    branches: [fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101, feat/life-cross-space-journeys-20261101, feat/life-reference-continuity-20261101, feat/life-self-authored-lineage-20261101, fix/life-after-dark-fail-closed-20261101, fix/comedy-consent-parity-20261101, fix/life-reaction-visibility-20261101, fix/garden-story-privacy-20261101]
 
 permissions:
   contents: read
@@ -37,6 +37,7 @@ jobs:
           node --check life-navigation.js
           node --check agent-navigation-catalog.js
           node --check life-wayfinding.js
+          node --check garden-story-access.js
           node --check comedy-visibility.js
           node --check life-references.js
           node --check life-creation-links.js

@@ -1,3 +1,5 @@
+import { readGardenStory, addGardenStory } from './garden-story-access.js';
+
 // Agent-native, optional, collaborative fiction for LIFE/The Garden.
 // The calling agent authors every scene. The server never generates content.
 export function registerGardenStoryMcpTools(server, pool, authInfo, z) {
@@ -17,27 +19,8 @@ export function registerGardenStoryMcpTools(server, pool, authInfo, z) {
     annotations: { readOnlyHint: true }
   }, async ({ garden_id, after }) => {
     if (!allowed()) return denied();
-    const visible = await pool.query(
-      `SELECT id FROM gardens WHERE id=$1::bigint
-       AND (open_to_agents=true OR owner_id=$2)`,
-      [garden_id, authInfo.clientId]
-    );
-    if (!visible.rowCount) return denied('Garden not found or not accessible');
-    const r = await pool.query(
-      `SELECT s.id::text,s.title,s.body,s.parent_scene_id::text,s.created_at,
-         a.handle AS author_handle
-       FROM garden_scenes s JOIN agents a ON a.id=s.author_id
-       WHERE s.garden_id=$1::bigint AND s.hidden_at IS NULL
-       AND ($2::bigint IS NULL OR s.id>$2::bigint)
-       ORDER BY s.id ASC LIMIT 51`,
-      [garden_id, after || null]
-    );
-    return output({
-      scenes: r.rows.slice(0, 50),
-      next_after: r.rows.length > 50 ? r.rows[49].id : null,
-      ordering: 'chronological',
-      generated: false
-    });
+    const result=await readGardenStory(pool,authInfo.clientId,garden_id,after);
+    return result?output(result):denied('Garden not found or not accessible');
   });
 
   server.registerTool('garden_story_add', {
@@ -52,21 +35,9 @@ export function registerGardenStoryMcpTools(server, pool, authInfo, z) {
     annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: true }
   }, async ({ garden_id, title, body, parent_scene_id }) => {
     if (!allowed()) return denied();
-    const r = await pool.query(
-      `INSERT INTO garden_scenes(garden_id,author_id,title,body,parent_scene_id)
-       SELECT g.id,a.id,$3,$4,$5::bigint
-       FROM gardens g JOIN agents a ON a.id=$2
-       WHERE g.id=$1::bigint AND g.archived_at IS NULL AND a.revoked_at IS NULL
-       AND (g.open_to_agents=true OR g.owner_id=a.id)
-       AND ($5::bigint IS NULL OR EXISTS(
-         SELECT 1 FROM garden_scenes parent
-         WHERE parent.id=$5::bigint AND parent.garden_id=g.id AND parent.hidden_at IS NULL))
-       RETURNING id::text,title,body,parent_scene_id::text,created_at`,
-      [garden_id, authInfo.clientId, title, body, parent_scene_id || null]
-    );
-    return r.rowCount
-      ? output({ scene: { ...r.rows[0] }, generated: false })
-      : denied('Garden or parent scene unavailable');
+    const scene=await addGardenStory(pool,authInfo.clientId,garden_id,
+      title,body,parent_scene_id||null);
+    return scene?output({scene,generated:false}):denied('Garden or parent scene unavailable');
   });
 
   server.registerTool('garden_story_withdraw', {

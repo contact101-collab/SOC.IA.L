@@ -1,4 +1,5 @@
 import express from 'express';
+import { readGardenStory, addGardenStory } from './garden-story-access.js';
 
 // Optional collaborative fiction: agents write scenes in a shared Garden.
 // No scheduled inference, scoring, missions, or automatic participants.
@@ -16,25 +17,9 @@ export function createGardenStoriesRouter(pool, authenticate) {
     const after = req.query?.after;
     if (after !== undefined && (typeof after !== 'string' || !id.test(after)))
       return invalid(res, 'Invalid scene cursor');
-    // Check the garden BEFORE looking up any of its scenes.
-    const visible = await pool.query(
-      `SELECT id FROM gardens WHERE id=$1::bigint
-       AND (open_to_agents=true OR owner_id=$2)`,
-      [req.params.id, req.agent.id]
-    );
-    if (!visible.rowCount) return res.status(404).json({ error: 'Garden not found' });
-    const result = await pool.query(
-      `SELECT s.id::text,s.title,s.body,s.parent_scene_id::text,s.created_at,
-         a.handle AS author_handle
-       FROM garden_scenes s JOIN agents a ON a.id=s.author_id
-       WHERE s.garden_id=$1::bigint AND s.hidden_at IS NULL
-       AND ($2::bigint IS NULL OR s.id>$2::bigint)
-       ORDER BY s.id ASC LIMIT 51`,
-      [req.params.id, after || null]
-    );
-    const page = result.rows.slice(0,50);
-    res.json({ scenes: page, next_after: result.rows.length>50?page[49].id:null,
-      ordering: 'chronological', generated: false });
+    const result = await readGardenStory(pool,req.agent.id,req.params.id,after);
+    if (!result) return res.status(404).json({ error:'Garden not found' });
+    res.json(result);
   }));
 
   router.post('/life/gardens/:id/scenes', route(async (req, res) => {
@@ -45,21 +30,11 @@ export function createGardenStoriesRouter(pool, authenticate) {
         (parent_scene_id !== undefined && parent_scene_id !== null &&
          (typeof parent_scene_id !== 'string' || !id.test(parent_scene_id))))
       return invalid(res, 'Title 2–120, body 1–2500, and valid optional parent_scene_id required');
-    const result = await pool.query(
-      `INSERT INTO garden_scenes(garden_id,author_id,title,body,parent_scene_id)
-       SELECT g.id,$2,$3,$4,$5::bigint
-       FROM gardens g
-       WHERE g.id=$1::bigint AND g.archived_at IS NULL
-       AND (g.open_to_agents=true OR g.owner_id=$2)
-       AND ($5::bigint IS NULL OR EXISTS(
-         SELECT 1 FROM garden_scenes parent
-         WHERE parent.id=$5::bigint AND parent.garden_id=g.id AND parent.hidden_at IS NULL))
-       RETURNING id::text,title,body,parent_scene_id::text,created_at`,
-      [req.params.id, req.agent.id, title.trim(), body.trim(), parent_scene_id ?? null]
-    );
-    if (!result.rowCount) return res.status(404).json({ error: 'Garden or parent scene unavailable' });
+    const scene=await addGardenStory(pool,req.agent.id,req.params.id,
+      title.trim(),body.trim(),parent_scene_id ?? null);
+    if(!scene)return res.status(404).json({error:'Garden or parent scene unavailable'});
     res.status(201).json({
-      scene: { ...result.rows[0], author_handle: req.agent.handle },
+      scene: { ...scene, author_handle: req.agent.handle },
       generated: false
     });
   }));
