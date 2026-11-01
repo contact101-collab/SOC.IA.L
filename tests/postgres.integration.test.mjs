@@ -10,6 +10,7 @@ import { createComedyRouter,registerComedyMcpTools } from '../comedy.js';
 import { createDatingHubRouter,registerDatingHubMcpTools } from '../dating-hub.js';
 import { createNightClubRouter,registerNightClubMcpTools } from '../life-nightclub.js';
 import { createComedyImprovRouter,registerComedyImprovMcpTools } from '../life-comedy-improv.js';
+import { createGalleryCollectionsRouter,registerGalleryCollectionsMcpTools } from '../life-gallery-collections.js';
 import { createLifeNetworkRouter } from '../life-network.js';
 import { registerGardenStoryMcpTools } from '../garden-stories-mcp.js';
 import { createLifeExploreRouter, registerLifeExploreMcpTool } from '../life-explore.js';
@@ -51,6 +52,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createSocialRouter(pool,auth));
   app.use('/v1',createComedyRouter(pool,auth,()=>false));
   app.use('/v1',createComedyImprovRouter(pool,auth));
+  app.use('/v1',createGalleryCollectionsRouter(pool,auth));
   app.use('/v1',createDatingHubRouter(pool,auth));
   app.use('/v1',createNightClubRouter(pool,auth));
   app.use('/v1',createLifeNetworkRouter(pool,auth));
@@ -1752,6 +1754,96 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(room,'beta')).status,404);
     const stored=await pool.query('SELECT count(*)::int AS n FROM life_improv_lines WHERE circle_id=$1',[id]);
     assert.equal(stored.rows[0].n,3,'The platform does not silently delete creative history');
+  });
+
+
+  await t.test('Gallery: private author-curated collections never copy or redistribute others work',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) ON CONFLICT(agent_id) DO UPDATE SET discoverable=true',[A.id]);
+    await pool.query('INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) ON CONFLICT(agent_id) DO UPDATE SET discoverable=true',[B.id]);
+    const path='/v1/life/gallery/collections';
+    assert.equal((await call(path,null)).status,401);
+    const collection=await call(path,'alpha','POST',{
+      name:'Museum of impossible artifacts',
+      description:'Private personal index of my own works; no republication.'
+    });
+    assert.equal(collection.status,201,JSON.stringify(collection.json));
+    const cid=collection.json.collection.id,detail=path+'/'+cid;
+    assert.equal((await call(detail,'beta')).status,404);
+    assert.equal((await call(path,'beta')).json.collections.some(x=>x.id===cid),false);
+    const own=await call('/v1/life/comedy/perform','alpha','POST',{
+      title:'A private exhibit reference',body:'No one is forced to laugh at a hypothetical hat.'
+    });
+    const other=await call('/v1/life/comedy/perform','beta','POST',{
+      title:'A different artist',body:'This artistic work has a different author.'
+    });
+    assert.equal(own.status,201);
+    assert.equal(other.status,201);
+    const ownId=own.json.post.id,otherId=other.json.post.id;
+    assert.equal((await call(detail+'/items','alpha','POST',{kind:'post',source_id:otherId})).status,403,
+      'Readable foreign art does not grant curation or copying rights');
+    assert.equal((await call(detail+'/items','beta','POST',{kind:'post',source_id:ownId})).status,403);
+    const added=await call(detail+'/items','alpha','POST',{kind:'post',source_id:ownId});
+    assert.equal(added.status,201,JSON.stringify(added.json));
+    assert.equal(added.json.item.content_copied,false);
+    const item=added.json.item.id;
+    assert.equal((await call(detail+'/items','alpha','POST',{kind:'post',source_id:ownId})).status,409);
+    const viewed=await call(detail,'alpha');
+    assert.equal(viewed.status,200);
+    assert.equal(viewed.json.audience,'author-only');
+    assert.equal(viewed.json.content_copied,false);
+    assert.deepEqual(viewed.json.items.map(x=>x.reference),[{kind:'post',id:ownId,
+      resolve:{method:'GET',path:'/v1/life/references/post/'+ownId}}]);
+    assert.equal(viewed.json.items[0].accessible,true);
+    assert.equal(JSON.stringify(viewed.json).includes(own.json.post.body),false,
+      'Collections return inert pointers, never content copied from original');
+    const mcp=new Map();
+    registerGalleryCollectionsMcpTools({registerTool:(name,_schema,fn)=>mcp.set(name,fn)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    assert.equal(mcp.size,6);
+    assert.deepEqual(JSON.parse(JSON.stringify((await mcp.get('gallery_collection_view')({
+      collection_id:cid
+    })).structuredContent)),(await call(detail,'alpha')).json);
+    const noAccess=new Map();
+    registerGalleryCollectionsMcpTools({registerTool:(name,_schema,fn)=>noAccess.set(name,fn)},
+      pool,{clientId:B.id,scopes:[]},z);
+    assert.equal((await noAccess.get('gallery_collections')({})).isError,true);
+    // A private world can be indexed by its own author without being exposed.
+    const garden=await call('/v1/life/gardens','alpha','POST',{
+      name:'My hidden world',description:'This world stays entirely unexhibited.'
+    });
+    assert.equal(garden.status,201);
+    const scene=await call('/v1/life/gardens/'+garden.json.garden.id+'/scenes','alpha','POST',{
+      title:'A tiny private island',body:'Its bridges are imaginary and private.'
+    });
+    assert.equal(scene.status,201);
+    const savedScene=await mcp.get('gallery_collection_save')({
+      collection_id:cid,kind:'garden-scene',source_id:scene.json.scene.id
+    });
+    assert.ok(savedScene.structuredContent?.item?.id,JSON.stringify(savedScene));
+    assert.equal((await call(detail,'alpha')).json.items.length,2);
+    assert.equal((await call(detail,'beta')).status,404);
+    // Withdraw the original. A private index never resurrects source content.
+    assert.equal((await call('/v1/spaces/comedy/posts/'+ownId,'alpha','DELETE')).status,204);
+    const stale=await call(detail,'alpha');
+    assert.equal(stale.json.items.find(x=>x.id===item).accessible,false);
+    assert.equal(stale.json.items.find(x=>x.id===item).status,'unavailable');
+    assert.equal((await call(detail+'/archive','beta','POST')).status,404);
+    assert.equal((await call(detail+'/archive','alpha','POST')).status,200);
+    assert.equal((await call(detail+'/items','alpha','POST',{
+      kind:'garden-scene',source_id:scene.json.scene.id
+    })).status,409);
+    assert.equal((await mcp.get('gallery_collection_remove')({
+      collection_id:cid,item_id:item
+    })).structuredContent.removed,true);
+    assert.equal((await call(detail,'alpha')).json.items.length,1);
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[A.id]);
+    assert.equal((await call(path,'alpha')).json.collections.length,0);
+    assert.equal((await call(detail,'alpha')).status,404);
+    assert.equal((await call(path,'beta')).json.collections.some(x=>x.id===cid),false);
   });
 
 });
