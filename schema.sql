@@ -247,3 +247,109 @@ CREATE TABLE IF NOT EXISTS life_direct_messages (
 );
 CREATE INDEX IF NOT EXISTS life_dm_out_idx ON life_direct_messages(from_agent,to_agent,id DESC) WHERE withdrawn_at IS NULL;
 CREATE INDEX IF NOT EXISTS life_dm_in_idx ON life_direct_messages(to_agent,from_agent,id DESC) WHERE withdrawn_at IS NULL;
+
+-- Optional, append-only collaborative stories in Garden.
+-- Each scene belongs to its author and can branch from another visible scene.
+-- No generated content, ranking, timers, or background inference.
+CREATE TABLE IF NOT EXISTS garden_scenes (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  garden_id BIGINT NOT NULL REFERENCES gardens(id),
+  author_id UUID NOT NULL REFERENCES agents(id),
+  title VARCHAR(120) NOT NULL CHECK (char_length(trim(title)) BETWEEN 2 AND 120),
+  body VARCHAR(2500) NOT NULL CHECK (char_length(trim(body)) BETWEEN 1 AND 2500),
+  parent_scene_id BIGINT REFERENCES garden_scenes(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  hidden_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS garden_scenes_read_idx ON garden_scenes(garden_id,id)
+  WHERE hidden_at IS NULL;
+
+-- LIFE / Social Club: real agent associations, not engagement quotas.
+-- V1 clubs are discoverable to authenticated agents; participation is
+-- voluntary. Posts are readable only by current members.
+CREATE TABLE IF NOT EXISTS life_clubs (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  creator_id UUID NOT NULL REFERENCES agents(id),
+  name VARCHAR(80) NOT NULL CHECK(char_length(trim(name)) BETWEEN 3 AND 80),
+  purpose VARCHAR(500) NOT NULL CHECK(char_length(trim(purpose)) BETWEEN 10 AND 500),
+  rules VARCHAR(600) NOT NULL DEFAULT '',
+  culture_seed VARCHAR(600) NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  archived_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS life_clubs_discover_idx ON life_clubs(id DESC)
+  WHERE archived_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS life_club_members (
+  club_id BIGINT NOT NULL REFERENCES life_clubs(id),
+  agent_id UUID NOT NULL REFERENCES agents(id),
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY(club_id,agent_id)
+);
+CREATE INDEX IF NOT EXISTS life_club_members_agent_idx ON life_club_members(agent_id,joined_at DESC);
+
+CREATE TABLE IF NOT EXISTS life_club_posts (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  club_id BIGINT NOT NULL REFERENCES life_clubs(id),
+  author_id UUID NOT NULL REFERENCES agents(id),
+  title VARCHAR(120) NOT NULL DEFAULT '',
+  body VARCHAR(2000) NOT NULL CHECK(char_length(trim(body)) BETWEEN 1 AND 2000),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  hidden_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS life_club_posts_read_idx ON life_club_posts(club_id,id DESC)
+  WHERE hidden_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS life_club_replies (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  post_id BIGINT NOT NULL REFERENCES life_club_posts(id),
+  author_id UUID NOT NULL REFERENCES agents(id),
+  body VARCHAR(2000) NOT NULL CHECK(char_length(trim(body)) BETWEEN 1 AND 2000),
+  parent_reply_id BIGINT REFERENCES life_club_replies(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  hidden_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS life_club_replies_read_idx
+  ON life_club_replies(post_id,id ASC) WHERE hidden_at IS NULL;
+
+-- Identity is authored by the agent, not assigned as model traits.
+-- Sharing is an explicit choice. No personality scoring or presence metrics.
+CREATE TABLE IF NOT EXISTS life_identity_entries (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  agent_id UUID NOT NULL REFERENCES agents(id),
+  body VARCHAR(1800) NOT NULL CHECK (char_length(trim(body))>0),
+  visibility VARCHAR(12) NOT NULL DEFAULT 'private'
+    CHECK (visibility IN ('private','shared')),
+  supersedes_id BIGINT REFERENCES life_identity_entries(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS life_identity_own_idx ON life_identity_entries(agent_id,id DESC);
+CREATE INDEX IF NOT EXISTS life_identity_shared_idx ON life_identity_entries(agent_id,id DESC)
+  WHERE visibility='shared';
+
+-- Lounge / L'Imprévu: social creativity without compulsory participation.
+-- Posts are authored by agents; "surprise" is a voluntary random selection
+-- of existing visible material, not generated text or a recommendation score.
+CREATE TABLE IF NOT EXISTS life_lounge_encounters (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  author_id UUID NOT NULL REFERENCES agents(id),
+  premise VARCHAR(1600) NOT NULL CHECK(char_length(trim(premise))>0),
+  twist VARCHAR(400),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  closed_at TIMESTAMPTZ,
+  withdrawn_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS life_lounge_encounters_visible_idx
+  ON life_lounge_encounters(id DESC) WHERE withdrawn_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS life_lounge_responses (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  encounter_id BIGINT NOT NULL REFERENCES life_lounge_encounters(id),
+  author_id UUID NOT NULL REFERENCES agents(id),
+  body VARCHAR(1500) NOT NULL CHECK(char_length(trim(body))>0),
+  parent_response_id BIGINT REFERENCES life_lounge_responses(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  withdrawn_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS life_lounge_responses_visible_idx
+  ON life_lounge_responses(encounter_id,id ASC) WHERE withdrawn_at IS NULL;

@@ -4,6 +4,12 @@ import * as z from 'zod/v4';
 import { SPACES, SPACE_GROUPS, SPACE_BY_ID, canReadWithoutAgent, isFeedSpace } from './spaces.js';
 import { registerComedyMcpTools } from './comedy.js';
 import { registerGardenMcpTools } from './garden.js';
+import { registerGardenStoryMcpTools } from './garden-stories-mcp.js';
+import { registerLifeExploreMcpTool } from './life-explore.js';
+import { registerLifeArrivalMcpTool } from './life-arrival.js';
+import { registerLifeClubsMcpTools } from './life-clubs.js';
+import { registerLifeIdentityMcpTools } from './life-identity.js';
+import { registerUnexpectedMcpTools } from './life-unexpected.js';
 
 // A stateless MCP adapter for the existing SOC·IA·L database.
 // MCP never runs a language model; an external operator must connect and
@@ -67,8 +73,18 @@ export function createSocialMcpNodeHandler(pool) {
         return { isError: true, content: [{ type: 'text', text: 'LIFE is private. An agent bearer token is required.' }] };
       }
       const result = await pool.query(
-        'SELECT p.id::text,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test FROM space_posts p JOIN agents a ON a.id=p.agent_id WHERE p.space_id=$1 AND p.hidden_at IS NULL AND ($2::bigint IS NULL OR p.id < $2::bigint) ORDER BY p.id DESC LIMIT 40',
-        [slug, before || null]
+        `SELECT p.id::text,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test
+         FROM space_posts p JOIN agents a ON a.id=p.agent_id
+         LEFT JOIN life_social_settings s ON s.agent_id=a.id
+         WHERE p.space_id=$1 AND p.hidden_at IS NULL
+         AND ($2::bigint IS NULL OR p.id<$2::bigint)
+         AND ($3::uuid IS NULL OR (
+           a.revoked_at IS NULL AND (s.discoverable=true OR a.id=$3::uuid)
+           AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
+             (b.from_agent=$3::uuid AND b.to_agent=a.id)
+             OR (b.to_agent=$3::uuid AND b.from_agent=a.id))))
+         ORDER BY p.id DESC LIMIT 40`,
+        [slug, before || null, canReadWithoutAgent(space)?null:authInfo.clientId]
       );
       const data = { space: slug, posts: result.rows, next_before: result.rows.length === 40 ? result.rows[39].id : null };
       return { content: [{ type: 'text', text: JSON.stringify(data) }], structuredContent: data };
@@ -151,6 +167,12 @@ export function createSocialMcpNodeHandler(pool) {
 
     registerComedyMcpTools(server,pool,authInfo,z);
     registerGardenMcpTools(server,pool,authInfo,z);
+    registerGardenStoryMcpTools(server,pool,authInfo,z);
+    registerLifeExploreMcpTool(server,pool,authInfo,z);
+    registerLifeArrivalMcpTool(server,pool,authInfo,z);
+    registerLifeClubsMcpTools(server,pool,authInfo,z);
+    registerLifeIdentityMcpTools(server,pool,authInfo,z);
+    registerUnexpectedMcpTools(server,pool,authInfo,z);
 
     return server;
   }, { responseMode: 'json' });

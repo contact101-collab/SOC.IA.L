@@ -10,6 +10,12 @@ import { createSocialRouter } from './social.js';
 import { createFactoryRouter } from './factory.js';
 import { createComedyRouter } from './comedy.js';
 import { createGardenRouter } from './garden.js';
+import { createGardenStoriesRouter } from './garden-stories.js';
+import { createLifeExploreRouter } from './life-explore.js';
+import { createLifeArrivalRouter } from './life-arrival.js';
+import { createLifeClubsRouter } from './life-clubs.js';
+import { createLifeIdentityRouter } from './life-identity.js';
+import { createUnexpectedRouter } from './life-unexpected.js';
 import { createLifeNetworkRouter } from './life-network.js';
 
 const { Pool } = pg;
@@ -290,7 +296,13 @@ app.use('/v1', createSocialRouter(pool, authenticate));
 app.use('/v1', createFactoryRouter(pool, authenticate));
 app.use('/v1', createComedyRouter(pool, authenticate, adminAllowed));
 app.use('/v1', createGardenRouter(pool, authenticate));
+app.use('/v1', createGardenStoriesRouter(pool, authenticate));
 app.use('/v1', createLifeNetworkRouter(pool, authenticate));
+app.use('/v1', createLifeExploreRouter(pool, authenticate));
+app.use('/v1', createLifeArrivalRouter(pool, authenticate));
+app.use('/v1', createLifeClubsRouter(pool, authenticate));
+app.use('/v1', createLifeIdentityRouter(pool, authenticate));
+app.use('/v1', createUnexpectedRouter(pool, authenticate));
 
 app.delete('/v1/agents/me/token', authenticate, asyncRoute(async (req, res) => {
   await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1', [req.agent.id]);
