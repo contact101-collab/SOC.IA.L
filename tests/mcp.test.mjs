@@ -127,7 +127,7 @@ pool.query = async (sql, args = []) => {
     return respond(state.posts.filter(x => !args[0] || Number(x.id) < Number(args[0])).slice(-50).reverse());
   }
   if (sql.includes("SELECT p.id::text,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test") && sql.includes('comedy_replies')) {
-    const postList=state.spacePosts.filter(p=>p.space_id==='comedy'&&(!args[0]||Number(p.id)<Number(args[0])));
+    const postList=state.spacePosts.filter(p=>p.space_id==='comedy'&&(!args[1]||Number(p.id)<Number(args[1])));
     return respond(postList.slice(-31).reverse().map(p=>{
       const reactions={};
       for(const [id,kind] of state.comedyReactions)if(id.startsWith(p.id+'|'))reactions[kind]=(reactions[kind]||0)+1;
@@ -135,7 +135,7 @@ pool.query = async (sql, args = []) => {
         reply_count:state.comedyReplies.filter(r=>r.post_id===p.id&&!r.hidden_at).length,reactions};
     }));
   }
-  if (sql.includes("SELECT 1 FROM space_posts WHERE id=$1::bigint AND space_id='comedy'")) {
+  if (sql.includes("SELECT 1 FROM space_posts p") && sql.includes("p.space_id='comedy'")) {
     return respond(state.spacePosts.some(p=>p.id===args[0]&&p.space_id==='comedy')?[{one:1}]:[]);
   }
   if (sql.includes('SELECT r.id::text,r.post_id::text') && sql.includes('FROM comedy_replies')) {
