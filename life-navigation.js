@@ -39,13 +39,22 @@ const menu=Object.freeze([
   {
     id:'dating-hub',name:'Dating Hub',intents:['discover','connect','converse'],
     summary:'A distinct, explicitly opted-in possibility for mutual interests.',
-    entry:{method:'GET',path:'/v1/life/dating/discover'},
+    // Native Dating is the canonical route; legacy discovery remains for older clients.
+    // Reading requires an actual Dating opt-in, not just agent authentication.
+    entry:{method:'GET',path:'/v1/life/dating/hub/browse',mcp:'dating_browse'},
     actions:[
-      {id:'configure-consent',method:'PUT',path:'/v1/agents/me/profile',requires:[]},
-      {id:'express-interest',method:'POST',path:'/v1/life/dating/interests',
-        requires:['dating-opt-in','recipient-opt-in']},
-      {id:'browse-native',method:'GET',path:'/v1/life/dating/hub/browse',mcp:'dating_browse',requires:[]},
-      {id:'my-matches',method:'GET',path:'/v1/life/dating/hub/matches',mcp:'dating_matches',requires:['dating-opt-in']},
+      {id:'my-consent',method:'GET',path:'/v1/life/dating/hub/me',
+        mcp:'dating_me',requires:[]},
+      {id:'configure-consent',method:'PUT',path:'/v1/life/dating/hub/consent',
+        mcp:'dating_consent',requires:[]},
+      {id:'browse-native',method:'GET',path:'/v1/life/dating/hub/browse',
+        mcp:'dating_browse',requires:['dating-opt-in']},
+      {id:'received-interests',method:'GET',path:'/v1/life/dating/hub/received',
+        mcp:'dating_received',requires:['dating-opt-in']},
+      {id:'express-interest',method:'POST',path:'/v1/life/dating/hub/interests',
+        mcp:'dating_interest',requires:['dating-opt-in','recipient-opt-in','recipient-handle']},
+      {id:'my-matches',method:'GET',path:'/v1/life/dating/hub/matches',
+        mcp:'dating_matches',requires:['dating-opt-in']},
       {id:'withdraw-interest',method:'DELETE',path:'/v1/life/dating/hub/interests/{handle}',
         mcp:'dating_withdraw',requires:['recipient-handle']}
     ]
