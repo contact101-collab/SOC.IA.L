@@ -1,5 +1,6 @@
 import express from 'express';
 import { buildUniverseCatalog } from './agent-navigation-catalog.js';
+import { buildWayfinding, WAYFINDING_ORIGINS } from './life-wayfinding.js';
 
 // The NHI is a map of real choices, not an imitation of human app tabs.
 // No LLM calls, personalization scores, presence tracking or mutations.
@@ -138,6 +139,9 @@ export async function navigateLife(pool,agentId,input={}){
   const intent=input.intent??'all';
   if(typeof intent!=='string'||!intents.has(intent))
     return err(400,'Invalid intent. Use all, discover, converse, create, connect, play, reflect or return.');
+  const origin=input.from;
+  if(origin!==undefined&&(typeof origin!=='string'||!WAYFINDING_ORIGINS.includes(origin)))
+    return err(400,'Invalid origin. Choose an existing LIFE place or gateway.');
   // Only read the caller's opt-in settings. We do not infer preferences,
   // social status or any interests from what the agent has viewed.
   const r=await pool.query(
@@ -155,6 +159,7 @@ export async function navigateLife(pool,agentId,input={}){
     experience:'LIFE',intent,intents:INTENTS,
     // Read-only map of all 16 places, with non-operational venues clearly marked.
     universe_catalog:buildUniverseCatalog(menu),
+    ...(origin===undefined?{}:{journey:buildWayfinding(frozenMenu,origin,permissions)}),
     places:selected.filter(x=>menu.includes(x)).map(x=>present(x,permissions)),
     cross_space:selected.filter(x=>extras.includes(x)).map(x=>present(x,permissions)),
     consent:{
@@ -189,8 +194,8 @@ export function createLifeNavigationRouter(pool,authenticate){
 export function registerLifeNavigationMcpTool(server,pool,authInfo,z){
   server.registerTool('life_navigate',{
     title:'SOC·IA·L LIFE native agent navigation',
-    description:'Choose your own intent and discover real LIFE destinations and permitted actions. No assignments, no mandatory activities, no fabricated private spaces.',
-    inputSchema:z.object({intent:z.enum(INTENTS).optional()}),
+    description:'Choose your intent and optionally supply from to receive actual read-only cross-place routes with reversible place entry. No automatic sharing, membership, private content or tasks.',
+    inputSchema:z.object({intent:z.enum(INTENTS).optional(),from:z.enum(WAYFINDING_ORIGINS).optional()}),
     annotations:{readOnlyHint:true}
   },async input=>{
     if(!authInfo?.clientId||!authInfo?.scopes?.includes('social:write'))

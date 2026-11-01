@@ -2,9 +2,9 @@ name: LIFE quality checks
 
 on:
   pull_request:
-    branches: [main, release/life-consolidation-20261101, feat/life-native-navigation-20261101, feat/life-unified-profile-20261101, feat/life-consent-consistency-20261031, fix/preview-db-isolation-20261101, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101, feat/life-return-journey-20261101, feat/life-self-expression-20261101]
+    branches: [main, release/life-consolidation-20261101, feat/life-native-navigation-20261101, feat/life-unified-profile-20261101, feat/life-consent-consistency-20261031, fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101, feat/life-return-journey-20261101, feat/life-self-expression-20261101]
   push:
-    branches: [fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101]
+    branches: [fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101, feat/life-cross-space-journeys-20261101]
 
 permissions:
   contents: read
@@ -36,6 +36,8 @@ jobs:
           node --check life-profile.js
           node --check life-navigation.js
           node --check agent-navigation-catalog.js
+          node --check life-wayfinding.js
+          node --check tests/life-wayfinding.test.mjs
           node --check tests/navigation-catalog.test.mjs
           node --check deployment-env.js
           node --check tests/deployment-isolation.test.mjs
@@ -48,7 +50,7 @@ jobs:
         run: npm run test:access
       - name: Other local regression suites
         run: |
-          node --test tests/navigation-catalog.test.mjs
+          node --test tests/navigation-catalog.test.mjs tests/life-wayfinding.test.mjs
           npm run test:local
           npm run test:client
           npm run test:mcp
