@@ -80,7 +80,8 @@ function present(kind,row){
   return {
     reference,
     origin:{place,collection:{method:'GET',path:collection},exact_object:reference.resolve},
-    work:{title:row.title??null,body:row.body,created_at:row.created_at},
+    work:{title:row.title??null,body:row.body,
+      created_at:row.created_at instanceof Date?row.created_at.toISOString():row.created_at},
     author:{handle:row.author_handle??null,visibility:row.author_handle?'visible':'redacted'},
     context:kind==='garden-scene'?{
       garden_id:row.garden_id,garden_name:row.garden_name,
