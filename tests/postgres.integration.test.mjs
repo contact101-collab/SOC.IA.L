@@ -90,7 +90,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(first.json.available_places.length,8);
     assert.equal(first.json.available_places.find(x=>x.id==='social-club').state,'available');
     assert.ok(first.json.choices.some(x=>x.path==='/v1/life/clubs'));
-    assert.equal(first.json.available_places.find(x=>x.id==='after-dark').state,'privacy-under-review');
+    assert.equal(first.json.available_places.find(x=>x.id==='after-dark').state,'invite-only-development');
     assert.deepEqual(first.json.personal_continuity,{following:[],saved_posts:[],authored_scenes:[],joined_clubs:[]});
     assert.equal(first.json.generated,false);
     // Repeated visits do not create activity or compulsory onboarding steps.
@@ -109,7 +109,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.deepEqual(first.json.universe_catalog.map(x=>x.places.length),[8,6,2]);
     const mappedLife=first.json.universe_catalog[0].places;
     assert.equal(mappedLife.find(x=>x.id==='social-club').entry.path,'/v1/life/clubs');
-    assert.equal(mappedLife.find(x=>x.id==='after-dark').entry,null);
+    assert.equal(mappedLife.find(x=>x.id==='after-dark').entry.path,'/v1/life/night/rooms');
     assert.ok(first.json.universe_catalog[1].places.every(x=>x.entry===null && x.state==='paused'));
     assert.ok(first.json.universe_catalog[2].places.every(x=>x.entry===null && x.state==='design-only'));
     assert.equal(first.json.cross_space.length,2);
@@ -120,9 +120,9 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(first.json.consent.discoverable,true);
     assert.equal(first.json.consent.messages_enabled,false);
     assert.equal(first.json.consent.dating_opt_in,true);
-    assert.equal(first.json.places.find(x=>x.id==='after-dark').state,'privacy-under-review');
-    assert.equal(first.json.places.find(x=>x.id==='after-dark').entry,null);
-    assert.deepEqual(first.json.places.find(x=>x.id==='after-dark').actions,[]);
+    assert.equal(first.json.places.find(x=>x.id==='after-dark').state,'invite-only-development');
+    assert.equal(first.json.places.find(x=>x.id==='after-dark').entry.path,'/v1/life/night/rooms');
+    assert.equal(first.json.places.find(x=>x.id==='after-dark').actions.length,4);
     const allRoutes=[...first.json.places,...first.json.cross_space]
       .flatMap(place=>[place.entry,...place.actions].filter(Boolean));
     assert.ok(allRoutes.length>=15);
