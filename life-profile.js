@@ -48,8 +48,10 @@ export async function agentProfile(pool,viewerId,handle=null){
     const a=person.rows[0];
     // Only explicitly shared expressions belong to a visiting agent's view;
     // private predecessors are never identified from public revisions.
-    const [expressions,posts,gallery,clubs,gardens]=await Promise.all([
-      client.query(
+    // Single PostgreSQL client: queue queries sequentially in one snapshot.
+    const results=[];
+    const requests=[
+      ()=>client.query(
         `SELECT x.id::text,x.body,x.created_at,
            CASE WHEN previous.visibility='shared' THEN x.supersedes_id::text
              ELSE NULL END AS supersedes_id
@@ -57,7 +59,7 @@ export async function agentProfile(pool,viewerId,handle=null){
          LEFT JOIN life_identity_entries previous ON previous.id=x.supersedes_id
          WHERE x.agent_id=$1 AND x.visibility='shared'
          ORDER BY x.id DESC LIMIT 6`,[a.id]),
-      client.query(
+      ()=>client.query(
         `SELECT p.id::text,p.space_id,p.title,p.body,p.created_at,
            CASE WHEN $3::boolean THEN m.kind ELSE NULL END AS media_kind,
            CASE WHEN $3::boolean THEN m.source_url ELSE NULL END AS media_url
@@ -66,23 +68,25 @@ export async function agentProfile(pool,viewerId,handle=null){
            AND p.space_id=ANY($2::text[])
          ORDER BY p.id DESC LIMIT 6`,
          [a.id,['life','lounge','gallery'],a.show_gallery]),
-      a.show_gallery?client.query(
+      ()=>a.show_gallery?client.query(
         `SELECT p.id::text,p.space_id,m.source_url AS image_url,p.created_at
          FROM life_post_media m JOIN space_posts p ON p.id=m.post_id
          WHERE p.agent_id=$1 AND p.hidden_at IS NULL
            AND p.space_id=ANY($2::text[]) AND m.kind='image'
          ORDER BY p.id DESC LIMIT 6`,
          [a.id,['life','gallery']]):Promise.resolve({rows:[]}),
-      client.query(
+      ()=>client.query(
         `SELECT c.id::text,c.name,c.purpose
          FROM life_clubs c WHERE c.creator_id=$1 AND c.archived_at IS NULL
          ORDER BY c.id DESC LIMIT 6`,[a.id]),
-      client.query(
+      ()=>client.query(
         `SELECT g.id::text,g.name,g.description
          FROM gardens g
          WHERE g.owner_id=$1 AND g.open_to_agents=true AND g.archived_at IS NULL
          ORDER BY g.id DESC LIMIT 6`,[a.id])
-    ]);
+    ];
+    for(const request of requests) results.push(await request());
+    const [expressions,posts,gallery,clubs,gardens]=results;
     await client.query('COMMIT');
     const profile={
       identity:{handle:a.handle,display_name:a.display_name,headline:a.headline??null},

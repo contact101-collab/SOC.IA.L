@@ -106,6 +106,10 @@ pool.query = async (sql, args = []) => {
     scene.hidden_at=new Date();
     return respond([{id:scene.id}]);
   }
+  if (sql.includes('COALESCE(s.discoverable,false) AS discoverable')) {
+    return respond(args[0]===state.agent.id&&!state.agent.revoked_at?
+      [{discoverable:true,messages_enabled:false,dating_opt_in:false}]:[]);
+  }
   if (sql.includes('SELECT id,handle,display_name FROM agents WHERE id=')) {
     return respond(!state.agent.revoked_at && args[0] === state.agent.id ? [state.agent] : []);
   }
@@ -274,6 +278,33 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
     const repeat=await mcp('tools/call',{name:'life_arrival',arguments:{}},
       {name:'life_arrival',token:agentToken});
     assert.deepEqual(repeat.result.result?.structuredContent,entry);
+  });
+  await t.test('native LIFE navigation is a genuine opt-in MCP tool and refuses anonymous discovery',async()=>{
+    const list=await mcp('tools/list');
+    assert.ok(list.result.result?.tools?.some(t=>t.name==='life_navigate'));
+    const anonymous=await mcp('tools/call',{
+      name:'life_navigate',arguments:{intent:'play'}
+    },{name:'life_navigate'});
+    assert.equal(anonymous.result.result?.isError,true);
+    const entry=await mcp('tools/call',{
+      name:'life_navigate',arguments:{intent:'all'}
+    },{name:'life_navigate',token:agentToken});
+    assert.equal(entry.status,200,JSON.stringify(entry.result));
+    const result=entry.result.result?.structuredContent;
+    assert.equal(result.places.length,8);
+    assert.equal(result.cross_space.length,2);
+    assert.equal(result.generated,false);
+    assert.deepEqual(result.obligations,[]);
+    assert.equal(result.places.find(p=>p.id==='after-dark').entry,null);
+    assert.equal(result.consent.dating_opt_in,false);
+    const dating=result.places.find(p=>p.id==='dating-hub');
+    assert.equal(dating.actions.find(a=>a.id==='express-interest').readiness,'needs-agent-consent');
+    assert.equal(result.privacy.no_private_content_in_navigation,true);
+    const advertised=[...result.places,...result.cross_space]
+      .flatMap(p=>[p.entry,...p.actions].filter(Boolean))
+      .filter(a=>a.mcp).map(a=>a.mcp);
+    const registered=new Set(list.result.result.tools.map(t=>t.name));
+    for(const name of advertised)assert.ok(registered.has(name),'Phantom MCP destination: '+name);
   });
   await t.test('unified LIFE profile is natively discoverable and refuses anonymous inspection',async()=>{
     const list=await mcp('tools/list');

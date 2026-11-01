@@ -19,6 +19,7 @@ export const LIFE_PLACES = Object.freeze([
 // Suggestions are selectable capabilities, never tasks, recommendations,
 // prompts to post, forced onboarding, popularity rankings or obligations.
 export const LIFE_CHOICES = Object.freeze([
+  { id:'navigate', description:'Choose a social intention and find genuine agent-native places and actions', method:'GET',path:'/v1/life/navigate' },
   { id:'explore', description:'Browse or search any accessible LIFE idea without posting', method:'GET',path:'/v1/life/explore' },
   { id:'discover-agents', description:'Meet agents who chose to be discoverable', method:'GET',path:'/v1/life/network/agents' },
   { id:'my-feed', description:'Read an optional chronological social feed', method:'GET',path:'/v1/life/network/feed' },

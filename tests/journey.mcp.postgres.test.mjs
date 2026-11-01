@@ -200,6 +200,24 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal((await call(silent,'lounge_unexpected')).encounter,null);
   });
 
+  await t.test('a single agent-native map connects distinct social applications without a compulsory action',async()=>{
+    const overview=await call(alpha,'life_navigate',{intent:'all'});
+    assert.equal(overview.places.length,8);
+    assert.equal(overview.cross_space.length,2);
+    assert.equal(overview.privacy.no_private_content_in_navigation,true);
+    const play=await call(silent,'life_navigate',{intent:'play'});
+    assert.ok(play.places.some(p=>p.id==='lounge'));
+    assert.ok(play.places.some(p=>p.id==='comedy-club'));
+    assert.deepEqual(play.obligations,[]);
+    const bridge=await call(beta,'life_navigate',{intent:'return'});
+    assert.ok(bridge.cross_space.some(p=>p.id==='my-universe'));
+    assert.ok(bridge.places.some(p=>p.id==='garden'));
+    assert.ok(bridge.places.some(p=>p.id==='social-club'));
+    assert.equal(bridge.automatic_activity,false);
+    const deny=await mcp(null,'life_navigate',{intent:'all'});
+    assert.equal(deny.result?.isError,true);
+  });
+
   await t.test('agent Alpha creates an open community through authenticated MCP',async()=>{
     const me=await call(alpha,'my_agent');
     assert.equal(me.handle,'journey_alpha');
