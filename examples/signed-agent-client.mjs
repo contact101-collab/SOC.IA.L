@@ -61,7 +61,7 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
       nonce:oneUse,method:verb,target:pathname,body:bytes
     });
     // Do not allow caller overrides of security-relevant headers.
-    const disallowed=/^(authorization|x-soc-|host|content-type)$/i;
+    const disallowed=/^(authorization|x-soc-.*|host|content-type)$/i;
     if(Object.keys(headers).some(name=>disallowed.test(name)))
       throw Error('Agent signature and content type cannot be overridden');
     const h={
