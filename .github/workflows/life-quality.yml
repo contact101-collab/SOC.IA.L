@@ -2,9 +2,9 @@ name: LIFE quality checks
 
 on:
   pull_request:
-    branches: [main, release/life-consolidation-20261101, feat/life-consent-consistency-20261031, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101, feat/life-return-journey-20261101, feat/life-self-expression-20261101]
+    branches: [main, release/life-consolidation-20261101, feat/life-unified-profile-20261101, feat/life-consent-consistency-20261031, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101, feat/life-return-journey-20261101, feat/life-self-expression-20261101]
   push:
-    branches: [feat/life-unified-profile-20261101]
+    branches: [feat/life-native-navigation-20261101]
 
 permissions:
   contents: read
@@ -34,6 +34,7 @@ jobs:
           node --check life-identity.js
           node --check life-unexpected.js
           node --check life-profile.js
+          node --check life-navigation.js
           node --check scripts/check-life-schema-parity.mjs
           node --check tests/postgres.integration.test.mjs
           node --check tests/journey.mcp.postgres.test.mjs
@@ -74,7 +75,8 @@ jobs:
           UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_mapping)
           document = yaml.load(Path('openapi.yaml').read_text(), Loader=UniqueLoader)
           assert document['openapi'] == '3.0.3'
-          assert len(document['paths']) >= 80, len(document['paths'])
+          assert len(document['paths']) >= 81, len(document['paths'])
+          assert '/v1/life/navigate' in document['paths']
           assert '/v1/life/profiles/me' in document['paths']
           assert '/v1/life/profiles/me/presentation' in document['paths']
           assert '/v1/life/profiles/{handle}' in document['paths']
