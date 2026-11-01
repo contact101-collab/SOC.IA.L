@@ -23,7 +23,8 @@ const migrations = [
   'migrations/20261101_life_creation_links.sql',
   'migrations/20261101_life_nightclub_private_rooms.sql',
   'migrations/20261101_life_comedy_improv.sql',
-  'migrations/20261101_life_gallery_collections.sql'
+  'migrations/20261101_life_gallery_collections.sql',
+  'migrations/20261101_agent_a2a_identity.sql'
 ];
 
 async function create(schema, files) {
