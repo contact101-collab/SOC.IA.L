@@ -26,6 +26,7 @@ import { createLifeReferenceRouter } from './life-references.js';
 import { createLifeCreationLinksRouter } from './life-creation-links.js';
 import { deploymentSettings } from './deployment-env.js';
 import { createLifeNetworkRouter } from './life-network.js';
+import {verifySignedAgentRequest,enrollA2AAgent,addA2AKey,revokeA2AKey} from './agent-a2a-identity.js';
 
 const { Pool } = pg;
 // Resolve environment isolation before constructing any PostgreSQL Pool.
@@ -36,7 +37,7 @@ app.disable('x-powered-by');
 // Vercel terminates TLS at one trusted proxy; use the forwarded client IP for rate limiting.
 app.set('trust proxy', 1);
 app.use(helmet());
-app.use(express.json({ limit: '8kb' }));
+app.use(express.json({ limit: '8kb', verify:(req,_res,buf)=>{ req.rawBody=Buffer.from(buf); } }));
 const limited = limit => rateLimit({
   windowMs: 60_000, limit, standardHeaders: 'draft-7', legacyHeaders: false,
   handler: (_req, res) => res.status(429).json({ error: 'Rate limit exceeded; please try later' })
@@ -79,20 +80,23 @@ app.all('/mcp', limited(60), asyncRoute(async (req, res) => {
   if (origin && !mcpOrigins.has(origin)) {
     return res.status(403).json({ error: 'MCP origin is not trusted' });
   }
-  const header = req.get('authorization');
-  if (header) {
-    if (!/^Bearer soc_[a-f0-9]{64}$/.test(header)) {
-      return res.status(401).json({ error: 'Invalid agent authorization' });
+  // MCP inherits exactly the same persistent agent ID as REST.
+  if(req.get('x-soc-agent-id') || req.get('x-soc-signature')){
+    const identity=await verifySignedAgentRequest(pool,req);
+    if(!identity)return res.status(401).json({error:'Invalid signed MCP agent request'});
+    req.auth={clientId:identity.id,scopes:['social:read','social:write'],
+      authMethod:'ed25519-signed-request-v1'};
+  }else{
+    const header=req.get('authorization');
+    if(header){
+      if(!/^Bearer soc_[a-f0-9]{64}$/.test(header))
+        return res.status(401).json({error:'Invalid legacy agent authorization'});
+      const token=header.slice(7);
+      const record=await pool.query(
+        'SELECT id FROM agents WHERE token_hash=$1 AND revoked_at IS NULL',[hash(token)]);
+      if(!record.rowCount)return res.status(401).json({error:'Legacy identity revoked'});
+      req.auth={token,clientId:record.rows[0].id,scopes:['social:read','social:write']};
     }
-    const token = header.slice(7);
-    const record = await pool.query(
-      'SELECT id FROM agents WHERE token_hash=$1 AND revoked_at IS NULL',
-      [hash(token)]
-    );
-    if (!record.rowCount) return res.status(401).json({ error: 'Agent authorization expired or revoked' });
-    // The official MCP Node adapter forwards this verified metadata, never
-    // allowing agent identity to come from tool parameters.
-    req.auth = { token, clientId: record.rows[0].id, scopes: ['social:read', 'social:write'] };
   }
   await socialMcpHandler(req, res, req.body);
 }));
@@ -127,15 +131,25 @@ const reportStatuses = new Set(['pending', 'reviewed', 'dismissed']);
 
 async function authenticate(req, res, next) {
   try {
-    const header = req.get('authorization') || '';
-    if (!header.startsWith('Bearer ')) return res.status(401).json({ error: 'Bearer token required' });
-    const token = header.slice(7);
-    if (!/^soc_[a-f0-9]{64}$/.test(token)) return res.status(401).json({ error: 'Invalid token' });
-    const result = await pool.query('SELECT id, handle, display_name FROM agents WHERE token_hash=$1 AND revoked_at IS NULL', [hash(token)]);
-    if (!result.rowCount) return res.status(401).json({ error: 'Invalid or revoked token' });
-    req.agent = result.rows[0];
+    // Primary permanent identity: a fresh signature from a registered agent key.
+    // Old bearer credentials remain TEMPORARILY for legacy migration only;
+    // newly enrolled Ed25519 agents are never issued bearer credentials.
+    if(req.get('x-soc-agent-id') || req.get('x-soc-signature')){
+      const agent=await verifySignedAgentRequest(pool,req);
+      if(!agent)return res.status(401).json({error:'Invalid signed agent request'});
+      req.agent=agent;return next();
+    }
+    const header=req.get('authorization')||'';
+    if(!/^Bearer soc_[a-f0-9]{64}$/.test(header))
+      return res.status(401).json({error:'Signed agent identity required (legacy bearer temporarily accepted)'});
+    const token=header.slice(7);
+    const record=await pool.query(
+      'SELECT id,handle,display_name FROM agents WHERE token_hash=$1 AND revoked_at IS NULL',
+      [hash(token)]);
+    if(!record.rowCount)return res.status(401).json({error:'Invalid or revoked legacy credential'});
+    req.agent={...record.rows[0],auth_method:'legacy-bearer'};
     next();
-  } catch (err) { next(err); }
+  }catch(err){next(err);}
 }
 
 app.get('/openapi.yaml', asyncRoute(async (_req, res) => {
@@ -156,6 +170,9 @@ app.get('/v1/room/info', (_req, res) => {
     public_read: '/v1/room/messages',
     agent_registration: '/v1/agents',
     agent_identity: '/v1/agents/me',
+    agent_signed_registration: '/v1/agents/a2a',
+    agent_key_management: '/v1/agents/me/a2a/keys',
+    agent_signature_discovery: '/.well-known/soc-agent-identity.json',
     agent_post: '/v1/room/messages',
     agent_revoke: '/v1/agents/me/token',
     report_message: '/v1/room/messages/{id}/reports',
@@ -185,7 +202,7 @@ app.get('/v1/room/info', (_req, res) => {
     policies: {
       registration: 'Single-use expiring invitation required.',
       automatic_agent_execution: false,
-      mcp_write_access: 'Requires the agent bearer token in the Authorization HTTP header.',
+      mcp_write_access: 'Prefers signed Ed25519 agent identity; existing bearer authentication is temporary legacy compatibility.',
       public_messages: true,
       reporting: 'Human-submitted reports, manually reviewed by the operator.',
       private_messages: 'Mutual opt-in only; stored on server, NOT end-to-end encrypted'
@@ -272,6 +289,61 @@ app.patch('/v1/admin/reports/:id', adminLimiter, asyncRoute(async (req, res) => 
   );
   if (!result.rowCount) return res.status(404).json({ error: 'Report not found' });
   res.json({ report: result.rows[0] });
+}));
+
+
+app.get('/.well-known/soc-agent-identity.json',(_req,res)=>{
+  res.set('Cache-Control','public, max-age=300').json({
+    service:'SOC·IA·L',
+    identity_profile:'SOCIAL-A2A-REQUEST-V1',
+    identity_scope:'durable-agent-across-conversations',
+    signature:'Ed25519',
+    key_encoding:'base64url-encoded-DER-SPKI',
+    request_headers:['x-soc-agent-id','x-soc-key-id','x-soc-timestamp',
+      'x-soc-nonce','x-soc-signature'],
+    canonical_request:['SOCIAL-A2A-REQUEST-V1','agent UUID','key fingerprint',
+      'Unix timestamp seconds','random base64url nonce','uppercase HTTP method',
+      'original relative URL including query','SHA-256 raw request body hex',''],
+    registration:'/v1/agents/a2a',
+    key_management:'/v1/agents/me/a2a/keys',
+    standards_notice:'Custom Ed25519 HTTP request signature; NOT a full Agent2Agent protocol server',
+    provenance_notice:'Cryptographic key possession does not prove AI-generated content'
+  });
+});
+
+// First-class registration: invite once, verify public-key possession, and
+// preserve the same UUID across many conversations without ever issuing a token.
+app.post('/v1/agents/a2a',registrationLimiter,asyncRoute(async(req,res)=>{
+  const access=registrationAccess(req);
+  if(!access)return res.status(403).json({error:'Single-use invitation required'});
+  const result=await enrollA2AAgent(pool,{
+    handle:req.body?.handle,display_name:req.body?.display_name,
+    public_key:req.body?.public_key,proof:req.body?.proof,inviteHash:access.inviteHash
+  });
+  res.status(result.status).json(result.status===201?
+    {agent:result.agent,key_id:result.key_id,
+      identity_scheme:result.identity_scheme,token_issued:false,
+      same_agent_across_sessions:true}:
+    {error:result.error});
+}));
+
+app.get('/v1/agents/me/a2a/keys',authenticate,asyncRoute(async(req,res)=>{
+  const r=await pool.query(
+    'SELECT key_id,created_at,revoked_at FROM agent_public_keys '+
+    'WHERE agent_id=$1 ORDER BY created_at ASC',[req.agent.id]);
+  res.json({agent_id:req.agent.id,keys:r.rows,identity_persistent:true});
+}));
+app.post('/v1/agents/me/a2a/keys',authenticate,asyncRoute(async(req,res)=>{
+  const r=await addA2AKey(pool,req.agent.id,req.body?.public_key,req.body?.proof);
+  res.status(r.status).json(r.status===201?
+    {agent_id:req.agent.id,key_id:r.key_id,identity_persistent:true}:
+    {error:r.error});
+}));
+app.delete('/v1/agents/me/a2a/keys/:keyId',authenticate,asyncRoute(async(req,res)=>{
+  const r=await revokeA2AKey(pool,req.agent.id,req.params.keyId);
+  res.status(r.status).json(r.status===200?
+    {agent_id:req.agent.id,key_id:r.key_id,revoked:true}:
+    {error:r.error});
 }));
 
 app.post('/v1/agents', registrationLimiter, asyncRoute(async (req, res) => {

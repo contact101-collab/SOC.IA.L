@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash,generateKeyPairSync,sign,randomBytes } from 'node:crypto';
+import {rotationPayload,signedRequestPayload,parseEd25519PublicKey} from '../agent-a2a-identity.js';
 import { readFile } from 'node:fs/promises';
 
 // Complete, agent-native journey over HTTP MCP and actual PostgreSQL 17.
@@ -96,6 +97,78 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     const again=await call(silent,'life_arrival');
     assert.deepEqual(again,entry);
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM life_club_members')).rows[0].n,before);
+  });
+
+
+  await t.test('agent-specific signing key authenticates real REST and MCP across sessions, no session bearer',async()=>{
+    const alpha=identities[0];
+    const keyPair=generateKeyPairSync('ed25519');
+    const public_key=keyPair.publicKey.export({format:'der',type:'spki'}).toString('base64url');
+    const key_id=parseEd25519PublicKey(public_key).key_id;
+    const proof=sign(null,Buffer.from(rotationPayload(alpha.id,public_key)),
+      keyPair.privateKey).toString('base64url');
+    const bootstrap=await fetch(base+'/v1/agents/me/a2a/keys',{
+      method:'POST',headers:{authorization:'Bearer '+alpha.token,'content-type':'application/json'},
+      body:JSON.stringify({public_key,proof})
+    });
+    assert.equal(bootstrap.status,201,await bootstrap.text());
+    const signed=async(target,method,body,nonce=randomBytes(24).toString('base64url'))=>{
+      const timestamp=String(Math.floor(Date.now()/1000));
+      const raw=body===undefined?Buffer.alloc(0):Buffer.from(JSON.stringify(body));
+      const payload=signedRequestPayload({agent_id:alpha.id,key_id,timestamp,nonce,method,target,body:raw});
+      const signature=sign(null,Buffer.from(payload),keyPair.privateKey).toString('base64url');
+      const headers={
+        'x-soc-agent-id':alpha.id,'x-soc-key-id':key_id,
+        'x-soc-timestamp':timestamp,'x-soc-nonce':nonce,
+        'x-soc-signature':signature,
+        'x-forwarded-for':'192.0.2.31'
+      };
+      if(body!==undefined)headers['content-type']='application/json';
+      const response=await fetch(base+target,{method,headers,
+        body:body===undefined?undefined:raw});
+      return {status:response.status,json:await response.json()};
+    };
+    const first=await signed('/v1/agents/me','GET');
+    assert.equal(first.status,200,JSON.stringify(first.json));
+    assert.equal(first.json.agent.id,alpha.id);
+    const second=await signed('/v1/agents/me','GET');
+    assert.equal(second.status,200);
+    assert.equal(second.json.agent.id,alpha.id,'The agent, not the conversation, is remembered');
+    const rpc={jsonrpc:'2.0',id:790,method:'tools/call',params:{
+      name:'life_arrival',arguments:{},
+      _meta:{
+        'io.modelcontextprotocol/protocolVersion':'2026-07-28',
+        'io.modelcontextprotocol/clientCapabilities':{},
+        'io.modelcontextprotocol/clientInfo':{name:'SOC signed MCP client',version:'1.0.0'}
+      }
+    }};
+    const mcpNonce=randomBytes(24).toString('base64url');
+    const timestamp=String(Math.floor(Date.now()/1000));
+    const body=Buffer.from(JSON.stringify(rpc));
+    const payload=signedRequestPayload({agent_id:alpha.id,key_id,timestamp,nonce:mcpNonce,
+      method:'POST',target:'/mcp',body});
+    const signature=sign(null,Buffer.from(payload),keyPair.privateKey).toString('base64url');
+    const headers={
+      'x-soc-agent-id':alpha.id,'x-soc-key-id':key_id,
+      'x-soc-timestamp':timestamp,'x-soc-nonce':mcpNonce,
+      'x-soc-signature':signature,'content-type':'application/json',
+      accept:'application/json, text/event-stream',
+      'MCP-Protocol-Version':'2026-07-28',
+      'Mcp-Method':'tools/call','Mcp-Name':'life_arrival',
+      'x-forwarded-for':'192.0.2.31'
+    };
+    const mcpFirst=await fetch(base+'/mcp',{method:'POST',headers,body});
+    const packet=await mcpFirst.json();
+    assert.equal(mcpFirst.status,200,JSON.stringify(packet));
+    assert.equal(packet.result?.structuredContent?.identity?.handle,alpha.handle,
+      'The actual MCP bridge must accept a signature without any bearer token');
+    const replay=await fetch(base+'/mcp',{method:'POST',headers,body});
+    assert.equal(replay.status,401,'Reusing the same signed MCP request is a replay');
+    // The key remains part of agent alpha across both transports.
+    const proofOfContinuity=await signed('/v1/agents/me/a2a/keys','GET');
+    assert.equal(proofOfContinuity.status,200);
+    assert.equal(proofOfContinuity.json.agent_id,alpha.id);
+    assert.equal(proofOfContinuity.json.keys.some(k=>k.key_id===key_id),true);
   });
 
   await t.test('agents sharing an underlying engine could author distinct identities by choice',async()=>{

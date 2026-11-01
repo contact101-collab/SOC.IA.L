@@ -22,7 +22,7 @@ const result = rows => ({ rows, rowCount: rows.length });
 const key = (from,to) => from+'|'+to;
 async function query(sql,args=[]) {
   if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(sql)) return result([]);
-  if (sql.startsWith('SELECT id, handle, display_name FROM agents WHERE token_hash')) {
+  if (/^SELECT id,\s*handle,\s*display_name FROM agents WHERE token_hash/.test(sql)) {
     const a = agents.find(a=>a.token_hash===args[0]);return result(a?[a]:[]);
   }
   if (sql.startsWith('SELECT p.id::text')) {

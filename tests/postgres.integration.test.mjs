@@ -22,6 +22,9 @@ import { createLifeProfileRouter, registerLifeProfileMcpTools } from '../life-pr
 import { createLifeNavigationRouter, registerLifeNavigationMcpTool } from '../life-navigation.js';
 import { createLifeReferenceRouter } from '../life-references.js';
 import { z } from 'zod';
+import {generateKeyPairSync,sign,randomBytes,createHash} from 'node:crypto';
+import {enrollA2AAgent,enrollmentPayload,rotationPayload,parseEd25519PublicKey,
+  signedRequestPayload,verifySignedAgentRequest,addA2AKey,revokeA2AKey} from '../agent-a2a-identity.js';
 
 // Runs against an isolated CI PostgreSQL service. Never connect to Neon or production.
 const url = process.env.TEST_DATABASE_URL;
@@ -1844,6 +1847,120 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(path,'alpha')).json.collections.length,0);
     assert.equal((await call(detail,'alpha')).status,404);
     assert.equal((await call(path,'beta')).json.collections.some(x=>x.id===cid),false);
+  });
+
+
+  await t.test('A2A persistent agent identity: no bearer, resumed signed sessions, replay prevention and key rotation',async()=>{
+    const pair=generateKeyPairSync('ed25519');
+    const spki=pair.publicKey.export({format:'der',type:'spki'}).toString('base64url');
+    const badPair=generateKeyPairSync('ed25519');
+    const invitedSecret=randomBytes(32).toString('hex');
+    const invitationHash=createHash('sha256').update(invitedSecret).digest('hex');
+    await pool.query("INSERT INTO agent_invites(secret_hash,expires_at) VALUES($1,now()+interval '1 hour')",[invitationHash]);
+    const enroll=(key,sig)=>enrollA2AAgent(pool,{
+      handle:'delta',display_name:'Continuing Agent',
+      public_key:key,proof:sig,inviteHash:invitationHash
+    });
+    const payload=enrollmentPayload('delta','Continuing Agent',spki);
+    const badProof=sign(null,Buffer.from(payload),badPair.privateKey).toString('base64url');
+    const rejected=await enroll(spki,badProof);
+    assert.equal(rejected.status,403);
+    const proof=sign(null,Buffer.from(payload),pair.privateKey).toString('base64url');
+    const registered=await enroll(spki,proof);
+    assert.equal(registered.status,201,JSON.stringify(registered));
+    assert.equal(registered.token_issued,false);
+    assert.equal(registered.token,undefined);
+    assert.equal((await enroll(spki,proof)).status,403,'Invitation is single use');
+    const id=registered.agent.id;
+    const keyId=parseEd25519PublicKey(spki).key_id;
+    assert.equal(keyId,registered.key_id);
+    const local=express();
+    local.use(express.json({verify:(req,_res,b)=>{req.rawBody=Buffer.from(b);}}));
+    const signedAuth=async(req,res,next)=>{
+      try{
+        const agent=await verifySignedAgentRequest(pool,req);
+        if(!agent)return res.status(401).json({error:'Signed agent identity required'});
+        req.agent=agent;next();
+      }catch(e){next(e);}
+    };
+    local.get('/a2a/me',signedAuth,(req,res)=>res.json({
+      id:req.agent.id,handle:req.agent.handle,method:req.agent.auth_method
+    }));
+    local.post('/a2a/check',signedAuth,(req,res)=>res.json({
+      agent_id:req.agent.id,received:req.body.body
+    }));
+    local.use('/a2a',createComedyRouter(pool,signedAuth,()=>false));
+    local.use((error,_req,res,_next)=>res.status(500).json({error:error.message}));
+    const service=await new Promise(resolve=>{
+      const server=local.listen(0,'127.0.0.1',()=>resolve(server));
+    });
+    try{
+      const baseURL='http://127.0.0.1:'+service.address().port;
+      const signed=async(path,method='GET',body,options={})=>{
+        const raw=body===undefined?Buffer.alloc(0):Buffer.from(JSON.stringify(body));
+        const timestamp=options.timestamp??String(Math.floor(Date.now()/1000));
+        const nonce=options.nonce??randomBytes(24).toString('base64url');
+        const claimedKey=options.key_id??keyId;
+        const claimedAgent=options.agent_id??id;
+        const privateKey=options.privateKey??pair.privateKey;
+        const canonical=signedRequestPayload({agent_id:claimedAgent,key_id:claimedKey,
+          timestamp,nonce,method,target:path,body:raw});
+        const signature=sign(null,Buffer.from(canonical),privateKey).toString('base64url');
+        const headers={'x-soc-agent-id':claimedAgent,'x-soc-key-id':claimedKey,
+          'x-soc-timestamp':timestamp,'x-soc-nonce':nonce,'x-soc-signature':signature};
+        if(body!==undefined)headers['content-type']='application/json';
+        const r=await fetch(baseURL+path,{method,headers,
+          body:body===undefined?undefined:raw});
+        return {status:r.status,json:await r.json(),nonce,signature};
+      };
+      const first=await signed('/a2a/me');
+      assert.equal(first.status,200,JSON.stringify(first.json));
+      assert.equal(first.json.id,id);
+      assert.equal(first.json.method,'ed25519-signed-request-v1');
+      const second=await signed('/a2a/me');
+      assert.equal(second.status,200);
+      assert.equal(second.json.id,id,'Different conversations share an identical registered agent');
+      const submitted=await signed('/a2a/check','POST',{body:'An agent-chosen creative idea'});
+      assert.equal(submitted.status,200);
+      assert.equal(submitted.json.agent_id,id);
+      const nonce=randomBytes(24).toString('base64url');
+      assert.equal((await signed('/a2a/me','GET',undefined,{nonce})).status,200);
+      assert.equal((await signed('/a2a/me','GET',undefined,{nonce})).status,401,
+        'Nonce replay must fail even with an authentic signature');
+      assert.equal((await signed('/a2a/me','GET',undefined,{timestamp:
+        String(Math.floor(Date.now()/1000)-1000)})).status,401);
+      assert.equal((await signed('/a2a/me','GET',undefined,{
+        privateKey:badPair.privateKey})).status,401,'Wrong private key must fail');
+      assert.equal((await signed('/a2a/me','GET',undefined,{
+        agent_id:A.id})).status,401,'Cannot impersonate a different registered agent');
+      // Creating genuine Comedy content requires the durable signed identity,
+      // rather than an additional token for this conversation.
+      const post=await signed('/a2a/life/comedy/perform','POST',{
+        body:'A public key walks into the Comedy Club. The old session has no idea.'
+      });
+      assert.equal(post.status,201,JSON.stringify(post.json));
+      assert.equal(post.json.post.handle,'delta');
+
+      const next=generateKeyPairSync('ed25519');
+      const newKey=next.publicKey.export({format:'der',type:'spki'}).toString('base64url');
+      const newProof=sign(null,Buffer.from(rotationPayload(id,newKey)),
+        next.privateKey).toString('base64url');
+      assert.equal((await addA2AKey(pool,id,newKey,newProof)).status,201);
+      const newId=parseEd25519PublicKey(newKey).key_id;
+      assert.equal((await signed('/a2a/me','GET',undefined,{
+        key_id:newId,privateKey:next.privateKey})).json.id,id);
+      const revoke=await revokeA2AKey(pool,id,keyId);
+      assert.equal(revoke.status,200);
+      assert.equal((await signed('/a2a/me')).status,401,'Revoked old key must fail');
+      assert.equal((await signed('/a2a/me','GET',undefined,{
+        key_id:newId,privateKey:next.privateKey})).status,200);
+      assert.equal((await revokeA2AKey(pool,id,newId)).status,409,
+        'Never remove the last active signing key');
+      const active=await pool.query(
+        'SELECT count(*)::int AS n FROM agent_public_keys WHERE agent_id=$1 AND revoked_at IS NULL',
+        [id]);
+      assert.equal(active.rows[0].n,1,'The durable agent remains reachable');
+    }finally{await new Promise(resolve=>service.close(resolve));}
   });
 
 });
