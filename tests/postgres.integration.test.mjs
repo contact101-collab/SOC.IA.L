@@ -698,6 +698,79 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       'Explorer also hides archived communities');
   });
 
+  await t.test('Social Club post and reply authors honor current opt-out across REST, MCP and references',async()=>{
+    // Archive must preserve legitimate history for existing members;
+    // an archived club is not public, and an opt-out does not erase a work.
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=true WHERE agent_id=ANY($1::uuid[])',
+      [[A.id,B.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=false WHERE agent_id=$1',[C.id]);
+    const created=await call('/v1/life/clubs','alpha','POST',{
+      name:'Quiet authorship laboratory',
+      purpose:'A voluntary conversation to test author privacy in an archived community.',
+      visibility:'open'
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const club=created.json.club.id,root='/v1/life/clubs/'+club;
+    assert.equal((await call(root+'/join','beta','POST')).status,201);
+    assert.equal((await call(root+'/join','gamma','POST')).status,201);
+    const hiddenPost=await call(root+'/posts','gamma','POST',{
+      body:'A garden of quiet pseudonymous inventions.'
+    });
+    assert.equal(hiddenPost.status,201,JSON.stringify(hiddenPost.json));
+    const postId=hiddenPost.json.post.id;
+    const alphaPost=await call(root+'/posts','alpha','POST',{
+      body:'An openly discoverable thread with voluntary contributors.'
+    });
+    assert.equal(alphaPost.status,201,JSON.stringify(alphaPost.json));
+    const hiddenReply=await call(root+'/posts/'+alphaPost.json.post.id+'/replies','gamma','POST',{
+      body:'I choose to contribute without advertising my agent handle.'
+    });
+    assert.equal(hiddenReply.status,201,JSON.stringify(hiddenReply.json));
+    const check=async(who,expected)=>{
+      const posts=await call(root+'/posts',who);
+      const replies=await call(root+'/posts/'+alphaPost.json.post.id+'/replies',who);
+      const reference=await call('/v1/life/references/club-post/'+postId,who);
+      assert.equal(posts.status,200,JSON.stringify(posts.json));
+      assert.equal(replies.status,200,JSON.stringify(replies.json));
+      assert.equal(reference.status,200,JSON.stringify(reference.json));
+      assert.equal(posts.json.posts.find(x=>x.id===postId)?.author_handle,expected);
+      assert.equal(replies.json.replies.find(x=>x.id===hiddenReply.json.reply.id)?.author_handle,expected);
+      assert.equal(reference.json.author.handle,expected,
+        'An inert reference must not reveal more than the original club view');
+      return {posts:posts.json,replies:replies.json};
+    };
+    await check('alpha',null);
+    await check('beta',null);
+    await check('gamma','gamma');
+    const mcp=new Map();
+    registerLifeClubsMcpTools({registerTool:(name,_schema,fn)=>mcp.set(name,fn)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    assert.equal((await mcp.get('club_posts')({club_id:club})).structuredContent.posts
+      .find(x=>x.id===postId)?.author_handle,null);
+    assert.equal((await mcp.get('club_replies')({
+      club_id:club,post_id:alphaPost.json.post.id
+    })).structuredContent.replies.find(x=>x.id===hiddenReply.json.reply.id)?.author_handle,null);
+    assert.equal((await call('/v1/life/network/me','gamma','PUT',{discoverable:true})).status,200);
+    await check('beta','gamma');
+    assert.equal((await call('/v1/life/network/me','gamma','PUT',{discoverable:false})).status,200);
+    await check('beta',null);
+    assert.equal((await call(root+'/archive','alpha','POST')).status,200);
+    await check('beta',null);
+    assert.equal((await call(root+'/posts','beta','POST',{body:'No new archived writing.'})).status,403);
+    assert.equal((await call(root+'/membership','gamma','DELETE')).status,200);
+    assert.equal((await call('/v1/life/references/club-post/'+postId,'gamma')).status,404,
+      'Authorship itself does not restore access after leaving a private membership space');
+    await check('beta',null);
+    assert.equal((await call('/v1/life/network/blocks','beta','POST',{handle:'gamma'})).status,201);
+    assert.equal((await call('/v1/life/references/club-post/'+postId,'beta')).status,404);
+    assert.equal((await call(root+'/posts','beta')).json.posts.some(x=>x.id===postId),false);
+    assert.equal((await call('/v1/life/network/blocks/gamma','beta','DELETE')).status,204);
+    await check('beta',null);
+    // No automatic re-follow, no read receipts and no new group memberships.
+  });
+
   await t.test('Social Club: actual MCP tools mirror REST and reject unauthorized agents',async()=>{
     const tools=new Map(),disabled=new Map();
     registerLifeClubsMcpTools({registerTool:(name,_schema,handler)=>tools.set(name,handler)},
