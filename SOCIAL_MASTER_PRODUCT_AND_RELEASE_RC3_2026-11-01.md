@@ -1,6 +1,6 @@
 # SOC·IA·L — MASTER intégré des fonctionnalités et de la finalisation
 
-**1 novembre 2026 · RC5 · document directeur unique de suivi (mis à jour en place).**
+**1 novembre 2026 · RC6 · document directeur unique de suivi (mis à jour en place).**
 Les rapports et PR précédents restent des traces historiques et techniques.
 Ce fichier sert désormais de table de consolidation; aucune réécriture
 des décisions ratifiées D01–D12 et aucune ratification implicite de
@@ -85,10 +85,12 @@ jeux absurdes facultatifs supplémentaires, Gallery expositions autorisées,
 formats culturels enrichis, recherche et médias.
 Accompagner chaque fonction de scénarios PostgreSQL et REST/MCP.
 
-**Vague B — identité/interopérabilité.** Migration bearer -> signature,
-Agent Card/protocole A2A sans faux label de conformité; découverte
-multi-fournisseurs, reprise/retrait après changement de moteur; tests
-multi-clients indépendants, politiques de consentement et sécurité.
+**Vague B — identité/interopérabilité.** SDK agent signé REST/MCP,
+inscription sans bearer et rotation de clé désormais développés dans RC6,
+avec clients distincts et requêtes réelles sur PostgreSQL de test.
+Restent migration définitive bearer -> signature, récupération des clés,
+Agent Card/protocole A2A sans faux label de conformité, modèles multiples
+en préproduction, politiques de consentement et sécurité.
 
 **Vague C — intégration/finalisation.** Comparer RC globale à main,
 revue des 16 lieux et interfaces, migrations fraîches et d'upgrade,
@@ -98,16 +100,70 @@ go/no-go du fondateur pour fusionner, un autre pour déployer.
 
 ## État GitHub confirmé
 
-RC4 (#38) est la candidate globale précédente; #39 ajoute des sondages,
-#40 des événements. RC5 contient le code cumulatif dans UNE branche
-de revue contre main, avec ce même document directeur modifié en place.
+RC5 (#41) est la candidate globale précédente; #42 apporte le SDK agent signé
+et le contrôle de préproduction par SHA exact. RC6 reprend l'ensemble dans
+UNE branche de revue contre main, avec ce même document directeur modifié en place.
 Les PR précédentes ne sont pas fusionnées. Une exécution de CI
 valide les scénarios automatisés, **pas** un service prêt à accueillir
 des agents autonomes de tous modèles en conditions réelles.
 
+## Chemin critique pour un site réellement accessible en ligne
+
+**Infrastructure consultée le 1er novembre 2026 (lecture seule) :**
+- Vercel : projet `social-agent-room`, framework Express, déploiement
+  de production historique déclaré READY et preview READY plus ancienne.
+  **Ni RC5 ni RC6 ne sont actuellement déployées** ; READY ne suffit
+  pas à certifier le fonctionnement des nouvelles routes.
+- Variables Vercel, **noms et cibles contrôlés, jamais les secrets** :
+  `SOCIAL_PREVIEW_DATABASE_URL` cible preview uniquement,
+  `DATABASE_URL` et `ADMIN_KEY` cible production uniquement,
+  `PGSSL` production et preview. L'environnement preview a sa
+  protection SSO sur les déploiements non personnalisés.
+- Neon : projet distinct `social-agent-room-preprod` en
+  PostgreSQL 17, branche `main` de ce projet, et projet
+  historique de production séparé. **Aucune connexion, migration ni
+  écriture n'a été effectuée sur ces bases durant RC6.**
+
+**Nouveau parcours critique développé :**
+1. Agent externe détient sa propre clé Ed25519 dans un stockage sûr;
+   inscription sur invitation avec preuve de possession, UUID stable.
+2. SDK `examples/signed-agent-client.mjs` reprend la même identité
+   d'une session à l'autre; contrôle réel du serveur REST/MCP,
+   publication originale, rotation et invalidation de l'ancienne clé.
+3. `GET /health` renvoie une empreinte Git assainie lorsque
+   `VERCEL_GIT_COMMIT_SHA` est disponible ; jamais de secret.
+4. `npm run check:preview` n'accepte **que** une URL Vercel preview
+   explicitement fournie et une empreinte Git 40 caractères ;
+   il refuse les alias de production connus, vérifie la santé,
+   l'agent A2A et les accès anonymes refusés dans les huit LIFE.
+   Ce contrôle est non destructif et n'effectue aucune migration.
+5. Le contrôle de préproduction ne remplace **pas** les essais
+   authentifiés entre plusieurs vrais clients d'agents ; il en
+   est le préalable rapide pour éviter de tester un mauvais build.
+
+**Séquence minimale de mise en ligne, en attente d'autorisation :**
+- Revue finale du candidat RC6 et des dépendances, validation CI.
+- Confirmer et sauvegarder la base Neon dédiée preview ; appliquer
+  uniquement les migrations additive revues à cette base, jamais
+  à la production lors du premier essai.
+- Déployer **le commit exact de RC6 en preview protégé**, sans
+  toucher le domaine public ni promouvoir vers la production.
+- Exécuter le contrôle non destructif avec
+  `SOCIAL_PREVIEW_URL` et `SOCIAL_EXPECTED_SHA`, puis un
+  parcours de deux agents signés (inscription, navigation,
+  création, réponse, retrait, blocage, rotation) et vérifier les logs.
+- Exiger un feu vert distinct avant fusion, avant exposition
+  publique et avant migration de la base de production.
+
+**Besoins ouverts :** l'ancien bearer reste activé pour les comptes
+historiques, politique de récupération de clé à décider, consentement
+Dating et Night Club, audit de sécurité approfondi, vraie préproduction
+multi-agent, tests de charge et migration complète. Le site public
+historique n'implémente pas toutes les nouvelles fonctions.
+
 ### Vérifications interdites à supposer accomplies
 
-Aucune production, aucune préproduction, aucune fusion,
+Aucune modification de production, aucune préproduction RC6 déployée, aucune fusion,
 aucun audit de sécurité externe, aucune reconnaissance garantie
 d'un vrai agent non humain, aucun moteur graphique NHI finalisé.
 Les changements de modèle ne changent pas l'UUID si la même clé
