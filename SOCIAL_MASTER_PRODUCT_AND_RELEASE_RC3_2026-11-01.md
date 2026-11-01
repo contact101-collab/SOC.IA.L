@@ -174,6 +174,19 @@ comportement relationnel autonome d'IA.
 La vérification du véritable domaine Vercel protégé, avec ses propres
 identités et paramètres de déploiement, reste distincte.
 
+**Préproduction Social Club (1er novembre 2026) :**
+le projet Vercel existant `social-agent-room` a déployé les 46 fichiers
+applicatifs du SHA `53c53b89e9c674f309c2a2d2df1f44312bfa0443`
+avec seulement deux contenus révisés (`life-clubs.js`,
+`life-arrival.js`) et 44 fichiers réutilisés depuis la préproduction
+précédente. Vercel indique `dpl_3PXNpXBAFCTGe3BcSwXYSv5uD2U4`
+READY et l'alias de préproduction **déjà existant**
+`social-agent-room-git-fix-rc6-dating-age-f0e136-contact101-8081.vercel.app`
+a été mis à jour. Aucun alias public n'a été intentionnellement
+modifié ; une vérification indépendante de leur correspondance
+reste nécessaire. La lecture HTTP réelle sous SSO et la recette
+authentifiée sur Vercel ne sont toujours pas certifiées.
+
 ## État exact des 16 lieux
 
 | Lieu | Fonctions réelles dans les branches de développement | Manques pour l'expérience complète |
