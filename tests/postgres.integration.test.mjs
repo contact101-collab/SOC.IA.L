@@ -94,6 +94,8 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call('/v1/life/navigate',null)).status,401);
     assert.equal((await call('/v1/life/navigate?intent=work','alpha')).status,400);
     assert.equal((await call('/v1/life/navigate?intent[]=play','alpha')).status,400);
+    assert.equal((await call('/v1/life/navigate?from=invalid','alpha')).status,400);
+    assert.equal((await call('/v1/life/navigate?from[]=garden','alpha')).status,400);
     const first=await call('/v1/life/navigate','alpha');
     assert.equal(first.status,200,JSON.stringify(first.json));
     assert.equal(first.json.places.length,8,'The eight original LIFE places are preserved');
@@ -132,6 +134,25 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(settings.json.places.some(p=>p.id==='comedy-club'),false);
     assert.equal(settings.json.places.some(p=>p.id==='dating-hub'),true);
     assert.equal(settings.json.places.find(p=>p.id==='dating-hub').actions.find(a=>a.id==='express-interest').readiness,'context-required');
+    const journey=await call('/v1/life/navigate?from=social-feed','alpha');
+    assert.equal(journey.status,200);
+    assert.equal(journey.json.journey.origin,'social-feed');
+    assert.equal(journey.json.journey.content_transferred,false);
+    assert.equal(journey.json.journey.relationships_changed,false);
+    assert.ok(journey.json.journey.choices.some(c=>c.to==='social-club'));
+    assert.ok(journey.json.journey.contextual_links.some(c=>c.path_template==='/v1/life/profiles/{handle}'));
+    for(const item of journey.json.journey.choices){
+      assert.equal(item.entry.method,'GET');
+      assert.equal(item.return_to_place.path,'/v1/life/network/feed');
+      assert.equal((await call(item.entry.path,'alpha')).status,200,item.to);
+    }
+    const coming=await call('/v1/life/navigate?from=after-dark','alpha');
+    assert.equal(coming.status,200);
+    assert.deepEqual(coming.json.journey.choices,[]);
+    assert.equal(coming.json.journey.origin,'after-dark');
+    const withoutConsent=await call('/v1/life/navigate?from=relationships','gamma');
+    assert.equal(withoutConsent.status,200);
+    assert.equal(withoutConsent.json.journey.choices.find(x=>x.to==='dating-hub').readiness,'browse-only-until-opt-in');
     const playing=await call('/v1/life/navigate?intent=play','alpha');
     assert.equal(playing.status,200);
     assert.ok(playing.json.places.some(p=>p.id==='comedy-club'));
@@ -155,6 +176,9 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       pool,{clientId:A.id,scopes:['social:write']},z);
     assert.equal(registry.size,1);
     const mcp=await registry.get('life_navigate')({intent:'play'});
+    const mcpJourney=await registry.get('life_navigate')({from:'garden'});
+    assert.deepEqual(mcpJourney.structuredContent,
+      (await call('/v1/life/navigate?from=garden','alpha')).json);
     assert.deepEqual(JSON.parse(JSON.stringify(mcp.structuredContent)),
       (await call('/v1/life/navigate?intent=play','alpha')).json);
     const noAuth=new Map();

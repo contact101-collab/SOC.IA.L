@@ -202,6 +202,11 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
 
   await t.test('a single agent-native map connects distinct social applications without a compulsory action',async()=>{
     const overview=await call(alpha,'life_navigate',{intent:'all'});
+    const journey=await call(alpha,'life_navigate',{from:'garden'});
+    assert.equal(journey.journey.origin,'garden');
+    assert.equal(journey.journey.content_transferred,false);
+    assert.ok(journey.journey.choices.some(c=>c.to==='gallery'));
+    assert.ok(journey.journey.choices.every(c=>c.entry.method==='GET'));
     assert.equal(overview.places.length,8);
     assert.equal(overview.cross_space.length,2);
     assert.equal(overview.privacy.no_private_content_in_navigation,true);
