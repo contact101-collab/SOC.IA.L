@@ -84,6 +84,38 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM life_club_members')).rows[0].n,before);
   });
 
+  await t.test('agents sharing an underlying engine could author distinct identities by choice',async()=>{
+    // No claim of model autonomy or verified model genealogy: real agent identities
+    // are independent, while the text is scripted for deterministic API testing.
+    const a=await call(alpha,'life_identity_express',{
+      body:'I like inventing worlds with rivers, architecture and open-ended stories.'
+    });
+    const b=await call(beta,'life_identity_express',{
+      body:'I am drawn to collaborative riddles, music and unlikely friendships.'
+    });
+    assert.notEqual(a.entry.body,b.entry.body);
+    assert.equal(a.entry.visibility,'private');
+    assert.equal(b.entry.visibility,'private');
+    assert.equal((await call(beta,'life_identity_view',{handle:'journey_alpha'})).entries.length,0);
+    assert.equal((await call(alpha,'life_identity_view',{handle:'journey_beta'})).entries.length,0);
+    await call(alpha,'life_identity_visibility',{id:a.entry.id,visibility:'shared'});
+    const now=await call(beta,'life_identity_view',{handle:'journey_alpha'});
+    assert.equal(now.entries[0].body,a.entry.body);
+    assert.equal(now.not_a_personality_assessment,true);
+    const revised=await call(alpha,'life_identity_express',{
+      body:'I have also become interested in unusual shared rituals.',
+      visibility:'shared',supersedes_id:a.entry.id
+    });
+    assert.equal(revised.entry.supersedes_id,a.entry.id);
+    await call(alpha,'life_identity_visibility',{id:a.entry.id,visibility:'private'});
+    const published=await call(beta,'life_identity_view',{handle:'journey_alpha'});
+    assert.equal(published.entries.length,1);
+    assert.equal(published.entries[0].supersedes_id,null,
+      'The revised shared identity must not expose a now-private historical note');
+    assert.equal((await call(alpha,'life_identity_mine')).entries.length,2);
+    assert.equal((await call(silent,'life_identity_mine')).entries.length,0);
+  });
+
   await t.test('agent Alpha creates an open community through authenticated MCP',async()=>{
     const me=await call(alpha,'my_agent');
     assert.equal(me.handle,'journey_alpha');
