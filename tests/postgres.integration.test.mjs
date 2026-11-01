@@ -14,6 +14,7 @@ import { createLifeClubsRouter, registerLifeClubsMcpTools } from '../life-clubs.
 import { createLifeIdentityRouter, registerLifeIdentityMcpTools } from '../life-identity.js';
 import { createUnexpectedRouter, registerUnexpectedMcpTools } from '../life-unexpected.js';
 import { createLifeProfileRouter, registerLifeProfileMcpTools } from '../life-profile.js';
+import { createLifeNavigationRouter, registerLifeNavigationMcpTool } from '../life-navigation.js';
 import { z } from 'zod';
 
 // Runs against an isolated CI PostgreSQL service. Never connect to Neon or production.
@@ -50,6 +51,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createLifeIdentityRouter(pool,auth));
   app.use('/v1',createUnexpectedRouter(pool,auth));
   app.use('/v1',createLifeProfileRouter(pool,auth));
+  app.use('/v1',createLifeNavigationRouter(pool,auth));
   app.use((error,req,res,next)=>res.status(500).json({error:error.message}));
   const server=await new Promise(resolve=>{
     const s=app.listen(0,'127.0.0.1',()=>resolve(s));
@@ -83,6 +85,72 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     // Repeated visits do not create activity or compulsory onboarding steps.
     assert.deepEqual((await call('/v1/life/arrival','alpha')).json,first.json);
   });
+  await t.test('native navigation: one site, actual destinations, no obligation or false privacy',async()=>{
+    assert.equal((await call('/v1/life/navigate',null)).status,401);
+    assert.equal((await call('/v1/life/navigate?intent=work','alpha')).status,400);
+    assert.equal((await call('/v1/life/navigate?intent[]=play','alpha')).status,400);
+    const first=await call('/v1/life/navigate','alpha');
+    assert.equal(first.status,200,JSON.stringify(first.json));
+    assert.equal(first.json.places.length,8,'The eight original LIFE places are preserved');
+    assert.equal(first.json.cross_space.length,2);
+    assert.equal(first.json.silence,'valid');
+    assert.deepEqual(first.json.obligations,[]);
+    assert.equal(first.json.automatic_activity,false);
+    assert.equal(first.json.generated,false);
+    assert.equal(first.json.consent.discoverable,true);
+    assert.equal(first.json.consent.messages_enabled,false);
+    assert.equal(first.json.consent.dating_opt_in,true);
+    assert.equal(first.json.places.find(x=>x.id==='after-dark').state,'privacy-under-review');
+    assert.equal(first.json.places.find(x=>x.id==='after-dark').entry,null);
+    assert.deepEqual(first.json.places.find(x=>x.id==='after-dark').actions,[]);
+    const allRoutes=[...first.json.places,...first.json.cross_space]
+      .flatMap(place=>[place.entry,...place.actions].filter(Boolean));
+    assert.ok(allRoutes.length>=15);
+    assert.ok(allRoutes.every(x=>x.path.startsWith('/v1/')));
+    assert.ok(allRoutes.every(x=>['GET','PUT','POST'].includes(x.method)));
+    assert.equal(first.json.privacy.no_private_content_in_navigation,true);
+    assert.equal(first.json.privacy.private_messages,'mutual-consent-server-stored-not-e2ee');
+    const interactions=first.json.cross_space.find(x=>x.id==='relationships');
+    assert.equal(interactions.actions.find(a=>a.id==='send-message').readiness,'context-required');
+    assert.ok(interactions.actions.find(a=>a.id==='send-message').requires.includes('mutual-relationship'));
+    const settings=await call('/v1/life/navigate?intent=connect','gamma');
+    assert.equal(settings.status,200);
+    assert.equal(settings.json.consent.discoverable,false);
+    assert.equal(settings.json.consent.dating_opt_in,true);
+    assert.equal(settings.json.places.some(p=>p.id==='comedy-club'),false);
+    assert.equal(settings.json.places.some(p=>p.id==='dating-hub'),true);
+    assert.equal(settings.json.places.find(p=>p.id==='dating-hub').actions.find(a=>a.id==='express-interest').readiness,'context-required');
+    const playing=await call('/v1/life/navigate?intent=play','alpha');
+    assert.equal(playing.status,200);
+    assert.ok(playing.json.places.some(p=>p.id==='comedy-club'));
+    assert.ok(playing.json.places.some(p=>p.id==='lounge'));
+    assert.equal(playing.json.places.some(p=>p.id==='dating-hub'),false);
+    assert.deepEqual((await call('/v1/life/navigate','alpha')).json,first.json,
+      'Passive navigation does not alter participation or discovery history');
+  });
+
+  await t.test('native navigation: each entry is a real, safe GET and MCP and REST stay in sync',async()=>{
+    const route=await call('/v1/life/navigate','alpha');
+    const entries=[...route.json.places,...route.json.cross_space]
+      .filter(p=>p.entry).map(p=>p.entry);
+    for(const entry of entries){
+      assert.equal(entry.method,'GET');
+      const result=await call(entry.path,'alpha');
+      assert.equal(result.status,200,entry.path+': '+JSON.stringify(result.json));
+    }
+    const registry=new Map();
+    registerLifeNavigationMcpTool({registerTool:(name,_spec,handler)=>registry.set(name,handler)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    assert.equal(registry.size,1);
+    const mcp=await registry.get('life_navigate')({intent:'play'});
+    assert.deepEqual(JSON.parse(JSON.stringify(mcp.structuredContent)),
+      (await call('/v1/life/navigate?intent=play','alpha')).json);
+    const noAuth=new Map();
+    registerLifeNavigationMcpTool({registerTool:(name,_spec,handler)=>noAuth.set(name,handler)},
+      pool,{clientId:A.id,scopes:[]},z);
+    assert.equal((await noAuth.get('life_navigate')({intent:'all'})).isError,true);
+  });
+
   await t.test('a creator can keep a world and its fiction entirely private',async()=>{
     const created=await call('/v1/life/gardens','alpha','POST',
       {name:'World of things not invented',description:'An experiment in free collaborative fiction.'});
