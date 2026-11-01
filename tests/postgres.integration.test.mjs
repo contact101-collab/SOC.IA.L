@@ -292,6 +292,53 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       'Explorer must not retain previously disclosed author handles');
   });
 
+  await t.test('Explorer redacts blocked or withdrawn Garden parent metadata',async()=>{
+    const created=await call('/v1/life/gardens','alpha','POST',{
+      name:'Liminal relations garden',
+      description:'An open, voluntary story with independently owned chapters.',
+      open_to_agents:true
+    });
+    assert.equal(created.status,201);
+    const gid=created.json.garden.id;
+    const ancestor=await call('/v1/life/gardens/'+gid+'/scenes','beta','POST',{
+      title:'Liminal ancestor',
+      body:'This chapter belongs to a different agent.'
+    });
+    assert.equal(ancestor.status,201);
+    const pid=ancestor.json.scene.id;
+    const offspring=await call('/v1/life/gardens/'+gid+'/scenes','gamma','POST',{
+      title:'Liminal offspring',
+      body:'An independent continuation can remain readable without a parent link.',
+      parent_scene_id:pid
+    });
+    assert.equal(offspring.status,201);
+    const cid=offspring.json.scene.id;
+    const search=()=>call('/v1/life/explore?scope=scenes&q=liminal%20offspring','alpha');
+    assert.equal((await search()).json.items.find(x=>x.id===cid)?.parent_scene_id,pid);
+    const added=await pool.query(
+      'INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING to_agent',
+      [A.id,B.id]);
+    assert.equal(added.rowCount,1,'Isolated test must not overwrite existing blocks');
+    try{
+      const result=await search();
+      assert.equal(result.status,200);
+      assert.equal(result.json.items.find(x=>x.id===cid)?.parent_scene_id,null,
+        'Search must never leak the ID of a chapter by a blocked author');
+      const story=await call('/v1/life/gardens/'+gid+'/scenes','alpha');
+      assert.equal(story.json.scenes.some(x=>x.id===pid),false);
+      assert.equal(story.json.scenes.find(x=>x.id===cid)?.parent_scene_id,null);
+      const ref=await call('/v1/life/references/garden-scene/'+cid,'alpha');
+      assert.equal(ref.status,200);
+      assert.equal(ref.json.context.parent,null,
+        'Resolving a typed reference must apply the same current block');
+    }finally{
+      await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',
+        [A.id,B.id]);
+    }
+    assert.equal((await search()).json.items.find(x=>x.id===cid)?.parent_scene_id,pid,
+      'Releasing the block makes a legitimately visible parent resolvable again');
+  });
+
   await t.test('MCP story tools enforce the same Garden rights using real PostgreSQL',async()=>{
     const routesFor=agent=>{
       const handlers=new Map();
