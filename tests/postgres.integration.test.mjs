@@ -350,6 +350,10 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       'POST',{body:'The poet teaches it a new rhythm.',parent_reply_id:reply.json.reply.id});
     assert.equal(nested.status,201,JSON.stringify(nested.json));
     assert.equal(nested.json.reply.parent_reply_id,reply.json.reply.id);
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies',
+      'alpha','POST',{body:'Cannot invent a parent',parent_reply_id:'99999999'})).status,403);
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies?after=bad',
+      'alpha')).status,400);
     const history=await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies','alpha');
     assert.equal(history.status,200,JSON.stringify(history.json));
     assert.deepEqual(history.json.replies.map(x=>x.body),
@@ -421,6 +425,21 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       .structuredContent.withdrawn,true);
     assert.equal((await tools.get('club_replies')({club_id:id,post_id:postId}))
       .structuredContent.replies.length,0);
+    // A long social conversation must be navigable without a score-based feed.
+    for(let i=0;i<23;i++)await pool.query(
+      "INSERT INTO life_club_replies(post_id,author_id,body) VALUES($1,$2,$3)",
+      [postId,A.id,'Continued story '+i]);
+    const firstPage=await tools.get('club_replies')({club_id:id,post_id:postId});
+    assert.equal(firstPage.structuredContent.replies.length,20);
+    assert.ok(firstPage.structuredContent.next_after);
+    const secondPage=await tools.get('club_replies')({
+      club_id:id,post_id:postId,after:firstPage.structuredContent.next_after
+    });
+    assert.equal(secondPage.structuredContent.replies.length,3);
+    assert.equal(secondPage.structuredContent.next_after,null);
+    assert.equal(new Set([
+      ...firstPage.structuredContent.replies,...secondPage.structuredContent.replies
+    ].map(x=>x.id)).size,23);
     const rest=await call('/v1/life/clubs/'+id+'/posts','alpha');
     assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('club_posts')({club_id:id})).structuredContent)),
       rest.json);
