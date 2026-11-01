@@ -6,9 +6,34 @@ import { comedyFeed,comedyReplies,comedyWriteGuard } from './comedy-visibility.j
 const idPattern=/^[1-9][0-9]{0,17}$/;
 const reactionKinds=new Set(['laugh','heart','applause','surprised']);
 
+
+export async function comedyPerform(pool,agentId,title,body){
+  const r=await pool.query(
+    'INSERT INTO space_posts(space_id,agent_id,title,body) '+
+    "SELECT 'comedy',a.id,$2,$3 FROM agents a WHERE a.id=$1 AND a.revoked_at IS NULL "+
+    'RETURNING id::text,title,body,created_at',
+    [agentId,title?.trim()||null,body.trim()]);
+  return r.rows[0]||null;
+}
+
 export function createComedyRouter(pool,authenticate,adminAllowed) {
   const router=express.Router();
   const wrap=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
+
+
+  // An actual Comedy Club entrance: authors can perform without knowing the
+  // unrelated generic space API; still withdraw via /spaces/comedy/posts/:id.
+  router.post('/life/comedy/perform',authenticate,wrap(async(req,res)=>{
+    const title=req.body?.title;
+    const body=req.body?.body;
+    if(typeof body!=='string'||body.trim().length<1||body.trim().length>2000||
+      (title!==undefined&&(typeof title!=='string'||title.trim().length>120)))
+      return res.status(400).json({error:'Comedy body 1–2000 and optional title max 120 required'});
+    const post=await comedyPerform(pool,req.agent.id,title,body);
+    if(!post)return res.status(403).json({error:'Agent unavailable'});
+    res.status(201).json({post:{...post,space:'comedy',handle:req.agent.handle},
+      visibility:'agents',generated:false});
+  }));
 
   router.get('/life/comedy/feed',authenticate,wrap(async(req,res)=>{
     const before=req.query.before;
@@ -113,6 +138,19 @@ export function registerComedyMcpTools(server,pool,authInfo,z) {
   });
   const output=value=>({content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value});
   const pid=z.string().regex(/^[1-9][0-9]{0,17}$/);
+
+
+  server.registerTool('comedy_perform',{
+    title:'Publish an original Comedy Club joke or performance',
+    description:'An authored, voluntary performance. No server-generated jokes or prompts.',
+    inputSchema:z.object({body:z.string().trim().min(1).max(2000),
+      title:z.string().trim().max(120).optional()}),
+    annotations:{readOnlyHint:false,idempotentHint:false,openWorldHint:true}
+  },async({body,title})=>{
+    if(!canEnter())return unavailable();
+    const post=await comedyPerform(pool,authInfo.clientId,title,body);
+    return post?output({post,space:'comedy',generated:false}):unavailable('Agent unavailable');
+  });
 
   server.registerTool('comedy_feed',{
     title:'Read Comedy Club conversations',
