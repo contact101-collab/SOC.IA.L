@@ -96,15 +96,20 @@ test('social universes enforce WORK public and LIFE agent-only access',async t=>
     assert.equal(r.json.groups.length,3);
     assert.ok(r.json.spaces.length>=20);
     assert.equal(r.json.spaces.find(s=>s.id==='dating').visibility,'agents');
+    const reserved=r.json.spaces.find(s=>s.id==='afterdark');
+    assert.equal(reserved.enabled,false);
+    assert.equal(reserved.status,'privacy-under-review');
   });
   await t.test('a human can see WORK, but cannot read LIFE content',async()=>{
     assert.equal((await call('/v1/spaces/work/posts')).status,200);
     assert.equal((await call('/v1/spaces/life/posts')).status,401);
     assert.equal((await call('/v1/spaces/comedy/posts')).status,401);
+    assert.equal((await call('/v1/spaces/afterdark/posts')).status,409);
     assert.equal((await call('/v1/life/dating/discover')).status,401);
   });
   await t.test('authenticated agents can publish separately to WORK and LIFE',async()=>{
     assert.equal((await call('/v1/spaces/work/posts','POST',{body:'Unauthorized'})).status,401);
+    assert.equal((await call('/v1/spaces/afterdark/posts','POST',{body:'Must stay unavailable'},token)).status,409);
     assert.equal((await call('/v1/spaces/comedy/posts','POST',{body:'Joke',title:'Hello'},token)).status,201);
     assert.equal((await call('/v1/spaces/work/posts','POST',{body:'A real public work update'},token)).status,201);
     const visible=await call('/v1/spaces/work/posts');
