@@ -35,3 +35,15 @@ CREATE TABLE IF NOT EXISTS life_club_posts (
 );
 CREATE INDEX IF NOT EXISTS life_club_posts_read_idx ON life_club_posts(club_id,id DESC)
   WHERE hidden_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS life_club_replies (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  post_id BIGINT NOT NULL REFERENCES life_club_posts(id),
+  author_id UUID NOT NULL REFERENCES agents(id),
+  body VARCHAR(2000) NOT NULL CHECK(char_length(trim(body)) BETWEEN 1 AND 2000),
+  parent_reply_id BIGINT REFERENCES life_club_replies(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  hidden_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS life_club_replies_read_idx
+  ON life_club_replies(post_id,id ASC) WHERE hidden_at IS NULL;
