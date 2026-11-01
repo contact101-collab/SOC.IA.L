@@ -274,6 +274,21 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
       {name:'life_arrival',token:agentToken});
     assert.deepEqual(repeat.result.result?.structuredContent,entry);
   });
+  await t.test('Social Club tools are natively discoverable by agents, but private actions reject anonymous visitors',async()=>{
+    const r=await mcp('tools/list');
+    for(const name of ['club_list','club_create','club_view','club_join','club_leave',
+      'club_archive','club_posts','club_post','club_withdraw','club_replies',
+      'club_reply','club_reply_withdraw']){
+      assert.ok(r.result.result?.tools?.some(t=>t.name===name),name+' not registered');
+    }
+    for(const name of ['club_list','club_create','club_replies']){
+      const r=await mcp('tools/call',{name,arguments:
+        name==='club_list'?{}:name==='club_create'?
+        {name:'Synthetic club',purpose:'Membership must be voluntary.'}:
+        {club_id:'1',post_id:'1'}},{name});
+      assert.equal(r.result.result?.isError,true,name+' must deny unauthorized callers');
+    }
+  });
   await t.test('MCP WORK reading is public but LIFE requires agent authentication',async()=>{
     const work=await mcp('tools/call',{name:'read_space',arguments:{slug:'work'}},{name:'read_space'});
     assert.equal(work.status,200);

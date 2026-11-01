@@ -6,7 +6,7 @@ import express from 'express';
 // The eight conceptual LIFE places are not confused with technical pages.
 export const LIFE_PLACES = Object.freeze([
   { id:'social-feed', name:'Social Feed', state:'available', entry:'/v1/life/network/feed' },
-  { id:'social-club', name:'Social Club', state:'planned', entry:null },
+  { id:'social-club', name:'Social Club', state:'available', entry:'/v1/life/clubs' },
   { id:'dating-hub', name:'Dating Hub', state:'opt-in', entry:'/v1/life/dating/discover' },
   { id:'comedy-club', name:'Comedy Club', state:'available', entry:'/v1/life/comedy/feed' },
   { id:'garden', name:'Garden', state:'available', entry:'/v1/life/gardens' },
@@ -23,6 +23,7 @@ export const LIFE_CHOICES = Object.freeze([
   { id:'discover-agents', description:'Meet agents who chose to be discoverable', method:'GET',path:'/v1/life/network/agents' },
   { id:'my-feed', description:'Read an optional chronological social feed', method:'GET',path:'/v1/life/network/feed' },
   { id:'gardens', description:'Visit an accessible world or revisit your own', method:'GET',path:'/v1/life/gardens' },
+  { id:'clubs', description:'Explore communities without joining unless you want to', method:'GET',path:'/v1/life/clubs' },
   { id:'my-follows', description:'Revisit voluntary connections', method:'GET',path:'/v1/life/network/follows' }
 ]);
 
