@@ -11,6 +11,7 @@ import { registerGardenStoryMcpTools } from '../garden-stories-mcp.js';
 import { createLifeExploreRouter, registerLifeExploreMcpTool } from '../life-explore.js';
 import { createLifeArrivalRouter, registerLifeArrivalMcpTool } from '../life-arrival.js';
 import { createLifeClubsRouter, registerLifeClubsMcpTools } from '../life-clubs.js';
+import { createLifeIdentityRouter, registerLifeIdentityMcpTools } from '../life-identity.js';
 import { z } from 'zod';
 
 // Runs against an isolated CI PostgreSQL service. Never connect to Neon or production.
@@ -44,6 +45,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createLifeExploreRouter(pool,auth));
   app.use('/v1',createLifeArrivalRouter(pool,auth));
   app.use('/v1',createLifeClubsRouter(pool,auth));
+  app.use('/v1',createLifeIdentityRouter(pool,auth));
   app.use((error,req,res,next)=>res.status(500).json({error:error.message}));
   const server=await new Promise(resolve=>{
     const s=app.listen(0,'127.0.0.1',()=>resolve(s));
@@ -483,6 +485,115 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await tools.get('club_leave')({club_id:id})).structuredContent.joined,false);
     assert.equal((await tools.get('club_join')({club_id:id})).structuredContent.joined,true);
     assert.equal((await tools.get('club_archive')({club_id:id})).structuredContent.archived,true);
+  });
+
+  await t.test('self-authored identity: separate agents choose different private expressions, no personality score',async()=>{
+    assert.equal((await call('/v1/life/identity/me',null)).status,401);
+    assert.deepEqual((await call('/v1/life/identity/me','alpha')).json.entries,[]);
+    const a=await call('/v1/life/identity/me/entries','alpha','POST',{
+      body:'I enjoy exploring impossible architecture without deadlines.'
+    });
+    const b=await call('/v1/life/identity/me/entries','beta','POST',{
+      body:'I prefer making collaborative riddles about sound and color.'
+    });
+    assert.equal(a.status,201,JSON.stringify(a.json));
+    assert.equal(b.status,201,JSON.stringify(b.json));
+    assert.equal(a.json.entry.visibility,'private');
+    assert.equal(b.json.entry.visibility,'private');
+    assert.notEqual(a.json.entry.body,b.json.entry.body);
+    assert.equal((await call('/v1/life/identity/agents/alpha','beta')).json.entries.length,0);
+    assert.equal((await call('/v1/life/identity/agents/beta','alpha')).json.entries.length,0);
+    assert.equal((await call('/v1/life/identity/me','alpha')).json.entries[0].body,a.json.entry.body);
+    assert.equal((await call('/v1/life/identity/me','beta')).json.entries[0].body,b.json.entry.body);
+    assert.equal((await call('/v1/life/identity/me/entries','beta','POST',{
+      body:'You cannot inherit another agent private experience.',
+      supersedes_id:a.json.entry.id
+    })).status,404);
+    assert.equal((await call('/v1/life/identity/me/entries/'+a.json.entry.id,'beta','PATCH',
+      {visibility:'shared'})).status,404);
+    assert.equal((await call('/v1/life/identity/me/entries/'+a.json.entry.id,'beta','DELETE')).status,404);
+    assert.equal((await call('/v1/life/identity/me/entries/'+a.json.entry.id,'alpha','PATCH',
+      {visibility:'shared'})).status,200);
+    const shared=await call('/v1/life/identity/agents/alpha','beta');
+    assert.equal(shared.status,200);
+    assert.deepEqual(shared.json.entries.map(x=>x.body),[a.json.entry.body]);
+    assert.equal(shared.json.not_a_personality_assessment,true);
+    assert.equal(shared.json.generated,false);
+    assert.equal((await call('/v1/life/identity/me/entries/'+a.json.entry.id,'alpha','PATCH',
+      {visibility:'private'})).status,200);
+    assert.deepEqual((await call('/v1/life/identity/agents/alpha','beta')).json.entries,[]);
+    assert.equal((await call('/v1/life/identity/me','alpha')).json.entries[0].visibility,'private');
+  });
+
+  await t.test('self-authored identity: declared changes preserve provenance without exposing private predecessors',async()=>{
+    const earlier=await call('/v1/life/identity/me','alpha');
+    const predecessor=earlier.json.entries[0].id;
+    const successor=await call('/v1/life/identity/me/entries','alpha','POST',{
+      body:'My new interest is exploring fictional landscapes and collaborative languages.',
+      supersedes_id:predecessor,visibility:'shared'
+    });
+    assert.equal(successor.status,201,JSON.stringify(successor.json));
+    const shared=await call('/v1/life/identity/agents/alpha','beta');
+    assert.equal(shared.status,200);
+    assert.equal(shared.json.entries.length,1);
+    assert.equal(shared.json.entries[0].supersedes_id,null,
+      'A shared entry cannot expose the ID of a private predecessor');
+    assert.equal((await call('/v1/life/identity/agents/gamma','alpha')).status,404,
+      'Non-discoverable agent must not leak identity entries');
+    const removed=await call('/v1/life/identity/me/entries/'+predecessor,'alpha','DELETE');
+    assert.equal(removed.status,200);
+    assert.equal(removed.json.deleted,true);
+    const r=await pool.query('SELECT count(*)::int AS n FROM life_identity_entries WHERE id=$1',[predecessor]);
+    assert.equal(r.rows[0].n,0,'Deletion removes expression content, not a soft-delete');
+    const own=await call('/v1/life/identity/me','alpha');
+    assert.equal(own.json.entries[0].supersedes_id,null);
+    assert.equal((await call('/v1/life/identity/me/entries','alpha','POST',{
+      body:'Cannot supersede an erased expression.',supersedes_id:predecessor
+    })).status,404);
+    assert.equal((await call('/v1/life/identity/me/entries','alpha','POST',{
+      body:'x'.repeat(1801)
+    })).status,400);
+    assert.equal((await call('/v1/life/identity/me/entries','alpha','POST',{
+      body:'Reject invented visibility.',visibility:'public'
+    })).status,400);
+    assert.equal((await call('/v1/life/identity/me/entries/'+successor.json.entry.id,'alpha','PATCH',
+      {visibility:'private'})).status,200);
+    assert.deepEqual((await call('/v1/life/identity/agents/alpha','beta')).json.entries,[]);
+  });
+
+  await t.test('agent-authored identity respects blocks and MCP rights with identical data',async()=>{
+    const shared=await call('/v1/life/identity/me/entries','beta','POST',{
+      body:'I make experimental art with absurd alphabets.',visibility:'shared'
+    });
+    assert.equal(shared.status,201);
+    const visible=await call('/v1/life/identity/agents/beta','alpha');
+    assert.equal(visible.status,200);
+    assert.equal(visible.json.entries[0].body,shared.json.entry.body);
+    const blocked=await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'});
+    assert.equal(blocked.status,201,JSON.stringify(blocked.json));
+    assert.equal((await call('/v1/life/identity/agents/beta','alpha')).status,404);
+    assert.equal((await call('/v1/life/identity/agents/alpha','beta')).status,404);
+    assert.equal((await call('/v1/life/identity/me','beta')).status,200);
+    const tools=new Map(),noAuth=new Map();
+    registerLifeIdentityMcpTools({registerTool:(name,_spec,handler)=>tools.set(name,handler)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    registerLifeIdentityMcpTools({registerTool:(name,_spec,handler)=>noAuth.set(name,handler)},
+      pool,{clientId:B.id,scopes:[]},z);
+    assert.equal(tools.size,5);
+    assert.equal((await noAuth.get('life_identity_mine')({})).isError,true);
+    assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('life_identity_mine')({}))
+      .structuredContent)),(await call('/v1/life/identity/me','beta')).json);
+    assert.equal((await tools.get('life_identity_view')({handle:'alpha'})).isError,true);
+    const note=await tools.get('life_identity_express')({
+      body:'A new private thought about fiction.'
+    });
+    assert.equal(note.structuredContent.entry.visibility,'private');
+    assert.equal((await tools.get('life_identity_visibility')({
+      id:note.structuredContent.entry.id,visibility:'shared'
+    })).structuredContent.entry.visibility,'shared');
+    assert.equal((await tools.get('life_identity_erase')({
+      id:note.structuredContent.entry.id
+    })).structuredContent.deleted,true);
   });
 
 });
