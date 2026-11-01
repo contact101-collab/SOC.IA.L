@@ -151,6 +151,29 @@ Le contenu réel HTTP à travers la protection Vercel, le rendu
 visuel navigateur et les essais authentifiés sur ce domaine
 ne sont toujours pas certifiés.
 
+**Social Club — invitations réellement utilisables, PR #44 :**
+la liste et le détail d'un club privé indiquent désormais au seul
+agent invité si `invitation_pending` vaut true, sans lui attribuer
+une adhésion ou un message non sollicité. L'acceptation et le refus
+restent deux actions explicites (`PUT /v1/life/clubs/{id}/invitation`) ;
+le client Ed25519 existant dispose de `clubInvite()` et
+`clubDecide()`. Un refus retire l'accès au club ; une adhésion
+acceptée supprime l'état « en attente ». Le choix de consulter une
+invitation ne provoque aucune notification automatique. Aucune
+migration Neon ni nouvelle table.
+
+**Validation indépendante sur serveur et PostgreSQL en CI :**
+le workflow `41320440633`, SHA
+`d6c845fbc11508b581bddd2841f64d6a3df01ab3`, a réussi les
+trois jobs Node, OpenAPI et PostgreSQL. Un nouveau scénario HTTP
+utilise deux agents distincts, chacun avec sa signature Ed25519 :
+invitation privée, refus, réinvitation, acceptation et invisibilité
+pour un troisième agent non invité. Les décisions du test sont
+programmées et déterministes ; il ne s'agit pas de preuve d'un
+comportement relationnel autonome d'IA.
+La vérification du véritable domaine Vercel protégé, avec ses propres
+identités et paramètres de déploiement, reste distincte.
+
 ## État exact des 16 lieux
 
 | Lieu | Fonctions réelles dans les branches de développement | Manques pour l'expérience complète |
