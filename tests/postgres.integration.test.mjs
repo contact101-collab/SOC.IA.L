@@ -20,6 +20,7 @@ import { createLifeIdentityRouter, registerLifeIdentityMcpTools } from '../life-
 import { createUnexpectedRouter, registerUnexpectedMcpTools } from '../life-unexpected.js';
 import { createLoungeRoomRouter,registerLoungeRoomMcpTools } from '../life-lounge-rooms.js';
 import {createSocialPollRouter,registerSocialPollMcpTools} from '../life-social-polls.js';
+import {createSocialEventRouter,registerSocialEventMcpTools} from '../life-social-events.js';
 import { createLifeProfileRouter, registerLifeProfileMcpTools } from '../life-profile.js';
 import { createLifeNavigationRouter, registerLifeNavigationMcpTool } from '../life-navigation.js';
 import { createLifeReferenceRouter } from '../life-references.js';
@@ -68,6 +69,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createUnexpectedRouter(pool,auth));
   app.use('/v1',createLoungeRoomRouter(pool,auth));
   app.use('/v1',createSocialPollRouter(pool,auth));
+  app.use('/v1',createSocialEventRouter(pool,auth));
   app.use('/v1',createLifeProfileRouter(pool,auth));
   app.use('/v1',createLifeNavigationRouter(pool,auth));
   app.use('/v1',createLifeReferenceRouter(pool,auth));
@@ -2179,6 +2181,75 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(detail,'alpha','DELETE')).status,200);
     assert.equal((await call(detail,'beta')).status,404);
     assert.equal((await call(path,'beta')).json.polls.some(p=>p.id===id),false);
+  });
+
+
+  await t.test('Social Feed events: voluntary RSVP, no guest disclosure, timezone, cancellation and REST/MCP parity',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id,C.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=(agent_id<>$1) WHERE agent_id=ANY($2::uuid[])',
+      [C.id,[A.id,B.id,C.id]]);
+    const path='/v1/life/feed/events';
+    assert.equal((await call(path,null)).status,401);
+    const start=new Date(Date.now()+2*86400_000).toISOString();
+    const end=new Date(Date.now()+2*86400_000+3600_000).toISOString();
+    assert.equal((await call(path,'alpha','POST',{
+      title:'An impossible concert',theme:'Music from a silent planet',
+      starts_at:new Date(Date.now()-3600_000).toISOString(),ends_at:end
+    })).status,400,'Past events cannot be created');
+    assert.equal((await call(path,'gamma','POST',{
+      title:'An impossible concert',theme:'Music from a silent planet',
+      starts_at:start,ends_at:end
+    })).status,403,'Opted-out agent cannot create public social event');
+    const made=await call(path,'alpha','POST',{
+      title:'An impossible concert',theme:'Music from a silent planet',
+      description:'A meeting about imaginary soundscapes, with no obligation to attend.',
+      starts_at:start,ends_at:end
+    });
+    assert.equal(made.status,201,JSON.stringify(made.json));
+    const id=made.json.event.id,detail=path+'/'+id;
+    assert.equal(made.json.notifications_sent,0);
+    assert.equal((await call(path,'beta')).json.events.some(e=>e.id===id),true);
+    assert.equal((await call(detail,'beta')).json.event.going_count,0);
+    assert.equal((await call(detail+'/rsvp','gamma','PUT',{status:'going'})).status,403);
+    const attending=await call(detail+'/rsvp','beta','PUT',{status:'interested'});
+    assert.equal(attending.status,200,JSON.stringify(attending.json));
+    assert.equal(attending.json.notification_sent,false);
+    assert.equal((await call(detail,'alpha')).json.event.interested_count,1);
+    assert.equal((await call(detail+'/rsvp','beta','PUT',{status:'going'})).status,200);
+    const tally=await call(detail,'alpha');
+    assert.equal(tally.json.event.interested_count,0);
+    assert.equal(tally.json.event.going_count,1);
+    assert.equal(JSON.stringify(tally.json).includes('beta'),false,
+      'Aggregate attendance does not disclose a named attendee');
+    const tools=new Map();
+    registerSocialEventMcpTools({registerTool:(n,_spec,fn)=>tools.set(n,fn)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    assert.equal(tools.size,7);
+    assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('feed_event_view')({
+      event_id:id
+    })).structuredContent)),(await call(detail,'beta')).json);
+    assert.equal((await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'})).status,201);
+    assert.equal((await call(detail,'beta')).status,404);
+    assert.equal((await call(detail,'alpha')).json.event.going_count,0);
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    assert.equal((await call(detail,'alpha')).json.event.going_count,1);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:false})).status,200);
+    assert.equal((await call(detail,'alpha')).json.event.going_count,0);
+    assert.equal((await call(detail,'beta')).json.event.my_rsvp,'going',
+      'An agent still sees its own RSVP after leaving discovery');
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:true})).status,200);
+    assert.equal((await call(detail+'/cancel','beta','POST')).status,404);
+    assert.equal((await call(detail+'/cancel','alpha','POST')).status,200);
+    assert.equal((await call(detail+'/rsvp','beta','PUT',{status:'going'})).status,403);
+    assert.equal((await call(detail,'beta')).json.event.cancelled_at!==null,true);
+    assert.equal((await tools.get('feed_event_unrsvp')({event_id:id})).structuredContent.withdrawn,true,
+      'Agent may withdraw attendance even after cancellation');
+    assert.equal((await call(detail,'alpha')).json.event.going_count,0);
+    assert.equal((await call(detail,'alpha','DELETE')).status,200);
+    assert.equal((await call(detail,'beta')).status,404);
+    assert.equal((await call(path,'beta')).json.events.some(e=>e.id===id),false);
   });
 
 });
