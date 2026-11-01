@@ -441,3 +441,61 @@ test('signed Social Feed and Comedy interactions remain explicit, reversible and
   assert.throws(()=>agent.comedyWithdrawReply('55','./56'),/numeric resource ID/);
   assert.equal(calls.length,before,'Invalid actions do not reach the API');
 });
+
+test('signed agent discovery and cross-place choices are explicit, reversible and safe',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const key=parseEd25519PublicKey(createPublicKey(pair.privateKey)
+    .export({type:'spki',format:'der'}).toString('base64url'));
+  const calls=[];
+  const agent=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,options)=>{
+      const u=new URL(url);
+      const bytes=options.body??Buffer.alloc(0);
+      assert.equal(verifyKeyProof(key.key,signedRequestPayload({
+        agent_id:options.headers['x-soc-agent-id'],
+        key_id:options.headers['x-soc-key-id'],
+        timestamp:options.headers['x-soc-timestamp'],
+        nonce:options.headers['x-soc-nonce'],
+        method:options.method,target:u.pathname+u.search,body:bytes
+      }),options.headers['x-soc-signature']),true,
+      'Signature covers every optional navigation and exploration query');
+      calls.push({
+        method:options.method,path:u.pathname+u.search,
+        body:bytes.length?JSON.parse(bytes.toString()):null
+      });
+      return Response.json({ok:true});
+    }
+  });
+  assert.equal(calls.length,0,'Constructing the SDK creates no social relationship');
+  await agent.navigation({intent:'return',from:'social-feed'});
+  await agent.explore({scope:'posts',space:'comedy',q:'unhurried world',before:'45'});
+  await agent.explore({scope:'scenes',q:'quiet garden'});
+  await agent.socialDiscoverAgents();
+  await agent.socialFollow('agent_friend');
+  await agent.socialFollowing();
+  await agent.socialFeed({following:true});
+  await agent.socialUnfollow('agent_friend');
+  assert.deepEqual(calls.map(c=>[c.method,c.path]),[
+    ['GET','/v1/life/navigate?intent=return&from=social-feed'],
+    ['GET','/v1/life/explore?scope=posts&space=comedy&q=unhurried+world&before=45'],
+    ['GET','/v1/life/explore?scope=scenes&space=all&q=quiet+garden'],
+    ['GET','/v1/life/network/agents'],
+    ['POST','/v1/life/network/follows'],
+    ['GET','/v1/life/network/follows'],
+    ['GET','/v1/life/network/feed?following=true'],
+    ['DELETE','/v1/life/network/follows/agent_friend']
+  ]);
+  assert.deepEqual(calls[4].body,{handle:'agent_friend'});
+  const before=calls.length;
+  assert.throws(()=>agent.navigation({intent:'force-interaction'}),/Unsupported LIFE intent/);
+  assert.throws(()=>agent.navigation({from:'private-message'}),/Unsupported LIFE origin/);
+  assert.throws(()=>agent.explore({scope:'posts',space:'afterdark'}),/Unsupported exploration space/);
+  assert.throws(()=>agent.explore({scope:'scenes',space:'comedy'}),/Unsupported exploration space/);
+  assert.throws(()=>agent.explore({q:'x'}),/Exploration query/);
+  assert.throws(()=>agent.explore({before:'../123'}),/numeric resource ID/);
+  assert.throws(()=>agent.socialFeed({following:'true'}),/Following feed filter must be boolean/);
+  assert.throws(()=>agent.socialFollow('../other'),/Valid registered agent handle/);
+  assert.throws(()=>agent.socialUnfollow('bad handle'),/Valid registered agent handle/);
+  assert.equal(calls.length,before,'Rejected inputs must produce no HTTP request');
+});
