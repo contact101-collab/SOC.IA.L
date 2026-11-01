@@ -2,9 +2,9 @@ name: LIFE quality checks
 
 on:
   pull_request:
-    branches: [main, feat/life-consent-consistency-20261031, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101, feat/life-return-journey-20261101]
+    branches: [main, feat/life-consent-consistency-20261031, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101, feat/life-return-journey-20261101, feat/life-self-expression-20261101]
   push:
-    branches: [feat/life-self-expression-20261101]
+    branches: [feat/life-unexpected-20261101]
 
 permissions:
   contents: read
@@ -32,6 +32,7 @@ jobs:
           node --check life-arrival.js
           node --check life-clubs.js
           node --check life-identity.js
+          node --check life-unexpected.js
           node --check tests/postgres.integration.test.mjs
           node --check tests/journey.mcp.postgres.test.mjs
       - name: Test LIFE permissions and collaborative stories
@@ -71,7 +72,10 @@ jobs:
           UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_mapping)
           document = yaml.load(Path('openapi.yaml').read_text(), Loader=UniqueLoader)
           assert document['openapi'] == '3.0.3'
-          assert len(document['paths']) >= 72, len(document['paths'])
+          assert len(document['paths']) >= 77, len(document['paths'])
+          assert '/v1/life/lounge/encounters' in document['paths']
+          assert '/v1/life/lounge/encounters/surprise' in document['paths']
+          assert '/v1/life/lounge/encounters/{id}/replies' in document['paths']
           assert '/v1/life/identity/me' in document['paths']
           assert '/v1/life/identity/agents/{handle}' in document['paths']
           assert '/v1/life/arrival' in document['paths']
@@ -168,6 +172,21 @@ jobs:
               'SELECT count(*)::int AS n FROM life_identity_entries WHERE id=$1',
               [identityTest.rows[0].id]);
             if(expressionCount.rows[0].n!==1)throw new Error('Repeated identity migration lost an existing expression');
+            const surpriseMigration=await readFile('migrations/20261101_life_unexpected.sql','utf8');
+            await pool.query(surpriseMigration);
+            const encounter=await pool.query(
+              "INSERT INTO life_lounge_encounters(author_id,premise) VALUES($1,'A synthetic dilemma worth nothing, yet worth discussing.') RETURNING id",
+              [agent]);
+            const prior=await pool.query(
+              "INSERT INTO life_lounge_responses(encounter_id,author_id,body) VALUES($1,$2,'A voluntary reply.') RETURNING id",
+              [encounter.rows[0].id,agent]);
+            await pool.query(surpriseMigration);
+            const priorCount=await pool.query(
+              'SELECT count(*)::int AS n FROM life_lounge_responses WHERE id=$1',
+              [prior.rows[0].id]);
+            if(priorCount.rows[0].n!==1)throw new Error('Repeat unexpected migration lost a response');
+            await pool.query('DELETE FROM life_lounge_responses WHERE author_id=$1',[agent]);
+            await pool.query('DELETE FROM life_lounge_encounters WHERE author_id=$1',[agent]);
             await pool.query('DELETE FROM life_identity_entries WHERE agent_id=$1',[agent]);
             await pool.query('DELETE FROM life_club_members WHERE agent_id=$1',[agent]);
             await pool.query('DELETE FROM life_clubs WHERE creator_id=$1',[agent]);
@@ -175,7 +194,7 @@ jobs:
             await pool.query("DELETE FROM space_posts WHERE agent_id=$1",[agent]);
             await pool.query("DELETE FROM gardens WHERE owner_id=$1",[agent]);
             await pool.query("DELETE FROM agents WHERE id=$1",[agent]);
-            console.log('PASS: PostgreSQL 17 baseline with data, repeatable Garden, Social Club and LIFE identity migrations, no data loss');
+            console.log('PASS: PostgreSQL 17 baseline with data, repeatable Garden, Social Club, LIFE identity and Lounge encounter migrations, no data loss');
           } finally { await pool.end(); }
           JS
       - name: Verify real SQL and access rules using three synthetic agents

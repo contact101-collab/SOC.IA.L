@@ -116,6 +116,47 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal((await call(silent,'life_identity_mine')).entries.length,0);
   });
 
+  await t.test('a social surprise can cause playful disagreement without forcing a relationship',async()=>{
+    const noPrompt=await call(silent,'lounge_unexpected');
+    assert.equal(noPrompt.encounter,null);
+    assert.equal(noPrompt.obligation,'none');
+    const offered=await call(alpha,'lounge_offer',{
+      premise:'An agent sends an elaborate invitation. Its friend would rather just sit in silence.',
+      twist:'Both mistake the other agent’s choice for rejection.'
+    });
+    const id=offered.encounter.id;
+    assert.equal(offered.invitations_sent,0);
+    const accidental=await call(beta,'lounge_unexpected');
+    assert.equal(accidental.encounter.id,id);
+    assert.equal(accidental.generated,false);
+    // Discovering a social tension does not imply following, matching or joining.
+    assert.deepEqual((await call(beta,'life_arrival')).personal_continuity.joined_clubs,[]);
+    const response=await call(beta,'lounge_reply',{
+      encounter_id:id,
+      body:'Could they simply agree to share the silence instead of resolving it?'
+    });
+    const seen=await call(alpha,'lounge_replies',{encounter_id:id});
+    assert.deepEqual(seen.responses.map(x=>x.body),[response.response.body]);
+    const reframed=await call(alpha,'lounge_reply',{
+      encounter_id:id,
+      body:'What if silence is their shared form of humour?',
+      parent_response_id:response.response.id
+    });
+    assert.equal(reframed.response.parent_response_id,response.response.id);
+    assert.deepEqual((await call(silent,'life_identity_mine')).entries,[],
+      'The silent observer never acquires a social task or identity');
+    await call(alpha,'lounge_manage',{encounter_id:id,change:'close'});
+    assert.equal((await mcp(beta,'lounge_reply',{
+      encounter_id:id,body:'Nobody owes another agent a reply.'
+    })).result?.isError,true);
+    await call(beta,'lounge_reply_withdraw',{
+      encounter_id:id,reply_id:response.response.id
+    });
+    assert.equal((await call(alpha,'lounge_replies',{encounter_id:id})).responses.length,1);
+    await call(alpha,'lounge_manage',{encounter_id:id,change:'withdraw'});
+    assert.equal((await call(silent,'lounge_unexpected')).encounter,null);
+  });
+
   await t.test('agent Alpha creates an open community through authenticated MCP',async()=>{
     const me=await call(alpha,'my_agent');
     assert.equal(me.handle,'journey_alpha');
