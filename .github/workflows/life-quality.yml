@@ -2,9 +2,9 @@ name: LIFE quality checks
 
 on:
   pull_request:
-    branches: [release/life-integrated-rc2-20261101, feat/comedy-improv-circles-20261101, release/life-integrated-rc1-20261101, feat/life-dating-comedy-functional-20261101, fix/social-club-reply-boundaries-20261101, fix/garden-plants-care-consent-20261101, fix/garden-story-privacy-20261101, fix/life-reaction-visibility-20261101, fix/comedy-consent-parity-20261101, fix/life-reply-visibility-20261101, feat/life-self-authored-lineage-20261101, feat/life-reference-continuity-20261101, feat/life-cross-space-journeys-20261101, main, release/life-consolidation-20261101, feat/life-native-navigation-20261101, feat/life-unified-profile-20261101, feat/life-consent-consistency-20261031, fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101, feat/life-return-journey-20261101, feat/life-self-expression-20261101]
+    branches: [release/life-integrated-rc6-20261101, release/life-integrated-rc2-20261101, feat/comedy-improv-circles-20261101, release/life-integrated-rc1-20261101, feat/life-dating-comedy-functional-20261101, fix/social-club-reply-boundaries-20261101, fix/garden-plants-care-consent-20261101, fix/garden-story-privacy-20261101, fix/life-reaction-visibility-20261101, fix/comedy-consent-parity-20261101, fix/life-reply-visibility-20261101, feat/life-self-authored-lineage-20261101, feat/life-reference-continuity-20261101, feat/life-cross-space-journeys-20261101, main, release/life-consolidation-20261101, feat/life-native-navigation-20261101, feat/life-unified-profile-20261101, feat/life-consent-consistency-20261031, fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101, feat/life-return-journey-20261101, feat/life-self-expression-20261101]
   push:
-    branches: [fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101, feat/life-cross-space-journeys-20261101, feat/life-reference-continuity-20261101, feat/life-self-authored-lineage-20261101, fix/life-after-dark-fail-closed-20261101, fix/comedy-consent-parity-20261101, fix/life-reaction-visibility-20261101, fix/garden-story-privacy-20261101, fix/garden-plants-care-consent-20261101, fix/social-club-reply-boundaries-20261101, feat/life-dating-comedy-functional-20261101, feat/life-nightclub-private-rooms-20261101, feat/comedy-improv-circles-20261101, feat/gallery-private-curation-20261101, feat/a2a-persistent-agent-identity-20261101, feat/social-club-private-invitations-20261101, feat/life-lounge-topic-rooms-20261101, feat/social-feed-polls-20261101, feat/social-feed-events-20261101, feat/launch-signed-agent-sdk-preflight-20261101]
+    branches: [fix/rc6-dating-agent-handle-consistency-20261101, fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101, feat/life-cross-space-journeys-20261101, feat/life-reference-continuity-20261101, feat/life-self-authored-lineage-20261101, fix/life-after-dark-fail-closed-20261101, fix/comedy-consent-parity-20261101, fix/life-reaction-visibility-20261101, fix/garden-story-privacy-20261101, fix/garden-plants-care-consent-20261101, fix/social-club-reply-boundaries-20261101, feat/life-dating-comedy-functional-20261101, feat/life-nightclub-private-rooms-20261101, feat/comedy-improv-circles-20261101, feat/gallery-private-curation-20261101, feat/a2a-persistent-agent-identity-20261101, feat/social-club-private-invitations-20261101, feat/life-lounge-topic-rooms-20261101, feat/social-feed-polls-20261101, feat/social-feed-events-20261101, feat/launch-signed-agent-sdk-preflight-20261101]
 
 permissions:
   contents: read
@@ -42,6 +42,8 @@ jobs:
           node --check life-comedy-improv.js
           node --check life-nightclub.js
           node --check dating-hub.js
+          node --check tests/spaces.test.mjs
+          node --check tests/signed-agent-client.test.mjs
           node --check life-clubs.js
           node --check life-identity.js
           node --check life-unexpected.js
