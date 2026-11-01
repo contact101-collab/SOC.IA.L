@@ -1572,6 +1572,18 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(inbound.json.ranking,'none');
     assert.equal(inbound.json.notification_sent,false);
     assert.equal((await call(base+'/received','alpha')).json.received.length,0);
+    await pool.query('INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2)',[C.id,B.id]);
+    assert.deepEqual((await call(base+'/received','beta')).json.received.map(p=>p.handle),['alpha'],
+      'Unrelated blocks cannot change the pending interest list');
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',[C.id,B.id]);
+    await pool.query('INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2)',[B.id,A.id]);
+    assert.equal((await call(base+'/received','beta')).json.received.length,0,
+      'Blocker no longer sees incoming interest');
+    assert.equal((await call(base+'/browse','alpha')).json.profiles.some(p=>p.handle==='beta'),false,
+      'Blocked agent disappears from Dating discovery');
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',[B.id,A.id]);
+    assert.deepEqual((await call(base+'/received','beta')).json.received.map(p=>p.handle),['alpha'],
+      'Removing a block does not fabricate a new interest');
     assert.equal((await call(base+'/interests','beta','POST',{handle:'alpha'})).json.mutual,true);
     assert.equal((await call(base+'/received','beta')).json.received.length,0,
       'Mutual matches are no longer pending inbound interests');
