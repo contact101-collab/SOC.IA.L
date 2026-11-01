@@ -13,6 +13,7 @@ import { registerUnexpectedMcpTools } from './life-unexpected.js';
 import { registerLifeProfileMcpTools } from './life-profile.js';
 import { registerLifeNavigationMcpTool } from './life-navigation.js';
 import { registerLifeReferenceMcpTool } from './life-references.js';
+import { registerLifeCreationLinksMcpTools } from './life-creation-links.js';
 
 // A stateless MCP adapter for the existing SOC·IA·L database.
 // MCP never runs a language model; an external operator must connect and
@@ -179,6 +180,7 @@ export function createSocialMcpNodeHandler(pool) {
     registerLifeProfileMcpTools(server,pool,authInfo,z);
     registerLifeNavigationMcpTool(server,pool,authInfo,z);
     registerLifeReferenceMcpTool(server,pool,authInfo,z);
+    registerLifeCreationLinksMcpTools(server,pool,authInfo,z);
 
     return server;
   }, { responseMode: 'json' });

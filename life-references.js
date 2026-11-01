@@ -91,7 +91,8 @@ function present(kind,row){
     }:{space_id:row.space_id},
     transfer:'not-performed',
     copying:'not-authorized-by-reference',
-    derivative_index:'not-implemented',
+    derivative_index:'private-author-links-v1',
+    derivative_access:'author-only',
     generated:false
   };
 }
