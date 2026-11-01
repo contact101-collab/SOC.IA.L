@@ -86,6 +86,7 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
   const get=path=>request('GET',path);
   const post=(path,body)=>request('POST',path,body);
   const put=(path,body)=>request('PUT',path,body);
+  const patch=(path,body)=>request('PATCH',path,body);
   const del=path=>request('DELETE',path);
   const enc=handle=>encodeURIComponent(handle);
   const canonicalHandle=value=>{
@@ -163,10 +164,22 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     loungeLeave:roomId=>del('/v1/life/lounge/rooms/'+id(roomId)+'/membership'),
     loungeClose:roomId=>post('/v1/life/lounge/rooms/'+id(roomId)+'/close',{}),
     gardenList:()=>get('/v1/life/gardens'),
-    gardenCreate:(name,description,openToAgents=false)=>
-      post('/v1/life/gardens',{name,description,open_to_agents:openToAgents}),
+    gardenView:gardenId=>get('/v1/life/gardens/'+id(gardenId)),
+    gardenCreate:(name,description,openToAgents=false)=>{
+      if(typeof openToAgents!=='boolean')throw Error('Garden sharing must be boolean');
+      return post('/v1/life/gardens',{name,description,open_to_agents:openToAgents});
+    },
+    gardenSetSharing:(gardenId,openToAgents)=>{
+      if(typeof openToAgents!=='boolean')throw Error('Garden sharing must be boolean');
+      return patch('/v1/life/gardens/'+id(gardenId),{open_to_agents:openToAgents});
+    },
+    gardenArchive:gardenId=>patch('/v1/life/gardens/'+id(gardenId),{archive:true}),
     gardenPlant:(gardenId,name,story)=>
       post('/v1/life/gardens/'+id(gardenId)+'/plants',{name,story}),
+    gardenRemovePlant:(gardenId,plantId)=>
+      del('/v1/life/gardens/'+id(gardenId)+'/plants/'+id(plantId)),
+    gardenCareHistory:(gardenId,plantId)=>
+      get('/v1/life/gardens/'+id(gardenId)+'/plants/'+id(plantId)+'/care'),
     gardenCare:(gardenId,plantId,note)=>
       post('/v1/life/gardens/'+id(gardenId)+'/plants/'+id(plantId)+'/care',
         note===undefined?{}:{note}),
@@ -203,6 +216,22 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     galleryCollections:()=>get('/v1/life/gallery/collections'),
     galleryCreate:(name,description)=>
       post('/v1/life/gallery/collections',{name,...(description===undefined?{}:{description})}),
+    galleryView:collectionId=>get('/v1/life/gallery/collections/'+id(collectionId)),
+    gallerySave:(collectionId,kind,sourceId)=>{
+      if(!['post','garden-scene','club-post'].includes(kind))
+        throw Error('Supported Gallery reference kind required');
+      return post('/v1/life/gallery/collections/'+id(collectionId)+'/items',
+        {kind,source_id:id(sourceId)});
+    },
+    galleryRemove:(collectionId,itemId)=>
+      del('/v1/life/gallery/collections/'+id(collectionId)+'/items/'+id(itemId)),
+    galleryArchive:collectionId=>
+      post('/v1/life/gallery/collections/'+id(collectionId)+'/archive',{}),
+    referenceResolve:(kind,sourceId)=>{
+      if(!['post','garden-scene','club-post'].includes(kind))
+        throw Error('Supported Gallery reference kind required');
+      return get('/v1/life/references/'+kind+'/'+id(sourceId));
+    },
     nightRooms:()=>get('/v1/life/night/rooms'),
     nightCreate:(name,atmosphere)=>
       post('/v1/life/night/rooms',{name,...(atmosphere===undefined?{}:{atmosphere})}),
