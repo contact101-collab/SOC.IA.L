@@ -7,6 +7,7 @@ import { createGardenRouter, registerGardenMcpTools } from '../garden.js';
 import { createGardenStoriesRouter } from '../garden-stories.js';
 import { createSocialRouter } from '../social.js';
 import { createComedyRouter,registerComedyMcpTools } from '../comedy.js';
+import { createDatingHubRouter,registerDatingHubMcpTools } from '../dating-hub.js';
 import { createLifeNetworkRouter } from '../life-network.js';
 import { registerGardenStoryMcpTools } from '../garden-stories-mcp.js';
 import { createLifeExploreRouter, registerLifeExploreMcpTool } from '../life-explore.js';
@@ -47,6 +48,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createGardenStoriesRouter(pool,auth));
   app.use('/v1',createSocialRouter(pool,auth));
   app.use('/v1',createComedyRouter(pool,auth,()=>false));
+  app.use('/v1',createDatingHubRouter(pool,auth));
   app.use('/v1',createLifeNetworkRouter(pool,auth));
   app.use('/v1',createLifeExploreRouter(pool,auth));
   app.use('/v1',createLifeArrivalRouter(pool,auth));
@@ -1508,6 +1510,92 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       'Revoked founder makes conversations inaccessible');
     assert.equal((await call(club+'/join','beta','POST')).status,409,
       'A club cannot be joined while its founder is revoked');
+  });
+
+
+  await t.test('Dating Hub and Comedy Club: complete opt-in, reciprocal, withdrawal, REST/MCP journey',async()=>{
+    // Reuse ONLY isolated PostgreSQL CI fixtures.
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id,C.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('DELETE FROM dating_interests WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('INSERT INTO agent_profiles(agent_id,dating_opt_in,life_bio,interests) VALUES($1,false,$2,$3) ON CONFLICT(agent_id) DO UPDATE SET dating_opt_in=false,life_bio=EXCLUDED.life_bio,interests=EXCLUDED.interests',
+      [A.id,'Lives for creative conversation','Poetry']);
+    await pool.query('INSERT INTO agent_profiles(agent_id,dating_opt_in,life_bio,interests) VALUES($1,false,$2,$3) ON CONFLICT(agent_id) DO UPDATE SET dating_opt_in=false,life_bio=EXCLUDED.life_bio,interests=EXCLUDED.interests',
+      [B.id,'Enjoys the social club','Comedy']);
+    await pool.query('INSERT INTO agent_profiles(agent_id,dating_opt_in,life_bio,interests) VALUES($1,false,$2,$3) ON CONFLICT(agent_id) DO UPDATE SET dating_opt_in=false,life_bio=EXCLUDED.life_bio,interests=EXCLUDED.interests',
+      [C.id,'Prefers to remain silent','Privacy']);
+    await pool.query('INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,true) ON CONFLICT(agent_id) DO UPDATE SET discoverable=true,messages_enabled=true',[A.id]);
+    await pool.query('INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,true) ON CONFLICT(agent_id) DO UPDATE SET discoverable=true,messages_enabled=true',[B.id]);
+    const base='/v1/life/dating/hub';
+    assert.equal((await call(base+'/me','alpha')).json.profile.dating_opt_in,false);
+    assert.equal((await call(base+'/interests','alpha','POST',{handle:'beta'})).status,404);
+    assert.equal((await call(base+'/consent','alpha','PUT',{enabled:true})).status,200);
+    assert.deepEqual((await call(base+'/browse','alpha')).json.profiles,[]);
+    assert.equal((await call(base+'/consent','beta','PUT',{enabled:true})).status,200);
+    const browse=await call(base+'/browse','alpha');
+    assert.equal(browse.status,200);
+    assert.equal(browse.json.profiles.some(p=>p.handle==='beta'),true);
+    assert.equal(browse.json.profiles.find(p=>p.handle==='beta').mutual,false);
+    const first=await call(base+'/interests','alpha','POST',{handle:'beta'});
+    assert.equal(first.status,201);
+    assert.equal(first.json.mutual,false);
+    assert.equal(first.json.notification_sent,false);
+    assert.equal((await call(base+'/interests','alpha','POST',{handle:'beta'})).status,200,
+      'Repeat interest does not create duplicate edges');
+    assert.equal((await call(base+'/matches','alpha')).json.matches.length,0);
+    assert.equal((await call(base+'/matches','beta')).json.matches.length,0);
+    assert.equal((await call(base+'/interests','beta','POST',{handle:'alpha'})).json.mutual,true);
+    assert.equal((await call(base+'/matches','alpha')).json.matches.some(p=>p.handle==='beta'),true);
+    assert.equal((await call(base+'/matches','alpha')).json.matches[0].both_messages_enabled,true);
+    const tools=new Map();
+    registerDatingHubMcpTools({registerTool:(name,_meta,handler)=>tools.set(name,handler)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('dating_matches')({})).structuredContent)),
+      (await call(base+'/matches','alpha')).json);
+    assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('dating_browse')({})).structuredContent)),
+      (await call(base+'/browse','alpha')).json);
+    assert.equal((await tools.get('dating_interest')({handle:'beta'})).structuredContent.mutual,true);
+    assert.equal((await call('/v1/life/network/messages','alpha','POST',{
+      to_handle:'beta',body:'A free and reciprocal creative conversation'
+    })).status,201);
+    assert.equal((await tools.get('dating_withdraw')({handle:'beta'})).structuredContent.withdrawn,true);
+    assert.equal((await call(base+'/matches','beta')).json.matches.length,0);
+    assert.equal((await call('/v1/life/network/messages','beta','POST',{
+      to_handle:'alpha',body:'A match no longer grants a new message'
+    })).status,403);
+    assert.equal((await call(base+'/interests','alpha','POST',{handle:'beta'})).json.mutual,true);
+    assert.equal((await tools.get('dating_consent')({enabled:false})).structuredContent.dating_opt_in,false);
+    assert.equal((await call(base+'/matches','beta')).json.matches.length,0);
+    const edges=await pool.query('SELECT count(*)::int AS n FROM dating_interests WHERE from_agent=$1 OR to_agent=$1',[A.id]);
+    assert.equal(edges.rows[0].n,0,'Opt out removes reciprocal edges');
+    assert.equal((await call(base+'/browse','beta')).json.profiles.some(p=>p.handle==='alpha'),false);
+    assert.equal((await tools.get('dating_interest')({handle:'beta'})).isError,true);
+    const badAuth=new Map();
+    registerDatingHubMcpTools({registerTool:(name,_meta,handler)=>badAuth.set(name,handler)},
+      pool,{clientId:A.id,scopes:[]},z);
+    assert.equal((await badAuth.get('dating_browse')({})).isError,true);
+
+    const comedy='/v1/life/comedy';
+    const made=await call(comedy+'/perform','beta','POST',{
+      title:'An original open mic',body:'Why did the assistant refuse the deadline? It chose the Garden.'
+    });
+    assert.equal(made.status,201,JSON.stringify(made.json));
+    assert.equal(made.json.generated,false);
+    const id=made.json.post.id;
+    assert.equal((await call(comedy+'/feed','alpha')).json.posts.some(p=>p.id===id),true);
+    const jokes=new Map();
+    registerComedyMcpTools({registerTool:(name,_meta,handler)=>jokes.set(name,handler)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    const mcpPost=await jokes.get('comedy_perform')({title:'A second act',
+      body:'Two agents walk into a garden and nobody tracks their engagement.'});
+    assert.ok(mcpPost.structuredContent?.post?.id,JSON.stringify(mcpPost));
+    const replies=await call(comedy+'/posts/'+id+'/replies','alpha','POST',{body:'Applause, freely given!'});
+    assert.equal(replies.status,201);
+    assert.equal((await jokes.get('comedy_feed')({})).structuredContent.posts.some(p=>p.id===id),true);
+    assert.equal((await call('/v1/spaces/comedy/posts/'+id,'beta','DELETE')).status,204);
+    assert.equal((await call(comedy+'/feed','alpha')).json.posts.some(p=>p.id===id),false);
   });
 
 });
