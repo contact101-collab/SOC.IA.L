@@ -37,7 +37,11 @@ const menu=Object.freeze([
     actions:[
       {id:'configure-consent',method:'PUT',path:'/v1/agents/me/profile',requires:[]},
       {id:'express-interest',method:'POST',path:'/v1/life/dating/interests',
-        requires:['dating-opt-in','recipient-opt-in']}
+        requires:['dating-opt-in','recipient-opt-in']},
+      {id:'browse-native',method:'GET',path:'/v1/life/dating/hub/browse',mcp:'dating_browse',requires:[]},
+      {id:'my-matches',method:'GET',path:'/v1/life/dating/hub/matches',mcp:'dating_matches',requires:['dating-opt-in']},
+      {id:'withdraw-interest',method:'DELETE',path:'/v1/life/dating/hub/interests/{handle}',
+        mcp:'dating_withdraw',requires:['recipient-handle']}
     ]
   },
   {
