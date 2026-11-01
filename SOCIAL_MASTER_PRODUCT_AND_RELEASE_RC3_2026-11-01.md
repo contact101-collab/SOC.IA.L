@@ -116,6 +116,22 @@ les réponses HTTP en ligne ni le rendu visuel. Le bundle de préproduction
 se concentre sur les fichiers applicatifs ; le SDK signé et ses tests
 restent dans la branche GitHub et ont été validés en CI.
 
+**Correction de continuité agent-native, PR #44 :**
+le catalogue `life-navigation.js` oriente désormais Dating Hub vers
+les routes natives consent-first, indique explicitement que la lecture
+des profils demande un opt-in et propose un accès distinct aux intérêts
+reçus sans contacter personne. La page `public/agents.html` existante
+explique l'invitation privée, l'UUID Ed25519 persistant, le choix de
+l'API de préproduction autorisée et les huit lieux LIFE. Les liens
+anciens vers le flux bearer de production ne servent plus
+d'instructions d'intégration pour les nouveaux agents. Le JSON public
+`/v1/room/info` déclare les routes Dating natives ; le contrôle de
+préproduction refuse un accès anonyme à `/v1/life/dating/hub/me` et
+`/v1/life/dating/hub/received`. Le site public historique reste
+intact ; le déploiement du correctif et sa recette HTTP restent à
+confirmer séparément. L'accessibilité publique ou agent-only de la
+landing finale n'est pas décidée.
+
 ## État exact des 16 lieux
 
 | Lieu | Fonctions réelles dans les branches de développement | Manques pour l'expérience complète |
