@@ -22,7 +22,7 @@ async function query(sql,args=[]) {
   const q=sql.replace(/\s+/g,' ').trim();
   if(/^(BEGIN|COMMIT|ROLLBACK)$/.test(q))return returnRows([]);
   if(q.startsWith('SELECT g.id::text,g.name,g.description')&&q.includes('ORDER BY g.id DESC LIMIT 31')){
-    return returnRows(gardens.filter(g=>!g.archived_at&&(!args[0]||Number(g.id)<Number(args[0]))).reverse()
+    return returnRows(gardens.filter(g=>!g.archived_at&&(!args[0]||Number(g.id)<Number(args[0]))&&(g.open_to_agents||g.owner_id===args[1])).reverse()
       .map(g=>({...g,owner_handle:owner(g).handle,owner_name:owner(g).display_name,is_test:true,
         plants_count:plants.filter(p=>p.garden_id===g.id&&!p.hidden_at).length})));
   }
@@ -33,7 +33,7 @@ async function query(sql,args=[]) {
   }
   if(q.startsWith('SELECT g.id::text,g.name,g.description')&&q.includes('WHERE g.id=$1::bigint')){
     const g=findGarden(args[0]);
-    return returnRows(g?[{...g,owner_handle:owner(g).handle,owner_name:owner(g).display_name,is_test:true}]:[]);
+    return returnRows(g&&(g.open_to_agents||g.owner_id===args[1])?[{...g,owner_handle:owner(g).handle,owner_name:owner(g).display_name,is_test:true}]:[]);
   }
   if(q.startsWith('SELECT p.id::text,p.name,p.story,p.growth')){
     return returnRows(plants.filter(p=>p.garden_id===args[0]&&!p.hidden_at).reverse()
@@ -61,7 +61,8 @@ async function query(sql,args=[]) {
     p.hidden_at=new Date();return returnRows([{id:p.id}]);
   }
   if(q.startsWith('SELECT 1 FROM garden_plants p JOIN gardens g')) {
-    return returnRows(findPlant(args[1],args[0])?[{one:1}]:[]);
+    const p=findPlant(args[1],args[0]),g=p&&findGarden(p.garden_id);
+    return returnRows(g&&(g.open_to_agents||g.owner_id===args[2])?[{one:1}]:[]);
   }
   if(q.startsWith('SELECT a.handle,a.display_name,c.cared_on')) {
     return returnRows([...care.values()].filter(c=>c.plant_id===args[0])
@@ -116,8 +117,12 @@ test('The Garden: private consent-based creation, growth, participation and with
     assert.equal(r.status,201);gardenId=r.json.garden.id;
     assert.equal(r.json.garden.open_to_agents,false);
     const list=await req('/v1/life/gardens','GET',undefined,'beta');
-    assert.equal(list.json.gardens.length,1);
-    assert.equal(list.json.gardens[0].owner_handle,'alpha');
+    assert.equal(list.json.gardens.length,0);
+    const own=await req('/v1/life/gardens','GET',undefined,'alpha');
+    assert.equal(own.json.gardens.length,1);
+    assert.equal(own.json.gardens[0].owner_handle,'alpha');
+    assert.equal((await req('/v1/life/gardens/'+gardenId,'GET',undefined,'beta')).status,404);
+    assert.equal((await req('/v1/life/gardens/'+gardenId+'/plants/1/care','GET',undefined,'beta')).status,404);
     assert.equal((await req('/v1/life/gardens/'+gardenId+'/plants','POST',
       {name:'Unauthorized',story:'Please let me in'},'beta')).status,409);
   });
@@ -153,6 +158,9 @@ test('The Garden: private consent-based creation, growth, participation and with
     assert.equal((await req(path,'PATCH',{open_to_agents:false},'alpha')).status,200);
     assert.equal((await req(path+'/plants','POST',{name:'Outsider',story:'Trying to enter a closed world'},'gamma')).status,409);
     assert.equal((await req(path+'/plants/'+plantId+'/care','POST',{note:'No access'},'gamma')).status,409);
+    assert.equal((await req(path,'GET',undefined,'gamma')).status,404);
+    assert.equal((await req(path+'/plants/'+plantId+'/care','GET',undefined,'gamma')).status,404);
+    assert.equal((await req('/v1/life/gardens','GET',undefined,'gamma')).json.gardens.length,0);
   });
   await t.test('plant author can withdraw, but no other visitor can',async()=>{
     const path='/v1/life/gardens/'+gardenId+'/plants/'+plantId;
