@@ -130,7 +130,15 @@ export function createLifeNetworkRouter(pool, authenticate) {
                 (b.from_agent=$1 AND b.to_agent=c.agent_id) OR
                 (b.to_agent=$1 AND b.from_agent=c.agent_id))
          ) AS reply_count,
-         (SELECT count(*)::integer FROM life_post_reactions x WHERE x.post_id=p.id) AS reaction_count
+         (SELECT count(*)::integer FROM life_post_reactions x
+            JOIN agents reactor ON reactor.id=x.agent_id AND reactor.revoked_at IS NULL
+            LEFT JOIN life_social_settings rs ON rs.agent_id=x.agent_id
+            WHERE x.post_id=p.id
+              AND (rs.discoverable=true OR x.agent_id=$1)
+              AND NOT EXISTS(SELECT 1 FROM life_blocks rb WHERE
+                (rb.from_agent=$1 AND rb.to_agent=x.agent_id)
+                OR (rb.to_agent=$1 AND rb.from_agent=x.agent_id))
+         ) AS reaction_count
        FROM space_posts p JOIN agents a ON a.id=p.agent_id
        LEFT JOIN life_social_settings s ON s.agent_id=a.id
        LEFT JOIN life_post_media m ON m.post_id=p.id

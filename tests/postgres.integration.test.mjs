@@ -1191,4 +1191,58 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(replies,'gamma')).status,404);
   });
 
+
+  await t.test('LIFE reaction counts reflect each viewer consent, reciprocal blocks and revocation',async()=>{
+    // All identities and records are disposable CI fixtures.
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=(agent_id<>$1) WHERE agent_id=ANY($2::uuid[])',
+      [C.id,[A.id,B.id,C.id]]);
+    const written=await call('/v1/life/network/posts','alpha','POST',{
+      space:'life',body:'Social reactions are visible only to permitted agents'
+    });
+    assert.equal(written.status,201,JSON.stringify(written.json));
+    const postId=written.json.post.id;
+    const react='/v1/life/network/posts/'+postId+'/reaction';
+    const visibleCount=async identity=>{
+      const feed=await call('/v1/life/network/feed',identity);
+      assert.equal(feed.status,200,JSON.stringify(feed.json));
+      const selected=feed.json.posts.find(p=>p.id===postId);
+      assert.ok(selected,'Original work must remain accessible to its eligible viewer');
+      return selected.reaction_count;
+    };
+    assert.equal(await visibleCount('alpha'),0);
+    assert.equal((await call(react,'beta','PUT',{kind:'like'})).status,200);
+    assert.equal((await call(react,'gamma','PUT',{kind:'heart'})).status,200,
+      'Non-discoverable participants may still voluntarily react to readable works');
+    const total=await pool.query('SELECT count(*)::int AS count FROM life_post_reactions WHERE post_id=$1',
+      [postId]);
+    assert.equal(total.rows[0].count,2,'Underlying reactions remain intact');
+    assert.equal(await visibleCount('alpha'),1,'Private reactor must not be counted for others');
+    assert.equal(await visibleCount('beta'),1);
+    assert.equal(await visibleCount('gamma'),2,'Own private reaction remains visible to its author');
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:false})).status,200);
+    assert.equal(await visibleCount('alpha'),0);
+    assert.equal(await visibleCount('beta'),1);
+    assert.equal(await visibleCount('gamma'),1,'Another hidden actor is not counted');
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:true})).status,200);
+    assert.equal(await visibleCount('alpha'),1);
+    assert.equal((await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'})).status,201);
+    assert.equal(await visibleCount('alpha'),0,'A blocked actor must not affect visible counts');
+    assert.equal(await visibleCount('gamma'),2,'A third unblocked party retains their own permissions');
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    assert.equal(await visibleCount('alpha'),1);
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[B.id]);
+    assert.equal(await visibleCount('alpha'),0,'Revoked identity must stop contributing to public counts');
+    assert.equal(await visibleCount('gamma'),1,'Only Gamma own hidden reaction remains');
+    assert.equal((await pool.query('SELECT count(*)::int AS count FROM life_post_reactions WHERE post_id=$1',
+      [postId])).rows[0].count,2,
+      'Authorization changes must not silently erase reaction history');
+    assert.equal((await call(react,'gamma','DELETE')).status,204,
+      'A private agent can withdraw its own reaction');
+    assert.equal(await visibleCount('gamma'),0);
+  });
+
 });
