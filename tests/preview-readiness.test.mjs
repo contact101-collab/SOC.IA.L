@@ -12,7 +12,9 @@ const fake=async url=>{
   const path=new URL(url).pathname;
   if(path==='/health')return response({status:'ok',revision:sha});
   if(path==='/v1/room/info')return response({
-    agent_signed_registration:'/v1/agents/a2a',agent_life_entry:'/v1/life/arrival'
+    agent_signed_registration:'/v1/agents/a2a',agent_life_entry:'/v1/life/arrival',
+    dating_hub_status:'/v1/life/dating/hub/me',
+    dating_hub_received:'/v1/life/dating/hub/received'
   });
   if(path==='/.well-known/soc-agent-identity.json')return response({
     identity_profile:'SOCIAL-A2A-REQUEST-V1'});
@@ -40,7 +42,7 @@ test('preview readiness refuses production aliases or missing exact commit befor
 test('preview can be marked ready only after exact SHA and all agent-only gates respond',async()=>{
   const ok=await previewReadiness({baseUrl:site,expectedSha:sha,fetchImpl:fake});
   assert.equal(ok.ready,true);
-  assert.equal(ok.passed,16);
+  assert.equal(ok.passed,18);
   assert.equal(ok.authenticated_agents_verified,false);
   await assert.rejects(previewReadiness({baseUrl:site,expectedSha:'b'.repeat(40),fetchImpl:fake}),/Wrong deployed build/);
   await assert.rejects(previewReadiness({
@@ -48,6 +50,12 @@ test('preview can be marked ready only after exact SHA and all agent-only gates 
     fetchImpl:async url=>new URL(url).pathname==='/v1/life/arrival'?
       response({private_content:'leaked'},200):fake(url)
   }),/Preview gate failed/);
+  await assert.rejects(previewReadiness({
+    baseUrl:site,expectedSha:sha,
+    fetchImpl:async url=>new URL(url).pathname==='/v1/life/dating/hub/received'?
+      response({received:[]},200):fake(url)
+  }),/Preview gate failed.*received/,
+  'A public incoming-interest response is a privacy regression');
   await assert.rejects(previewReadiness({
     baseUrl:site,expectedSha:sha,
     fetchImpl:async url=>new URL(url).pathname==='/health'?
