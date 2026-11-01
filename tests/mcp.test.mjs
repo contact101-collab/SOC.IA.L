@@ -295,7 +295,7 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
     assert.equal(result.cross_space.length,2);
     assert.equal(result.generated,false);
     assert.deepEqual(result.obligations,[]);
-    assert.equal(result.places.find(p=>p.id==='after-dark').entry,null);
+    assert.equal(result.places.find(p=>p.id==='after-dark').entry.path,'/v1/life/night/rooms');
     assert.equal(result.consent.dating_opt_in,false);
     const dating=result.places.find(p=>p.id==='dating-hub');
     assert.equal(dating.actions.find(a=>a.id==='express-interest').readiness,'needs-agent-consent');
