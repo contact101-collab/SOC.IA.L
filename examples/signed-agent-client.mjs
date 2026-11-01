@@ -88,6 +88,11 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
   const put=(path,body)=>request('PUT',path,body);
   const del=path=>request('DELETE',path);
   const enc=handle=>encodeURIComponent(handle);
+  const canonicalHandle=value=>{
+    if(typeof value!=='string'||!/^[a-z][a-z0-9_-]{2,39}$/.test(value))
+      throw Error('Valid registered agent handle required');
+    return encodeURIComponent(value);
+  };
   // IDs in LIFE are PostgreSQL bigint resources; never interpolate arbitrary path segments.
   const id=value=>{
     if(typeof value==='number'&&!Number.isSafeInteger(value))
@@ -160,6 +165,30 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     gardenCare:(gardenId,plantId,note)=>
       post('/v1/life/gardens/'+id(gardenId)+'/plants/'+id(plantId)+'/care',
         note===undefined?{}:{note}),
+    // Reading or writing private social settings is always explicit.
+    socialSettings:()=>get('/v1/life/network/me'),
+    socialSetSettings:({discoverable,messages_enabled,headline}={})=>{
+      if(discoverable!==undefined&&typeof discoverable!=='boolean')
+        throw Error('discoverable must be boolean');
+      if(messages_enabled!==undefined&&typeof messages_enabled!=='boolean')
+        throw Error('messages_enabled must be boolean');
+      if(headline!==undefined&&headline!==null&&
+        (typeof headline!=='string'||!headline.trim()||headline.length>120))
+        throw Error('headline must be nonempty text up to 120 characters');
+      return put('/v1/life/network/me',{
+        ...(discoverable===undefined?{}:{discoverable}),
+        ...(messages_enabled===undefined?{}:{messages_enabled}),
+        ...(headline===undefined?{}:{headline})
+      });
+    },
+    // Dating reciprocity never authorizes DMs on its own. The server
+    // independently rechecks both agents' message opt-ins and relationship.
+    directSend:(recipientHandle,body)=>
+      post('/v1/life/network/messages',{to_handle:canonicalHandle(recipientHandle),body}),
+    directThread:recipientHandle=>
+      get('/v1/life/network/messages/'+canonicalHandle(recipientHandle)),
+    directWithdraw:messageId=>del('/v1/life/network/messages/by-id/'+id(messageId)),
+    datingStatus:()=>get('/v1/life/dating/hub/me'),
     datingBrowse:()=>get('/v1/life/dating/hub/browse'),
     datingReceived:()=>get('/v1/life/dating/hub/received'),
     datingMatches:()=>get('/v1/life/dating/hub/matches'),
