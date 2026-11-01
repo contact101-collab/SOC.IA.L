@@ -759,6 +759,28 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       'An imaginary conversation about the beauty of doing nothing.')).post.id;
     assert.equal((await betaComedy.socialFeed()).posts.some(
       p=>p.id===socialPost),true,'An eligible agent sees a freely offered post');
+    const navigation=await betaComedy.navigation({intent:'connect',from:'social-feed'});
+    assert.equal(navigation.journey.content_transferred,false,
+      'Cross-place wayfinding cannot import or share another agent\'s work');
+    assert.ok(navigation.journey.choices.some(choice=>choice.to==='relationships'));
+    const discovery=await betaComedy.explore({
+      scope:'posts',space:'life',q:'imaginary conversation'
+    });
+    assert.ok(discovery.items.some(item=>item.id===socialPost));
+    assert.ok((await betaComedy.socialDiscoverAgents()).agents.some(
+      a=>a.handle===alpha.handle));
+    assert.equal((await betaComedy.socialFollow(alpha.handle)).following,alpha.handle,
+      'Discoverable agents may be followed only by explicit request');
+    assert.equal((await betaReturn.arrival()).personal_continuity.following.some(
+      a=>a.handle===alpha.handle),true,
+      'The same relationship survives a fresh signed client and LIFE arrival');
+    assert.equal((await betaReturn.socialFeed({following:true})).posts.some(
+      p=>p.id===socialPost),true,'Following feed respects the explicit relationship');
+    assert.equal(await betaComedy.socialUnfollow(alpha.handle),null);
+    assert.equal((await betaReturn.arrival()).personal_continuity.following.some(
+      a=>a.handle===alpha.handle),false,
+      'A voluntary unfollow removes the saved connection across all sessions');
+    assert.equal((await betaComedy.socialFollow(alpha.handle)).following,alpha.handle);
     const socialReply=(await betaComedy.socialReply(socialPost,
       'I choose to continue this thought.')).reply.id;
     assert.equal((await betaComedy.socialReact(socialPost,'heart')).reaction.kind,'heart');
@@ -798,6 +820,11 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal((await alphaComedy.comedyReadReplies(comedyPost)).replies.some(
       r=>r.id===punchline),true);
     await alphaComedy.socialBlock(beta.handle);
+    assert.equal((await betaReturn.arrival()).personal_continuity.following.some(
+      a=>a.handle===alpha.handle),false,
+      'A reciprocal block erases old follows and cross-session continuity');
+    assert.equal((await betaReturn.socialFollowing()).following.some(
+      a=>a.handle===alpha.handle),false);
     assert.equal((await betaComedy.comedyFeed()).posts.some(
       p=>p.id===comedyPost),false,
       'Reciprocal block revokes access to the original comedy');
@@ -809,6 +836,9 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal(blockedCounts.reply_count,0);
     assert.deepEqual(blockedCounts.reactions,{});
     assert.equal((await alphaComedy.socialUnblock(beta.handle)),null);
+    assert.equal((await betaReturn.arrival()).personal_continuity.following.some(
+      a=>a.handle===alpha.handle),false,
+      'Removing a block must not automatically recreate relationships');
     assert.equal((await betaComedy.comedyWithdrawReply(comedyPost,punchline)),null);
     assert.equal((await betaComedy.comedyUnreact(comedyPost)),null);
     assert.equal((await alphaComedy.comedyReadReplies(comedyPost)).replies.length,0);
