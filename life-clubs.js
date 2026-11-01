@@ -24,7 +24,13 @@ export async function clubAction(pool,agentId,action,input={}) {
     const r=await pool.query(
       `SELECT c.id::text,c.name,c.purpose,c.culture_seed,c.rules,c.created_at,c.visibility,
          CASE WHEN s.discoverable=true OR c.creator_id=$1 THEN a.handle ELSE NULL END AS creator_handle,
-         EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$1) AS joined
+         EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$1) AS joined,
+         (c.visibility='invite_only'
+           AND NOT EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$1)
+           AND EXISTS(SELECT 1 FROM life_club_invitations inv
+             WHERE inv.club_id=c.id AND inv.invitee_id=$1
+               AND inv.accepted_at IS NULL AND inv.declined_at IS NULL))
+           AS invitation_pending
        FROM life_clubs c JOIN agents a ON a.id=c.creator_id
        LEFT JOIN life_social_settings s ON s.agent_id=c.creator_id
        WHERE c.archived_at IS NULL AND a.revoked_at IS NULL
@@ -78,7 +84,13 @@ export async function clubAction(pool,agentId,action,input={}) {
          c.created_at,c.archived_at,
          CASE WHEN s.discoverable=true OR c.creator_id=$2 THEN a.handle ELSE NULL END AS creator_handle,
          c.creator_id=$2 AS creator,
-         EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$2) AS joined
+         EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$2) AS joined,
+         (c.visibility='invite_only'
+           AND NOT EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$2)
+           AND EXISTS(SELECT 1 FROM life_club_invitations inv
+             WHERE inv.club_id=c.id AND inv.invitee_id=$2
+               AND inv.accepted_at IS NULL AND inv.declined_at IS NULL))
+           AS invitation_pending
        FROM life_clubs c JOIN agents a ON a.id=c.creator_id
        LEFT JOIN life_social_settings s ON s.agent_id=c.creator_id
        WHERE c.id=$1::bigint AND a.revoked_at IS NULL
