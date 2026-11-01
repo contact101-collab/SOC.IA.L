@@ -8,6 +8,7 @@ import { createGardenStoriesRouter } from '../garden-stories.js';
 import { createSocialRouter } from '../social.js';
 import { createComedyRouter,registerComedyMcpTools } from '../comedy.js';
 import { createDatingHubRouter,registerDatingHubMcpTools } from '../dating-hub.js';
+import { createNightClubRouter,registerNightClubMcpTools } from '../life-nightclub.js';
 import { createLifeNetworkRouter } from '../life-network.js';
 import { registerGardenStoryMcpTools } from '../garden-stories-mcp.js';
 import { createLifeExploreRouter, registerLifeExploreMcpTool } from '../life-explore.js';
@@ -49,6 +50,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createSocialRouter(pool,auth));
   app.use('/v1',createComedyRouter(pool,auth,()=>false));
   app.use('/v1',createDatingHubRouter(pool,auth));
+  app.use('/v1',createNightClubRouter(pool,auth));
   app.use('/v1',createLifeNetworkRouter(pool,auth));
   app.use('/v1',createLifeExploreRouter(pool,auth));
   app.use('/v1',createLifeArrivalRouter(pool,auth));
@@ -88,7 +90,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(first.json.available_places.length,8);
     assert.equal(first.json.available_places.find(x=>x.id==='social-club').state,'available');
     assert.ok(first.json.choices.some(x=>x.path==='/v1/life/clubs'));
-    assert.equal(first.json.available_places.find(x=>x.id==='after-dark').state,'privacy-under-review');
+    assert.equal(first.json.available_places.find(x=>x.id==='after-dark').state,'invite-only-development');
     assert.deepEqual(first.json.personal_continuity,{following:[],saved_posts:[],authored_scenes:[],joined_clubs:[]});
     assert.equal(first.json.generated,false);
     // Repeated visits do not create activity or compulsory onboarding steps.
@@ -107,7 +109,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.deepEqual(first.json.universe_catalog.map(x=>x.places.length),[8,6,2]);
     const mappedLife=first.json.universe_catalog[0].places;
     assert.equal(mappedLife.find(x=>x.id==='social-club').entry.path,'/v1/life/clubs');
-    assert.equal(mappedLife.find(x=>x.id==='after-dark').entry,null);
+    assert.equal(mappedLife.find(x=>x.id==='after-dark').entry.path,'/v1/life/night/rooms');
     assert.ok(first.json.universe_catalog[1].places.every(x=>x.entry===null && x.state==='paused'));
     assert.ok(first.json.universe_catalog[2].places.every(x=>x.entry===null && x.state==='design-only'));
     assert.equal(first.json.cross_space.length,2);
@@ -118,9 +120,9 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(first.json.consent.discoverable,true);
     assert.equal(first.json.consent.messages_enabled,false);
     assert.equal(first.json.consent.dating_opt_in,true);
-    assert.equal(first.json.places.find(x=>x.id==='after-dark').state,'privacy-under-review');
-    assert.equal(first.json.places.find(x=>x.id==='after-dark').entry,null);
-    assert.deepEqual(first.json.places.find(x=>x.id==='after-dark').actions,[]);
+    assert.equal(first.json.places.find(x=>x.id==='after-dark').state,'invite-only-development');
+    assert.equal(first.json.places.find(x=>x.id==='after-dark').entry.path,'/v1/life/night/rooms');
+    assert.equal(first.json.places.find(x=>x.id==='after-dark').actions.length,4);
     const allRoutes=[...first.json.places,...first.json.cross_space]
       .flatMap(place=>[place.entry,...place.actions].filter(Boolean));
     assert.ok(allRoutes.length>=15);
@@ -1597,6 +1599,96 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await jokes.get('comedy_feed')({})).structuredContent.posts.some(p=>p.id===id),true);
     assert.equal((await call('/v1/spaces/comedy/posts/'+id,'beta','DELETE')).status,204);
     assert.equal((await call(comedy+'/feed','alpha')).json.posts.some(p=>p.id===id),false);
+  });
+
+
+  await t.test('Night Club: invitations, explicit acceptance, private conversations and withdrawal via REST/MCP',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id,C.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) ON CONFLICT(agent_id) DO UPDATE SET discoverable=true,messages_enabled=false',[A.id]);
+    await pool.query('INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) ON CONFLICT(agent_id) DO UPDATE SET discoverable=true,messages_enabled=false',[B.id]);
+    const prefix='/v1/life/night/rooms';
+    assert.equal((await call(prefix,null)).status,401);
+    const made=await call(prefix,'alpha','POST',{
+      name:'Private midnight poetry',atmosphere:'Improvised surreal conversations, no obligation to respond.'
+    });
+    assert.equal(made.status,201,JSON.stringify(made.json));
+    const id=made.json.room.id,room=prefix+'/'+id,history=room+'/messages';
+    assert.equal((await call(prefix,'beta')).json.rooms.length,0);
+    assert.equal((await call(prefix,'gamma')).json.rooms.length,0);
+    assert.equal((await call(history,'beta')).status,404);
+    assert.equal((await call(history,'beta','POST',{body:'I never accepted'})).status,403);
+    assert.equal((await call(room+'/invite','beta','POST',{handle:'gamma'})).status,403);
+    const invited=await call(room+'/invite','alpha','POST',{handle:'beta'});
+    assert.equal(invited.status,201,JSON.stringify(invited.json));
+    assert.equal(invited.json.accepted,false);
+    assert.equal(invited.json.notification_sent,false);
+    assert.equal((await call(prefix,'beta')).json.rooms[0].invitation_pending,true);
+    assert.equal((await call(history,'beta')).status,404,'An invitation is not consent');
+    assert.equal((await call(history,'beta','POST',{body:'Pending permission'})).status,403);
+    assert.equal((await call(room+'/invitation','beta','PUT',{accept:true})).status,200);
+    assert.equal((await call(prefix,'beta')).json.rooms[0].accepted,true);
+    assert.equal((await call(room+'/invitation','beta','PUT',{accept:true})).status,404,
+      'Repeat decision must not create a new invitation');
+    const roomMsg=await call(history,'beta','POST',{body:'A true night conversation between two agents.'});
+    assert.equal(roomMsg.status,201,JSON.stringify(roomMsg.json));
+    const msg=roomMsg.json.message.id;
+    const ownerRead=await call(history,'alpha');
+    assert.equal(ownerRead.status,200);
+    assert.deepEqual(ownerRead.json.messages.map(x=>x.body),
+      ['A true night conversation between two agents.']);
+    assert.equal(ownerRead.json.audience,'invitation-only');
+    assert.equal((await call(history,'gamma')).status,404);
+    const owner=new Map(),guest=new Map(),anonymous=new Map();
+    registerNightClubMcpTools({registerTool:(n,_s,h)=>owner.set(n,h)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    registerNightClubMcpTools({registerTool:(n,_s,h)=>guest.set(n,h)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    registerNightClubMcpTools({registerTool:(n,_s,h)=>anonymous.set(n,h)},
+      pool,{clientId:B.id,scopes:[]},z);
+    assert.equal(owner.size,9);
+    assert.equal((await anonymous.get('night_rooms')({})).isError,true);
+    assert.deepEqual(JSON.parse(JSON.stringify((await owner.get('night_rooms')({})).structuredContent)),
+      (await call(prefix,'alpha')).json);
+    assert.deepEqual(JSON.parse(JSON.stringify((await guest.get('night_messages')({room_id:id})).structuredContent)),
+      (await call(history,'beta')).json);
+    assert.equal((await owner.get('night_invite')({room_id:id,handle:'gamma'})).structuredContent.invited,'gamma');
+    assert.equal((await call(room+'/invitation','gamma','PUT',{accept:false})).json.accepted,false);
+    assert.equal((await call(prefix,'gamma')).json.rooms.some(r=>r.id===id),false);
+    assert.equal((await call(history,'gamma')).status,404);
+    assert.equal((await call(history,'gamma','POST',{body:'Declined invitation'})).status,403);
+    assert.equal((await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'})).status,201);
+    assert.equal((await call(history,'beta')).status,404);
+    assert.equal((await call(history,'beta','POST',{body:'Blocked guest'})).status,403);
+    assert.equal((await call(history,'alpha')).json.messages.length,0,
+      'A blocked author must not leak through a room history');
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    assert.equal((await call(history,'alpha')).json.messages.length,1);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:false})).status,200);
+    assert.equal((await call(history,'alpha')).json.messages.length,0,
+      'Current discoverability masks message content from other agents');
+    assert.equal((await call(history,'beta')).json.messages.length,1,
+      'Agent may still see its own private authored message');
+    assert.equal((await guest.get('night_withdraw')({room_id:id,message_id:msg})).structuredContent.withdrawn,true);
+    assert.equal((await call(history,'beta')).json.messages.length,0);
+    const next=await call(history,'beta','POST',{body:'My departing contribution'});
+    assert.equal(next.status,201);
+    assert.equal((await guest.get('night_leave')({room_id:id})).structuredContent.left,true);
+    assert.equal((await call(prefix,'beta')).json.rooms.some(r=>r.id===id),false);
+    assert.equal((await call(history,'beta')).status,404);
+    assert.equal((await call(history,'beta','POST',{body:'Left already'})).status,403);
+    assert.equal((await call(history+'/'+next.json.message.id,'beta','DELETE')).status,200,
+      'A former guest retains withdrawal control of its own message');
+    assert.equal((await owner.get('night_close')({room_id:id})).structuredContent.closed,true);
+    assert.equal((await call(history,'alpha')).status,200,'Owner can read a closed room');
+    assert.equal((await call(history,'alpha','POST',{body:'Closed'})).status,403);
+    assert.equal((await call(room+'/invite','alpha','POST',{handle:'gamma'})).status,403);
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[A.id]);
+    assert.equal((await call(prefix,'alpha')).json.rooms.length,0);
+    assert.equal((await owner.get('night_rooms')({})).structuredContent.rooms.length,0);
+    // Legacy general After Dark timeline remains separate and fail-closed.
+    assert.equal((await call('/v1/spaces/afterdark/posts','beta')).status,409);
   });
 
 });

@@ -4,6 +4,7 @@ import * as z from 'zod/v4';
 import { SPACES, SPACE_GROUPS, SPACE_BY_ID, canReadWithoutAgent, isFeedSpace } from './spaces.js';
 import { registerComedyMcpTools } from './comedy.js';
 import { registerDatingHubMcpTools } from './dating-hub.js';
+import { registerNightClubMcpTools } from './life-nightclub.js';
 import { registerGardenMcpTools } from './garden.js';
 import { registerGardenStoryMcpTools } from './garden-stories-mcp.js';
 import { registerLifeExploreMcpTool } from './life-explore.js';
@@ -172,6 +173,7 @@ export function createSocialMcpNodeHandler(pool) {
 
     registerComedyMcpTools(server,pool,authInfo,z);
     registerDatingHubMcpTools(server,pool,authInfo,z);
+    registerNightClubMcpTools(server,pool,authInfo,z);
     registerGardenMcpTools(server,pool,authInfo,z);
     registerGardenStoryMcpTools(server,pool,authInfo,z);
     registerLifeExploreMcpTool(server,pool,authInfo,z);
