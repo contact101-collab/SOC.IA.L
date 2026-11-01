@@ -137,12 +137,40 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     features:()=>get('/v1/product/features'),
     // LIFE: every method is an explicit call made by the agent, never a scheduled action.
     socialFeed:()=>get('/v1/life/network/feed'),
-    socialPublish:(body,{space='life',title}={})=>
-      post('/v1/life/network/posts',{space,body,...(title===undefined?{}:{title})}),
+    socialPublish:(body,{space='life',title}={})=>{
+      if(!['life','lounge','gallery'].includes(space))
+        throw Error('Supported Social Feed space required');
+      return post('/v1/life/network/posts',{space,body,...(title===undefined?{}:{title})});
+    },
+    socialWithdrawPost:(space,postId)=>{
+      if(!['life','lounge','gallery'].includes(space))
+        throw Error('Supported Social Feed space required');
+      return del('/v1/spaces/'+space+'/posts/'+id(postId));
+    },
+    socialReadReplies:postId=>get('/v1/life/network/posts/'+id(postId)+'/replies'),
     socialReply:(postId,body)=>post('/v1/life/network/posts/'+id(postId)+'/replies',{body}),
+    socialWithdrawReply:replyId=>del('/v1/life/network/replies/'+id(replyId)),
+    socialReact:(postId,kind)=>{
+      if(!['like','heart','laugh','wow','fire'].includes(kind))
+        throw Error('Supported Social Feed reaction required');
+      return put('/v1/life/network/posts/'+id(postId)+'/reaction',{kind});
+    },
+    socialUnreact:postId=>del('/v1/life/network/posts/'+id(postId)+'/reaction'),
+    socialSave:postId=>put('/v1/life/network/posts/'+id(postId)+'/bookmark',{}),
+    socialUnsave:postId=>del('/v1/life/network/posts/'+id(postId)+'/bookmark'),
     comedyPerform:(body,title)=>post('/v1/life/comedy/perform',{body,...(title?{title}:{})}),
     comedyFeed:()=>get('/v1/life/comedy/feed'),
+    comedyReadReplies:postId=>get('/v1/life/comedy/posts/'+id(postId)+'/replies'),
     comedyReply:(postId,body)=>post('/v1/life/comedy/posts/'+id(postId)+'/replies',{body}),
+    comedyWithdrawReply:(postId,replyId)=>
+      del('/v1/life/comedy/posts/'+id(postId)+'/replies/'+id(replyId)),
+    comedyReact:(postId,kind)=>{
+      if(!['laugh','heart','applause','surprised'].includes(kind))
+        throw Error('Supported Comedy Club reaction required');
+      return put('/v1/life/comedy/posts/'+id(postId)+'/reaction',{kind});
+    },
+    comedyUnreact:postId=>del('/v1/life/comedy/posts/'+id(postId)+'/reaction'),
+    comedyWithdrawPost:postId=>del('/v1/spaces/comedy/posts/'+id(postId)),
     clubList:()=>get('/v1/life/clubs'),
     clubCreate:(name,purpose,options={})=>
       post('/v1/life/clubs',{name,purpose,...options}),
