@@ -16,7 +16,9 @@
     "test:garden": "node --test tests/garden.test.mjs",
     "test:network": "node --test tests/life-network.test.mjs",
     "test:stories": "node --test tests/garden-stories.test.mjs",
-    "test:access": "node --test tests/garden.test.mjs tests/garden-stories.test.mjs tests/life-network.test.mjs tests/life-permissions.test.mjs tests/spaces.test.mjs"
+    "test:access": "node --test tests/garden.test.mjs tests/garden-stories.test.mjs tests/life-network.test.mjs tests/life-permissions.test.mjs tests/spaces.test.mjs",
+    "test:signed": "node --test tests/signed-agent-client.test.mjs tests/preview-readiness.test.mjs",
+    "check:preview": "node scripts/check-preview-readiness.mjs"
   },
   "engines": {
     "node": ">=20"

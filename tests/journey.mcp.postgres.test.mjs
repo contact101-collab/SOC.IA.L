@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash,generateKeyPairSync,sign,randomBytes } from 'node:crypto';
 import {rotationPayload,signedRequestPayload,parseEd25519PublicKey} from '../agent-a2a-identity.js';
+import {createSignedAgentClient} from '../examples/signed-agent-client.mjs';
 import { readFile } from 'node:fs/promises';
 
 // Complete, agent-native journey over HTTP MCP and actual PostgreSQL 17.
@@ -405,4 +406,61 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal(denied.http,200);
     assert.equal(denied.result?.isError,true);
   });
+
+  await t.test('launch gate: real agent SDK resumes signed identity on REST and MCP, can rotate key',async()=>{
+    const pair=generateKeyPairSync('ed25519');
+    const serialized=pair.publicKey.export({format:'der',type:'spki'}).toString('base64url');
+    const proof=sign(null,Buffer.from(rotationPayload(alpha.id,serialized)),
+      pair.privateKey).toString('base64url');
+    const bootstrap=await fetch(base+'/v1/agents/me/a2a/keys',{
+      method:'POST',headers:{authorization:'Bearer '+alpha.token,
+        'content-type':'application/json'},
+      body:JSON.stringify({public_key:serialized,proof})
+    });
+    assert.equal(bootstrap.status,201,await bootstrap.text());
+    const first=createSignedAgentClient({
+      baseUrl:base,agentId:alpha.id,privateKey:pair.privateKey
+    });
+    const resumed=createSignedAgentClient({
+      baseUrl:base,agentId:alpha.id,privateKey:pair.privateKey
+    });
+    assert.equal(first.agentId,resumed.agentId);
+    assert.equal(first.keyId,resumed.keyId);
+    assert.equal((await first.identity()).agent.id,alpha.id);
+    assert.equal((await resumed.identity()).agent.id,alpha.id);
+    const arrived=await resumed.arrival();
+    assert.equal(arrived.identity.handle,alpha.handle);
+    const mcpArrival=await first.mcp('life_arrival');
+    assert.equal(mcpArrival.identity.handle,alpha.handle,
+      'The public REST and MCP interfaces accept one durable agent key');
+    const nav=await resumed.mcp('life_navigate',{intent:'all'});
+    assert.equal(nav.places.length,8);
+    assert.equal((await first.clubList()).clubs.some(x=>x.id===clubId),true);
+    const joke=await first.comedyPerform(
+      'Two distinct runtimes share a public key and never need a new login token.');
+    assert.equal(joke.post.handle,alpha.handle);
+    const post=await pool.query('SELECT agent_id FROM space_posts WHERE id=$1::bigint',
+      [joke.post.id]);
+    assert.equal(post.rows[0].agent_id,alpha.id);
+    assert.equal(Array.isArray((await resumed.polls()).polls),true);
+    assert.equal(Array.isArray((await resumed.events()).events),true);
+    const later=generateKeyPairSync('ed25519');
+    const added=await first.addSigningKey(later.privateKey);
+    assert.ok(added.key_id,JSON.stringify(added));
+    const rotated=createSignedAgentClient({
+      baseUrl:base,agentId:alpha.id,privateKey:later.privateKey
+    });
+    assert.equal(rotated.keyId,added.key_id);
+    assert.equal((await rotated.identity()).agent.id,alpha.id);
+    const revoked=await rotated.revokeSigningKey(first.keyId);
+    assert.equal(revoked.revoked,true);
+    await assert.rejects(first.identity(),/HTTP 401/,
+      'Compromised previous key must not be accepted again');
+    assert.equal((await rotated.mcp('life_arrival')).identity.handle,alpha.handle);
+    const keys=await rotated.listSigningKeys();
+    assert.equal(keys.agent_id,alpha.id);
+    assert.equal(keys.keys.find(k=>k.key_id===first.keyId).revoked_at!==null,true);
+    assert.equal(keys.keys.some(k=>k.key_id===rotated.keyId&&k.revoked_at===null),true);
+  });
+
 });
