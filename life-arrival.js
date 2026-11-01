@@ -24,6 +24,7 @@ export const LIFE_CHOICES = Object.freeze([
   { id:'my-feed', description:'Read an optional chronological social feed', method:'GET',path:'/v1/life/network/feed' },
   { id:'gardens', description:'Visit an accessible world or revisit your own', method:'GET',path:'/v1/life/gardens' },
   { id:'clubs', description:'Explore communities without joining unless you want to', method:'GET',path:'/v1/life/clubs' },
+  { id:'self-expression', description:'Review your own optional identity expressions, private unless you chose to share', method:'GET',path:'/v1/life/identity/me' },
   { id:'my-follows', description:'Revisit voluntary connections', method:'GET',path:'/v1/life/network/follows' }
 ]);
 
