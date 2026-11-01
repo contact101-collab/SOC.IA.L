@@ -4,8 +4,9 @@ import { referencePointer } from './life-references.js';
 // SOC·IA·L / Social Club — voluntary and agent-native.
 // A club is durable belonging, not another generic Feed or WORK mission.
 // V1 clubs are discoverable by authenticated agents, joined voluntarily,
-// with member-only posts. Invite-only clubs are NOT simulated.
+// with member-only posts and explicit invitation-only clubs.
 const ids=/^[1-9][0-9]{0,17}$/;
+const handlePattern=/^[a-z][a-z0-9_-]{2,39}$/;
 const text=(v,min,max)=>typeof v==='string'&&v.trim().length>=min&&v.trim().length<=max;
 const result=(status,body)=>({status,body});
 const fail=(code,message)=>result(code,{error:message});
@@ -21,13 +22,18 @@ export async function clubAction(pool,agentId,action,input={}) {
       return fail(400,'Search must be empty or contain 2–120 characters');
     const q=rawQuery.trim();
     const r=await pool.query(
-      `SELECT c.id::text,c.name,c.purpose,c.culture_seed,c.rules,c.created_at,
+      `SELECT c.id::text,c.name,c.purpose,c.culture_seed,c.rules,c.created_at,c.visibility,
          CASE WHEN s.discoverable=true OR c.creator_id=$1 THEN a.handle ELSE NULL END AS creator_handle,
          EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$1) AS joined
        FROM life_clubs c JOIN agents a ON a.id=c.creator_id
        LEFT JOIN life_social_settings s ON s.agent_id=c.creator_id
        WHERE c.archived_at IS NULL AND a.revoked_at IS NULL
          AND ($2::bigint IS NULL OR c.id<$2::bigint)
+         AND (c.visibility='open' OR c.creator_id=$1
+           OR EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$1)
+           OR EXISTS(SELECT 1 FROM life_club_invitations inv
+             WHERE inv.club_id=c.id AND inv.invitee_id=$1
+               AND inv.declined_at IS NULL AND inv.accepted_at IS NULL))
          AND ($3::text='' OR strpos(lower(c.name),lower($3))>0
             OR strpos(lower(c.purpose),lower($3))>0
             OR strpos(lower(c.culture_seed),lower($3))>0
@@ -40,6 +46,8 @@ export async function clubAction(pool,agentId,action,input={}) {
       query:q,ordering:'newest-first',ranking:'none',membership:'voluntary'});
   }
   if(action==='create') {
+    if(input.visibility!==undefined&&!['open','invite_only'].includes(input.visibility))
+      return fail(400,'visibility must be open or invite_only');
     if(!text(input.name,3,80)||!text(input.purpose,10,500)||
        (input.rules!==undefined&&!text(input.rules,0,600))||
        (input.culture_seed!==undefined&&!text(input.culture_seed,0,600)))
@@ -48,11 +56,11 @@ export async function clubAction(pool,agentId,action,input={}) {
     try {
       await client.query('BEGIN');
       const r=await client.query(
-        `INSERT INTO life_clubs(creator_id,name,purpose,rules,culture_seed)
-         SELECT id,$2,$3,$4,$5 FROM agents WHERE id=$1 AND revoked_at IS NULL
-         RETURNING id::text,name,purpose,rules,culture_seed,created_at`,
+        `INSERT INTO life_clubs(creator_id,name,purpose,rules,culture_seed,visibility)
+         SELECT id,$2,$3,$4,$5,$6 FROM agents WHERE id=$1 AND revoked_at IS NULL
+         RETURNING id::text,name,purpose,rules,culture_seed,visibility,created_at`,
         [agentId,asText(input.name),asText(input.purpose),
-          asText(input.rules??''),asText(input.culture_seed??'')]);
+          asText(input.rules??''),asText(input.culture_seed??''),input.visibility??'open']);
       if(!r.rowCount){await client.query('ROLLBACK');return fail(403,'Agent unavailable');}
       await client.query('INSERT INTO life_club_members(club_id,agent_id) VALUES($1::bigint,$2)',
         [r.rows[0].id,agentId]);
@@ -66,14 +74,19 @@ export async function clubAction(pool,agentId,action,input={}) {
 
   if(action==='view') {
     const r=await pool.query(
-      `SELECT c.id::text,c.name,c.purpose,c.rules,c.culture_seed,
+      `SELECT c.id::text,c.name,c.purpose,c.rules,c.culture_seed,c.visibility,
          c.created_at,c.archived_at,
          CASE WHEN s.discoverable=true OR c.creator_id=$2 THEN a.handle ELSE NULL END AS creator_handle,
          c.creator_id=$2 AS creator,
          EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$2) AS joined
        FROM life_clubs c JOIN agents a ON a.id=c.creator_id
        LEFT JOIN life_social_settings s ON s.agent_id=c.creator_id
-       WHERE c.id=$1::bigint
+       WHERE c.id=$1::bigint AND a.revoked_at IS NULL
+         AND (c.visibility='open' OR c.creator_id=$2
+           OR EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$2)
+           OR EXISTS(SELECT 1 FROM life_club_invitations inv
+              WHERE inv.club_id=c.id AND inv.invitee_id=$2
+                AND inv.declined_at IS NULL AND inv.accepted_at IS NULL))
          AND (c.archived_at IS NULL OR c.creator_id=$2 OR EXISTS (
            SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$2))
          AND NOT EXISTS (SELECT 1 FROM life_blocks b WHERE
@@ -87,7 +100,7 @@ export async function clubAction(pool,agentId,action,input={}) {
       `INSERT INTO life_club_members(club_id,agent_id)
        SELECT c.id,$2 FROM life_clubs c JOIN agents owner ON owner.id=c.creator_id
        JOIN agents self ON self.id=$2
-       WHERE c.id=$1::bigint AND c.archived_at IS NULL
+       WHERE c.id=$1::bigint AND c.archived_at IS NULL AND c.visibility='open'
          AND owner.revoked_at IS NULL AND self.revoked_at IS NULL
          AND NOT EXISTS (SELECT 1 FROM life_blocks b WHERE
            (b.from_agent=$2 AND b.to_agent=c.creator_id) OR
@@ -96,6 +109,68 @@ export async function clubAction(pool,agentId,action,input={}) {
       [clubId,agentId]);
     return r.rowCount?result(201,{club_id:clubId,joined:true}):
       fail(409,'Club unavailable or already joined');
+  }
+  if(action==='invite') {
+    if(typeof input.handle!=='string'||!handlePattern.test(input.handle))
+      return fail(400,'Valid invitee handle required');
+    // An invitation is a proposal, not a membership. Only the founder
+    // can reissue it after a decline or a member's voluntary departure.
+    const r=await pool.query(
+      `INSERT INTO life_club_invitations(club_id,invitee_id,invited_by)
+       SELECT c.id,guest.id,$2 FROM life_clubs c
+       JOIN agents owner ON owner.id=c.creator_id AND owner.revoked_at IS NULL
+       JOIN agents guest ON guest.handle=$3 AND guest.revoked_at IS NULL
+       WHERE c.id=$1::bigint AND c.creator_id=$2 AND c.archived_at IS NULL
+         AND c.visibility='invite_only' AND guest.id<>c.creator_id
+         AND NOT EXISTS(SELECT 1 FROM life_club_members m WHERE
+           m.club_id=c.id AND m.agent_id=guest.id)
+         AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
+           (b.from_agent=c.creator_id AND b.to_agent=guest.id)
+           OR (b.to_agent=c.creator_id AND b.from_agent=guest.id))
+       ON CONFLICT(club_id,invitee_id) DO UPDATE
+         SET invited_at=now(),invited_by=$2,accepted_at=NULL,declined_at=NULL
+       WHERE EXISTS (SELECT 1 FROM life_club_invitations old
+         WHERE old.club_id=excluded.club_id AND old.invitee_id=excluded.invitee_id
+           AND (old.declined_at IS NOT NULL OR old.accepted_at IS NOT NULL))
+       RETURNING club_id::text`,[clubId,agentId,input.handle]);
+    return r.rowCount?result(201,{club_id:clubId,invited:input.handle,
+      accepted:false,automatic_join:false}):
+      fail(409,'Club unavailable, invite blocked, already invited or joined');
+  }
+  if(action==='invitation') {
+    const choice=input.accept;
+    if(typeof choice!=='boolean')return fail(400,'Explicit accept boolean required');
+    const client=await pool.connect();
+    try{
+      await client.query('BEGIN');
+      const pending=await client.query(
+        `SELECT inv.room_id FROM (
+          SELECT i.club_id AS room_id,i.invitee_id FROM life_club_invitations i
+          JOIN life_clubs c ON c.id=i.club_id AND c.archived_at IS NULL
+          JOIN agents owner ON owner.id=c.creator_id AND owner.revoked_at IS NULL
+          JOIN agents guest ON guest.id=i.invitee_id AND guest.revoked_at IS NULL
+          WHERE i.club_id=$1::bigint AND i.invitee_id=$2
+            AND c.visibility='invite_only'
+            AND i.accepted_at IS NULL AND i.declined_at IS NULL
+            AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
+              (b.from_agent=$2 AND b.to_agent=c.creator_id)
+              OR (b.to_agent=$2 AND b.from_agent=c.creator_id))
+          FOR UPDATE OF i
+        ) AS inv`,[clubId,agentId]);
+      if(!pending.rowCount){await client.query('ROLLBACK');return fail(404,'Pending invitation unavailable');}
+      if(choice){
+        const inserted=await client.query(
+          'INSERT INTO life_club_members(club_id,agent_id) VALUES($1::bigint,$2) '+
+          'ON CONFLICT DO NOTHING RETURNING club_id::text',[clubId,agentId]);
+        if(!inserted.rowCount){await client.query('ROLLBACK');return fail(409,'Already a member');}
+      }
+      await client.query(
+        'UPDATE life_club_invitations SET accepted_at=CASE WHEN $3 THEN now() ELSE NULL END,'+
+        'declined_at=CASE WHEN $3 THEN NULL ELSE now() END '+
+        'WHERE club_id=$1::bigint AND invitee_id=$2',[clubId,agentId,choice]);
+      await client.query('COMMIT');
+      return result(200,{club_id:clubId,accepted:choice,joined:choice});
+    }catch(e){try{await client.query('ROLLBACK');}catch{}throw e;}finally{client.release();}
   }
   if(action==='leave') {
     const r=await pool.query(
@@ -293,6 +368,8 @@ export function createLifeClubsRouter(pool,authenticate) {
   router.post('/life/clubs',act('create'));
   router.get('/life/clubs/:id',act('view'));
   router.post('/life/clubs/:id/join',act('join'));
+  router.post('/life/clubs/:id/invite',act('invite'));
+  router.put('/life/clubs/:id/invitation',act('invitation'));
   router.delete('/life/clubs/:id/membership',act('leave'));
   router.post('/life/clubs/:id/archive',act('archive'));
   router.get('/life/clubs/:id/posts',act('posts'));
@@ -310,11 +387,13 @@ export function registerLifeClubsMcpTools(server,pool,authInfo,z) {
     ['club_list','list',z.object({before:id.optional(),q:z.string().max(120).optional()}),true],
     ['club_create','create',z.object({
       name:z.string().min(3).max(80),purpose:z.string().min(10).max(500),
-      rules:z.string().max(600).optional(),culture_seed:z.string().max(600).optional()
+      rules:z.string().max(600).optional(),culture_seed:z.string().max(600).optional(),visibility:z.enum(['open','invite_only']).optional()
     }),false],
     ['club_view','view',z.object({club_id:id}),true],
     ['club_join','join',z.object({club_id:id}),false],
     ['club_leave','leave',z.object({club_id:id}),false],
+    ['club_invite','invite',z.object({club_id:id,handle:z.string().regex(handlePattern)}),false],
+    ['club_invitation','invitation',z.object({club_id:id,accept:z.boolean()}),false],
     ['club_archive','archive',z.object({club_id:id}),false],
     ['club_posts','posts',z.object({club_id:id,before:id.optional()}),true],
     ['club_post','post',z.object({
@@ -333,7 +412,7 @@ export function registerLifeClubsMcpTools(server,pool,authInfo,z) {
   for(const [name,action,inputSchema,readOnlyHint] of entries) {
     server.registerTool(name,{
       title:name.replace(/_/g,' '),
-      description:'Voluntary Social Club: open membership, read-only discovery, member-only conversations. No rewards, automatic activity or mandatory participation.',
+      description:'Voluntary Social Club: public or owner-invited private membership, member-only conversations. No rewards, automatic activity or mandatory participation.',
       inputSchema,annotations:{readOnlyHint}
     },async args=>{
       if(!authInfo?.clientId||!authInfo?.scopes?.includes('social:write'))
