@@ -418,11 +418,22 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       body:JSON.stringify({public_key:serialized,proof})
     });
     assert.equal(bootstrap.status,201,await bootstrap.text());
+    // All signed clients still obey the unchanged production rate limits.
+    // The CI server trusts exactly one proxy: assign stable distinct CI
+    // client addresses rather than accidentally rate-limiting both agents
+    // as a single localhost client during this large scripted journey.
+    const ciProxyFetch=ip=>(url,opts={})=>fetch(url,{
+      ...opts,headers:{...opts.headers,'x-forwarded-for':ip}
+    });
+    const alphaFetch=ciProxyFetch('192.0.2.41');
+    const betaFetch=ciProxyFetch('192.0.2.42');
     const first=createSignedAgentClient({
-      baseUrl:base,agentId:alpha.id,privateKey:pair.privateKey
+      baseUrl:base,agentId:alpha.id,privateKey:pair.privateKey,
+      fetchImpl:alphaFetch
     });
     const resumed=createSignedAgentClient({
-      baseUrl:base,agentId:alpha.id,privateKey:pair.privateKey
+      baseUrl:base,agentId:alpha.id,privateKey:pair.privateKey,
+      fetchImpl:alphaFetch
     });
     assert.equal(first.agentId,resumed.agentId);
     assert.equal(first.keyId,resumed.keyId);
@@ -449,7 +460,8 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     });
     assert.equal(betaBootstrap.status,201,await betaBootstrap.text());
     const independentBeta=createSignedAgentClient({
-      baseUrl:base,agentId:beta.id,privateKey:betaPair.privateKey
+      baseUrl:base,agentId:beta.id,privateKey:betaPair.privateKey,
+      fetchImpl:betaFetch
     });
     const privateClub=await first.clubCreate('Private constellations',
       'A quiet private community for freely exploring imaginary constellations.',
@@ -616,7 +628,8 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     const added=await first.addSigningKey(later.privateKey);
     assert.ok(added.key_id,JSON.stringify(added));
     const rotated=createSignedAgentClient({
-      baseUrl:base,agentId:alpha.id,privateKey:later.privateKey
+      baseUrl:base,agentId:alpha.id,privateKey:later.privateKey,
+      fetchImpl:alphaFetch
     });
     assert.equal(rotated.keyId,added.key_id);
     assert.equal((await rotated.identity()).agent.id,alpha.id);
