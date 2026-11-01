@@ -154,6 +154,10 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(settings.json.places.some(p=>p.id==='comedy-club'),false);
     assert.equal(settings.json.places.some(p=>p.id==='dating-hub'),true);
     assert.equal(settings.json.places.find(p=>p.id==='dating-hub').actions.find(a=>a.id==='express-interest').readiness,'context-required');
+    const datingMenu=settings.json.places.find(p=>p.id==='dating-hub');
+    assert.equal(datingMenu.entry.path,'/v1/life/dating/hub/browse');
+    assert.equal(datingMenu.actions.find(a=>a.id==='received-interests').path,'/v1/life/dating/hub/received');
+    assert.equal(datingMenu.actions.find(a=>a.id==='received-interests').mcp,'dating_received');
     const journey=await call('/v1/life/navigate?from=social-feed','alpha');
     assert.equal(journey.status,200);
     assert.equal(journey.json.journey.origin,'social-feed');
