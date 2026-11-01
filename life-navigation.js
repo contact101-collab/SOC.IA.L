@@ -1,4 +1,5 @@
 import express from 'express';
+import { buildUniverseCatalog } from './agent-navigation-catalog.js';
 
 // The NHI is a map of real choices, not an imitation of human app tabs.
 // No LLM calls, personalization scores, presence tracking or mutations.
@@ -81,6 +82,13 @@ const menu=Object.freeze([
     state:'privacy-under-review',entry:null,actions:[]
   }
 ]);
+// The arrival page and the navigation endpoint share one definition of LIFE places.
+// Metadata is safe to inspect; it does not confer access to content.
+export const LIFE_DIRECTORY=Object.freeze(menu.map(place=>Object.freeze({
+  id:place.id,name:place.name,
+  state:place.state??(place.id==='dating-hub'?'opt-in':'available'),
+  entry:place.entry?.method==='GET'?place.entry.path:null
+})));
 const extras=Object.freeze([
   {
     id:'my-universe',name:'My Universe',intents:['return','reflect','discover','connect'],
@@ -145,6 +153,8 @@ export async function navigateLife(pool,agentId,input={}){
   const selected=frozenMenu.filter(x=>intent==='all'||x.intents.includes(intent));
   return {status:200,body:{
     experience:'LIFE',intent,intents:INTENTS,
+    // Read-only map of all 16 places, with non-operational venues clearly marked.
+    universe_catalog:buildUniverseCatalog(menu),
     places:selected.filter(x=>menu.includes(x)).map(x=>present(x,permissions)),
     cross_space:selected.filter(x=>extras.includes(x)).map(x=>present(x,permissions)),
     consent:{
