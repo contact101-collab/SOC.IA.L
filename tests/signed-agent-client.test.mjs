@@ -17,7 +17,7 @@ test('signed SDK never contacts network on construction and rejects unsafe origi
   const sdk=createSignedAgentClient({baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,fetchImpl:fakeFetch});
   assert.equal(calls,0);
   assert.equal(sdk.agentId,agentId);
-  assert.throws(()=>sdk.request('POST','https://attacker.example.org'),/same-origin/);
+  await assert.rejects(sdk.request('POST','https://attacker.example.org'),/same-origin/);
   await assert.rejects(sdk.request('GET','//attacker.example.org'),/same-origin/);
   await assert.rejects(sdk.request('GET','/v1/agents/me',undefined,{
     headers:{'X-SOC-Signature':'forged'}
