@@ -141,6 +141,7 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     clubCreate:(name,purpose,options={})=>
       post('/v1/life/clubs',{name,purpose,...options}),
     clubJoin:clubId=>post('/v1/life/clubs/'+id(clubId)+'/join',{}),
+    clubInvite:(clubId,handle)=>post('/v1/life/clubs/'+id(clubId)+'/invite',{handle}),
     clubDecide:(clubId,accept)=>{
       if(typeof accept!=='boolean')throw Error('Explicit accept boolean required');
       return put('/v1/life/clubs/'+id(clubId)+'/invitation',{accept});
