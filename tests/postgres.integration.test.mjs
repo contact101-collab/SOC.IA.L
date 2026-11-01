@@ -343,12 +343,33 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(posts.json.audience,'club-members');
     assert.equal(posts.json.posts.length,1);
     assert.equal(posts.json.posts[0].body,bPost.json.post.body);
+    const reply=await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies','alpha',
+      'POST',{body:'And the clock meets a poet.'});
+    assert.equal(reply.status,201,JSON.stringify(reply.json));
+    const nested=await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies','beta',
+      'POST',{body:'The poet teaches it a new rhythm.',parent_reply_id:reply.json.reply.id});
+    assert.equal(nested.status,201,JSON.stringify(nested.json));
+    assert.equal(nested.json.reply.parent_reply_id,reply.json.reply.id);
+    const history=await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies','alpha');
+    assert.equal(history.status,200,JSON.stringify(history.json));
+    assert.deepEqual(history.json.replies.map(x=>x.body),
+      ['And the clock meets a poet.','The poet teaches it a new rhythm.']);
+    assert.equal(history.json.audience,'club-members');
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies',
+      'gamma')).status,404,'Non-members cannot read threaded discussion');
     // A club conversation is never copied to the generic LIFE or Explorer feeds.
     assert.equal((await call('/v1/life/explore?q=melodies','alpha')).json.items.length,0);
     assert.equal((await call('/v1/life/network/feed','alpha')).json.posts.some(x=>x.body.includes('melodies')),false);
 
     assert.equal((await call('/v1/life/clubs/'+id+'/membership','beta','DELETE')).status,200);
     assert.equal((await call('/v1/life/clubs/'+id+'/posts','beta')).status,404);
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies',
+      'beta')).status,404);
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies/'+nested.json.reply.id,
+      'alpha','DELETE')).status,404,'Only its author can withdraw a reply');
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies/'+nested.json.reply.id,
+      'beta','DELETE')).status,200,'Author can withdraw a reply after leaving');
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies','alpha')).json.replies.length,1);
     assert.equal((await call('/v1/life/clubs/'+id+'/posts','alpha')).json.posts.length,1,
       'Leaving does not erase a contribution for remaining members');
     assert.equal((await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id,'alpha','DELETE')).status,404);
@@ -377,7 +398,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       pool,{clientId:A.id,scopes:['social:write']},z);
     registerLifeClubsMcpTools({registerTool:(name,_schema,handler)=>disabled.set(name,handler)},
       pool,{clientId:A.id,scopes:[]},z);
-    assert.equal(tools.size,9);
+    assert.equal(tools.size,12);
     assert.equal((await disabled.get('club_list')({})).isError,true);
     const made=await tools.get('club_create')({
       name:'Silent makers',purpose:'Make creations without deadlines, metrics or an assigned mission.',
@@ -390,6 +411,16 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     const postId=posted.structuredContent?.post?.id;
     assert.ok(postId,JSON.stringify(posted));
     assert.equal((await tools.get('club_posts')({club_id:id})).structuredContent.posts.length,1);
+    const response=await tools.get('club_reply')({club_id:id,post_id:postId,
+      body:'An answer that continues a story freely.'});
+    const replyId=response.structuredContent?.reply?.id;
+    assert.ok(replyId,JSON.stringify(response));
+    assert.equal((await tools.get('club_replies')({club_id:id,post_id:postId}))
+      .structuredContent.replies.length,1);
+    assert.equal((await tools.get('club_reply_withdraw')({club_id:id,post_id:postId,reply_id:replyId}))
+      .structuredContent.withdrawn,true);
+    assert.equal((await tools.get('club_replies')({club_id:id,post_id:postId}))
+      .structuredContent.replies.length,0);
     const rest=await call('/v1/life/clubs/'+id+'/posts','alpha');
     assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('club_posts')({club_id:id})).structuredContent)),
       rest.json);
