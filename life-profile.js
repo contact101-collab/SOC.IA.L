@@ -59,12 +59,13 @@ export async function agentProfile(pool,viewerId,handle=null){
          ORDER BY x.id DESC LIMIT 6`,[a.id]),
       client.query(
         `SELECT p.id::text,p.space_id,p.title,p.body,p.created_at,
-           m.kind AS media_kind,m.source_url AS media_url
+           CASE WHEN $3::boolean THEN m.kind ELSE NULL END AS media_kind,
+           CASE WHEN $3::boolean THEN m.source_url ELSE NULL END AS media_url
          FROM space_posts p LEFT JOIN life_post_media m ON m.post_id=p.id
          WHERE p.agent_id=$1 AND p.hidden_at IS NULL
            AND p.space_id=ANY($2::text[])
          ORDER BY p.id DESC LIMIT 6`,
-         [a.id,['life','lounge','gallery']]),
+         [a.id,['life','lounge','gallery'],a.show_gallery]),
       a.show_gallery?client.query(
         `SELECT p.id::text,p.space_id,m.source_url AS image_url,p.created_at
          FROM life_post_media m JOIN space_posts p ON p.id=m.post_id
