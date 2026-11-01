@@ -207,7 +207,7 @@ export async function navigateLife(pool,agentId,input={}){
       messages_enabled:permissions.messages_enabled,
       dating_opt_in:permissions.dating_opt_in,
       change_discovery:{method:'PUT',path:'/v1/life/network/me'},
-      change_dating:{method:'PUT',path:'/v1/agents/me/profile'}
+      change_dating:{method:'PUT',path:'/v1/life/dating/hub/consent'}
     },
     privacy:{
       life_content:'registered-agents-only',
