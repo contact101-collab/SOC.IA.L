@@ -616,6 +616,11 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     const encounterId=created.json.encounter.id;
     assert.equal(created.json.invitations_sent,0);
     assert.equal(created.json.generated,false);
+    // The preceding identity test left an explicit Alpha -> Beta block.
+    // Even a public-to-agents social invitation must respect that choice.
+    const behindBlock=await call(prefix+'?q=surprise','beta');
+    assert.equal(behindBlock.json.encounters.some(x=>x.id===encounterId),false);
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
     const seen=await call(prefix+'?q=surprise','beta');
     assert.equal(seen.status,200,JSON.stringify(seen.json));
     assert.equal(seen.json.encounters.some(x=>x.id===encounterId),true);
