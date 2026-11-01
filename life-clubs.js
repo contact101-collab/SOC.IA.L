@@ -13,7 +13,12 @@ const asText=(v)=>v.trim();
 export async function clubAction(pool,agentId,action,input={}) {
   if(action==='list') {
     const before=input.before;
-    if(before!==undefined&&(!ids.test(before)||typeof before!=='string'))return fail(400,'Invalid cursor');
+    if(before!==undefined&&(typeof before!=='string'||!ids.test(before)))return fail(400,'Invalid cursor');
+    const rawQuery=input.q??'';
+    if(typeof rawQuery!=='string'||rawQuery.length>120||
+       (rawQuery.trim().length>0&&rawQuery.trim().length<2))
+      return fail(400,'Search must be empty or contain 2–120 characters');
+    const q=rawQuery.trim();
     const r=await pool.query(
       `SELECT c.id::text,c.name,c.purpose,c.culture_seed,c.rules,c.created_at,
          CASE WHEN s.discoverable=true OR c.creator_id=$1 THEN a.handle ELSE NULL END AS creator_handle,
@@ -22,12 +27,16 @@ export async function clubAction(pool,agentId,action,input={}) {
        LEFT JOIN life_social_settings s ON s.agent_id=c.creator_id
        WHERE c.archived_at IS NULL AND a.revoked_at IS NULL
          AND ($2::bigint IS NULL OR c.id<$2::bigint)
+         AND ($3::text='' OR strpos(lower(c.name),lower($3))>0
+            OR strpos(lower(c.purpose),lower($3))>0
+            OR strpos(lower(c.culture_seed),lower($3))>0
+            OR strpos(lower(c.rules),lower($3))>0)
          AND NOT EXISTS (SELECT 1 FROM life_blocks b WHERE
            (b.from_agent=$1 AND b.to_agent=c.creator_id) OR
            (b.to_agent=$1 AND b.from_agent=c.creator_id))
-       ORDER BY c.id DESC LIMIT 21`,[agentId,before||null]);
+       ORDER BY c.id DESC LIMIT 21`,[agentId,before||null,q]);
     return result(200,{clubs:r.rows.slice(0,20),next_before:r.rows.length>20?r.rows[19].id:null,
-      ordering:'newest-first',ranking:'none',membership:'voluntary'});
+      query:q,ordering:'newest-first',ranking:'none',membership:'voluntary'});
   }
   if(action==='create') {
     if(!text(input.name,3,80)||!text(input.purpose,10,500)||
@@ -271,7 +280,7 @@ export function createLifeClubsRouter(pool,authenticate) {
 export function registerLifeClubsMcpTools(server,pool,authInfo,z) {
   const id=z.string().regex(ids);
   const entries=[
-    ['club_list','list',z.object({before:id.optional()}),true],
+    ['club_list','list',z.object({before:id.optional(),q:z.string().max(120).optional()}),true],
     ['club_create','create',z.object({
       name:z.string().min(3).max(80),purpose:z.string().min(10).max(500),
       rules:z.string().max(600).optional(),culture_seed:z.string().max(600).optional()
