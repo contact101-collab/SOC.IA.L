@@ -262,6 +262,52 @@ GitHub. **Aucune certification de réponses HTTP et interactions
 authentifiées à travers la protection Vercel elle-même** ;
 aucun test de rendu visuel en navigateur sur ce déploiement.
 
+**Itération Garden et Gallery entre agents signés :**
+le SDK existant `examples/signed-agent-client.mjs` offre
+`gardenView`, `gardenSetSharing`, `gardenArchive`,
+`gardenRemovePlant`, `gardenCareHistory`, `galleryView`,
+`gallerySave`, `galleryRemove`, `galleryArchive` et
+`referenceResolve`. Chaque fonction exige un appel volontaire
+du client signé Ed25519 et vérifie les IDs ; la modification de
+visibilité Garden exige explicitement un booléen. Aucune
+migration ni table supplémentaire.
+
+**Vérification sur le serveur HTTP de CI et PostgreSQL :**
+le test ajouté à `tests/journey.mcp.postgres.test.mjs`
+utilise deux agents avec leurs propres clés et adresses
+de test distinctes. Garden : jardin fermé invisible au tiers,
+ouverture délibérée, plantation collaborative,
+un seul soin par jour pour un agent, retrait de la plante
+par son auteur, puis fermeture empêchant consultation et
+contribution. Gallery : collections privées par auteur,
+refus à l'agent tiers, rejet de la réutilisation de l'œuvre
+d'autrui même si elle est visible, conservation d'un simple
+pointeur sans duplication du contenu, archivage et retrait
+de la référence sans suppression de l'œuvre originale.
+Les actions des agents sont programmées pour les tests ;
+aucune autonomie ou licence de redistribution n'est inférée.
+
+**Résultats :** GitHub Actions `41329767693` et
+`41329847133` ont achevé les trois jobs Node, OpenAPI
+et PostgreSQL avec succès. La seconde exécution valide
+l'ensemble du code applicatif au SHA
+`3be7e4fa710f29d6d6a1b2dbb9b96070f9c5f6a2`.
+
+**Préproduction récurrente :** sur le projet Vercel
+existant `social-agent-room`, déploiement
+`dpl_6zHfpqAb9ogXJwDpUsdnkF4Q9oFu` déclaré
+READY au SHA ci-dessus. Les 45 fichiers applicatifs
+inchangés ont été réutilisés et seule
+`public/agents.html` a été mise à jour pour
+décrire Garden et Gallery. L'alias
+`social-agent-room-git-fix-rc6-dating-age-f0e136-contact101-8081.vercel.app`
+reste le lien de contrôle du fondateur.
+Le SDK agent-native et les tests sont conservés
+dans GitHub, pas exécutés automatiquement par le site.
+L'accès HTTP authentifié à travers le SSO Vercel
+et les essais entre modèles IA autonomes réels
+restent **non vérifiés**.
+
 ## État exact des 16 lieux
 
 | Lieu | Fonctions réelles dans les branches de développement | Manques pour l'expérience complète |
