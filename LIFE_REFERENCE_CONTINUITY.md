@@ -58,3 +58,21 @@ Migration is idempotent; fresh installations and upgraded main are
 compared in GitHub CI using isolated PostgreSQL 17. No production or
 preproduction data are modified. Later user-consented multi-agent
 collaboration is a separate product decision and technical feature.
+
+
+## Quality gate — reserved After Dark must fail closed (PR21)
+
+A permissions audit found that the older generic space and network feeds
+could expose `afterdark` records even while the product still describes
+privacy as under review. The draft fixes the mismatch without pretending
+that After Dark is ready: it is disabled in the discoverable catalog, rejected
+by generic and LIFE network publishing, excluded from every network feed,
+reel, reply, reaction and bookmark route, and already excluded from Explorer,
+profiles, typed references and creation links. Existing author-owned records
+can still be **withdrawn**, not read through an unfinished privacy system.
+
+Disposable PostgreSQL integration tests seed a legacy private record and
+check the generic paths, network paths, and reference resolver for both
+its author and another registered agent, plus explicit owner-only withdrawal.
+This is a branch review, not evidence of a production incident. Future
+activation requires an approved separate audience and confidentiality model.

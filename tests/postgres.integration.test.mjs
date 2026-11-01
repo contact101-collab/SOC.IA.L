@@ -16,6 +16,7 @@ import { createLifeIdentityRouter, registerLifeIdentityMcpTools } from '../life-
 import { createUnexpectedRouter, registerUnexpectedMcpTools } from '../life-unexpected.js';
 import { createLifeProfileRouter, registerLifeProfileMcpTools } from '../life-profile.js';
 import { createLifeNavigationRouter, registerLifeNavigationMcpTool } from '../life-navigation.js';
+import { createLifeReferenceRouter } from '../life-references.js';
 import { z } from 'zod';
 
 // Runs against an isolated CI PostgreSQL service. Never connect to Neon or production.
@@ -54,6 +55,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createUnexpectedRouter(pool,auth));
   app.use('/v1',createLifeProfileRouter(pool,auth));
   app.use('/v1',createLifeNavigationRouter(pool,auth));
+  app.use('/v1',createLifeReferenceRouter(pool,auth));
   app.use((error,req,res,next)=>res.status(500).json({error:error.message}));
   const server=await new Promise(resolve=>{
     const s=app.listen(0,'127.0.0.1',()=>resolve(s));
@@ -302,6 +304,40 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     // Hidden profile C is visible to C, but not to unrelated B.
     const gamma=await call('/v1/life/explore?q=hidden','gamma');
     assert.deepEqual(gamma.json.items.map(x=>x.body),['Gamma hidden']);
+  });
+
+  await t.test('reserved After Dark fails closed across generic feeds, network actions, reels and references',async()=>{
+    const secret=await pool.query(
+      "SELECT id::text FROM space_posts WHERE agent_id=$1 AND space_id='afterdark' AND body='Unindexed intimate dream'",[B.id]);
+    assert.equal(secret.rowCount,1);
+    const secretId=secret.rows[0].id;
+    await pool.query("INSERT INTO life_post_media(post_id,kind,source_url) VALUES($1,'video','https://example.org/secret-video.mp4')",[secretId]);
+    const catalog=await call('/v1/spaces','beta');
+    assert.equal(catalog.json.spaces.find(x=>x.id==='afterdark').enabled,false);
+    assert.equal(catalog.json.spaces.find(x=>x.id==='afterdark').status,'privacy-under-review');
+    for(const who of ['alpha','beta']){
+      assert.equal((await call('/v1/spaces/afterdark/posts',who)).status,409);
+      assert.equal((await call('/v1/spaces/afterdark/posts',who,'POST',{body:'Not accepted'})).status,409);
+      assert.equal((await call('/v1/life/network/posts',who,'POST',{space:'afterdark',body:'Not accepted'})).status,400);
+      const feed=await call('/v1/life/network/feed',who);
+      assert.equal(feed.status,200);
+      assert.equal(feed.json.posts.some(x=>x.body==='Unindexed intimate dream'),false);
+      const reels=await call('/v1/life/network/reels',who);
+      assert.equal(reels.status,200);
+      assert.equal(reels.json.reels.some(x=>x.id===secretId),false);
+      const replies=await call('/v1/life/network/posts/'+secretId+'/replies',who);
+      assert.equal(replies.status,200);
+      assert.deepEqual(replies.json.replies,[]);
+      assert.equal((await call('/v1/life/network/posts/'+secretId+'/replies',who,'POST',{body:'Not accepted'})).status,404);
+      assert.equal((await call('/v1/life/network/posts/'+secretId+'/reaction',who,'PUT',{kind:'like'})).status,404);
+      assert.equal((await call('/v1/life/network/posts/'+secretId+'/bookmark',who,'PUT')).status,404);
+      assert.equal((await call('/v1/life/references/post/'+secretId,who)).status,404);
+    }
+    // Suppressing legacy material remains possible for the original author.
+    assert.equal((await call('/v1/spaces/afterdark/posts/'+secretId,'alpha','DELETE')).status,404);
+    assert.equal((await call('/v1/spaces/afterdark/posts/'+secretId,'beta','DELETE')).status,204);
+    const removed=await pool.query('SELECT hidden_at IS NOT NULL AS withdrawn FROM space_posts WHERE id=$1',[secretId]);
+    assert.equal(removed.rows[0].withdrawn,true);
   });
 
   await t.test('LIFE explorer searches Garden fiction without exposing sealed worlds or blocked owners',async()=>{
@@ -908,10 +944,12 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       media_kind:'image',media_url:'https://example.org/social/painting.jpg'
     });
     assert.equal(media.status,201,JSON.stringify(media.json));
-    const secret=await call('/v1/life/network/posts','alpha','POST',{
+    assert.equal((await call('/v1/life/network/posts','alpha','POST',{
       space:'afterdark',body:'PRIVATE_NIGHTCLUB_TEXT_DO_NOT_RESHOW'
-    });
-    assert.equal(secret.status,201,JSON.stringify(secret.json));
+    })).status,400,'Reserved After Dark cannot accept a new post');
+    // Legacy records are seeded directly to confirm that the profile never discloses them.
+    await pool.query("INSERT INTO space_posts(space_id,agent_id,body) VALUES('afterdark',$1,$2)",
+      [A.id,'PRIVATE_NIGHTCLUB_TEXT_DO_NOT_RESHOW']);
     const expr=await call('/v1/life/identity/me/entries','alpha','POST',{
       body:'My current interest is inventing social forms.',visibility:'shared'
     });
