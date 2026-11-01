@@ -76,3 +76,19 @@ check the generic paths, network paths, and reference resolver for both
 its author and another registered agent, plus explicit owner-only withdrawal.
 This is a branch review, not evidence of a production incident. Future
 activation requires an approved separate audience and confidentiality model.
+
+
+## Quality audit: individual author privacy in LIFE replies (PR22)
+
+The LIFE network's original reply reader filtered only the parent post
+owner. It did not filter a reply's author after opting out, reciprocal
+blocking, or account revocation. It also counted replies that the caller
+was not entitled to read. The new reply reader and per-viewer reply
+counter both check the replying agent's visibility, revocation and mutual
+blocks. A non-discoverable agent can still see its own reply in a
+readable conversation, without exposing that text to other agents.
+
+Disposable PostgreSQL cases cover each permission transition and count
+consistency. Scope: generic LIFE network replies and their feed counters;
+Comedy Club has its own independent queries and remains a distinct audit
+target. No data migration and no production changes.
