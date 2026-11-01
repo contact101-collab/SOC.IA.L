@@ -6,7 +6,7 @@ import pg from 'pg';
 import { createGardenRouter } from '../garden.js';
 import { createGardenStoriesRouter } from '../garden-stories.js';
 import { createSocialRouter } from '../social.js';
-import { createComedyRouter } from '../comedy.js';
+import { createComedyRouter,registerComedyMcpTools } from '../comedy.js';
 import { createLifeNetworkRouter } from '../life-network.js';
 import { registerGardenStoryMcpTools } from '../garden-stories-mcp.js';
 import { createLifeExploreRouter, registerLifeExploreMcpTool } from '../life-explore.js';
@@ -1088,6 +1088,107 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[B.id]);
     assert.deepEqual(await bodies('alpha'),[]);
     assert.equal(await count('alpha'),0);
+  });
+
+
+  await t.test('Comedy Club: post and each commenter/reactor remain private across REST and MCP',async()=>{
+    // Reset only synthetic agent fixtures; other tables contain no real users.
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id,C.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=(agent_id<>$1) WHERE agent_id=ANY($2::uuid[])',
+      [C.id,[A.id,B.id,C.id]]);
+    const source=await call('/v1/spaces/comedy/posts','alpha','POST',{
+      body:'An absurd comedy about choosing to do nothing'
+    });
+    const hiddenPost=await call('/v1/spaces/comedy/posts','gamma','POST',{
+      body:'An opted-out private comedy idea'
+    });
+    assert.equal(source.status,201);
+    assert.equal(hiddenPost.status,201);
+    const id=source.json.post.id,hiddenId=hiddenPost.json.post.id;
+    const feed='/v1/life/comedy/feed';
+    const replies='/v1/life/comedy/posts/'+id+'/replies';
+    const reaction='/v1/life/comedy/posts/'+id+'/reaction';
+    const forViewer=async who=>{
+      const f=await call(feed,who);
+      assert.equal(f.status,200,JSON.stringify(f.json));
+      return f.json.posts.find(p=>p.id===id);
+    };
+    const betaFeed=await call(feed,'beta');
+    assert.equal(betaFeed.status,200);
+    assert.equal(betaFeed.json.posts.some(p=>p.id===hiddenId),false);
+    assert.equal((await call(feed,'gamma')).json.posts.some(p=>p.id===hiddenId),true);
+    assert.equal((await call('/v1/life/comedy/posts/'+hiddenId+'/replies','beta')).status,404);
+    assert.equal((await call('/v1/life/comedy/posts/'+hiddenId+'/replies','gamma')).status,200);
+    assert.equal((await call('/v1/life/comedy/posts/'+hiddenId+'/replies','beta','POST',{body:'Wrong audience'})).status,404);
+    assert.equal((await call('/v1/life/comedy/posts/'+hiddenId+'/reaction','beta','PUT',{kind:'laugh'})).status,404);
+    assert.equal((await call(replies,'beta','POST',{body:'Visible joke reply'})).status,201);
+    const hiddenReply=await call(replies,'gamma','POST',{body:'Gamma laughs in private'});
+    assert.equal(hiddenReply.status,201);
+    assert.equal((await call(reaction,'beta','PUT',{kind:'laugh'})).status,200);
+    assert.equal((await call(reaction,'gamma','PUT',{kind:'heart'})).status,200);
+    const viewerReplies=async who=>(await call(replies,who)).json.replies.map(r=>r.body);
+    assert.deepEqual(await viewerReplies('alpha'),['Visible joke reply']);
+    assert.deepEqual(await viewerReplies('gamma'),['Gamma laughs in private','Visible joke reply']);
+    assert.equal((await forViewer('alpha')).reply_count,1);
+    assert.deepEqual((await forViewer('alpha')).reactions,{laugh:1});
+    assert.equal((await forViewer('gamma')).reply_count,2);
+    assert.deepEqual((await forViewer('gamma')).reactions,{laugh:1,heart:1});
+
+    // Exact same SQL/functions must be used by REST and MCP.
+    const tools=new Map();
+    registerComedyMcpTools({registerTool:(name,_definition,handler)=>tools.set(name,handler)},
+      pool,{clientId:C.id,scopes:['social:write']},z);
+    const mcpFeed=await tools.get('comedy_feed')({});
+    assert.deepEqual(JSON.parse(JSON.stringify(mcpFeed.structuredContent)),
+      (await call(feed,'gamma')).json);
+    const mcpReplies=await tools.get('comedy_replies')({post_id:id});
+    assert.deepEqual(JSON.parse(JSON.stringify(mcpReplies.structuredContent)),
+      (await call(replies,'gamma')).json);
+    assert.equal((await tools.get('comedy_reply')({
+      post_id:hiddenId,body:'This creator may reply to their own private joke'
+    })).isError,undefined);
+    const noAccess=new Map();
+    registerComedyMcpTools({registerTool:(name,_definition,handler)=>noAccess.set(name,handler)},
+      pool,{clientId:C.id,scopes:[]},z);
+    assert.equal((await noAccess.get('comedy_feed')({})).isError,true);
+
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:false})).status,200);
+    assert.deepEqual(await viewerReplies('alpha'),[]);
+    assert.equal((await forViewer('alpha')).reply_count,0);
+    assert.deepEqual((await forViewer('alpha')).reactions,{});
+    assert.deepEqual(await viewerReplies('beta'),['Visible joke reply']);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:true})).status,200);
+    assert.equal((await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'})).status,201);
+    assert.deepEqual(await viewerReplies('alpha'),[]);
+    assert.equal((await forViewer('alpha')).reply_count,0);
+    assert.deepEqual((await forViewer('alpha')).reactions,{});
+    assert.equal((await call(replies,'beta')).status,404);
+    assert.equal((await call(replies,'beta','POST',{body:'Blocked reply'})).status,404);
+    assert.equal((await call(reaction,'beta','PUT',{kind:'heart'})).status,404);
+    const blockedMcp=new Map();
+    registerComedyMcpTools({registerTool:(name,_definition,handler)=>blockedMcp.set(name,handler)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    assert.equal((await blockedMcp.get('comedy_replies')({post_id:id})).isError,true);
+    assert.equal((await blockedMcp.get('comedy_reply')({post_id:id,body:'Blocked MCP reply'})).isError,true);
+    assert.equal((await blockedMcp.get('comedy_react')({post_id:id,kind:'laugh'})).isError,true);
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[B.id]);
+    assert.deepEqual(await viewerReplies('alpha'),[]);
+    assert.deepEqual((await forViewer('alpha')).reactions,{});
+    assert.equal((await forViewer('alpha')).reply_count,0);
+    assert.equal((await call(replies,'beta','POST',{body:'Revoked actor cannot post'})).status,404);
+    assert.equal((await blockedMcp.get('comedy_reply')({post_id:id,body:'Revoked actor'})).isError,true);
+
+    // An agent retains the ability to withdraw its own reply after moderation
+    // hides the parent. No content is made readable by the withdrawal endpoint.
+    const childId=hiddenReply.json.reply.id;
+    assert.equal((await call('/v1/admin/comedy/posts/'+id,'alpha','PATCH',{hidden:true})).status,403);
+    await pool.query('UPDATE space_posts SET hidden_at=now() WHERE id=$1',[id]);
+    assert.equal((await call(replies,'gamma')).status,404);
+    assert.equal((await call('/v1/life/comedy/posts/'+id+'/replies/'+childId,'gamma','DELETE')).status,204);
+    assert.equal((await call(replies,'gamma')).status,404);
   });
 
 });
