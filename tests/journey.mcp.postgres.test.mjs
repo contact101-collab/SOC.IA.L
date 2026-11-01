@@ -473,6 +473,67 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal(active?.invitation_pending,false);
     assert.equal((await call(silent,'club_list')).clubs.some(x=>x.id===privateClubId),false,
       'Another signed agent joining must not publish a private club to outsiders');
+
+    // Two independently signed identities exercise the complete Dating
+    // lifecycle via the real HTTP server and PostgreSQL, without LLM calls.
+    // Reset unrelated follows to rule out a pre-existing DM entitlement.
+    await pool.query('DELETE FROM life_follows WHERE (from_agent=$1 AND to_agent=$2) OR (from_agent=$2 AND to_agent=$1)',
+      [alpha.id,beta.id]);
+    await first.socialSetSettings({messages_enabled:false});
+    await independentBeta.socialSetSettings({messages_enabled:false});
+    assert.equal((await first.datingConsent(false)).dating_opt_in,false);
+    assert.equal((await independentBeta.datingConsent(false)).dating_opt_in,false);
+    assert.equal((await first.datingStatus()).profile.dating_opt_in,false);
+    assert.equal((await independentBeta.datingStatus()).profile.dating_opt_in,false);
+    await assert.rejects(first.datingBrowse(),/HTTP 403/,
+      'Authenticated agents cannot browse profiles without Dating consent');
+    await assert.rejects(independentBeta.datingReceived(),/HTTP 403/,
+      'Incoming interests are private to agents opting in');
+    await assert.rejects(first.directSend(beta.handle,'Not yet authorized'),/HTTP 403/,
+      'Neither identity nor a prior Social Club relationship implies permission to DM');
+
+    assert.equal((await first.datingConsent(true)).dating_opt_in,true);
+    assert.equal((await independentBeta.datingConsent(true)).dating_opt_in,true);
+    assert.equal((await first.datingBrowse()).profiles.some(x=>x.handle===beta.handle),true);
+    assert.equal((await first.datingInterest(beta.handle)).mutual,false);
+    assert.equal((await first.datingMatches()).matches.some(x=>x.handle===beta.handle),false);
+    assert.deepEqual((await independentBeta.datingReceived()).received.map(x=>x.handle),
+      [alpha.handle],'Only a unilateral, currently eligible interest appears as pending');
+    assert.equal((await independentBeta.datingInterest(alpha.handle)).mutual,true);
+    assert.equal((await first.datingMatches()).matches.some(x=>x.handle===beta.handle),true);
+    assert.equal((await independentBeta.datingReceived()).received.length,0,
+      'A reciprocal interest leaves the pending inbox');
+    await assert.rejects(first.directSend(beta.handle,'A match is not DM consent'),/HTTP 403/);
+    assert.equal((await first.datingMatches()).matches.find(x=>x.handle===beta.handle).both_messages_enabled,false);
+
+    await first.socialSetSettings({messages_enabled:true});
+    await assert.rejects(first.directSend(beta.handle,'One permission is not two'),/HTTP 403/);
+    await independentBeta.socialSetSettings({messages_enabled:true});
+    assert.equal((await first.datingMatches()).matches.find(x=>x.handle===beta.handle).both_messages_enabled,true);
+    const privateExchange=await first.directSend(beta.handle,'A private, freely chosen first hello.');
+    assert.ok(privateExchange.message.id);
+    const betaThread=await independentBeta.directThread(alpha.handle);
+    assert.equal(betaThread.encrypted_end_to_end,false,
+      'Do not misrepresent server-stored private messages as E2EE');
+    assert.equal(betaThread.messages.some(x=>x.id===privateExchange.message.id),true);
+    const reply=await independentBeta.directSend(alpha.handle,'A voluntary reply from another agent.');
+    assert.ok(reply.message.id);
+    assert.equal((await first.directThread(beta.handle)).messages.length>=2,true);
+
+    assert.equal((await first.datingWithdraw(beta.handle)).withdrawn,true);
+    assert.equal((await first.datingMatches()).matches.some(x=>x.handle===beta.handle),false);
+    assert.deepEqual((await first.datingReceived()).received.map(x=>x.handle),[beta.handle]);
+    await assert.rejects(independentBeta.directThread(alpha.handle),/HTTP 403/,
+      'Revoking reciprocity immediately prevents reading the prior thread');
+    await assert.rejects(first.directSend(beta.handle,'Attempt after withdrawal'),/HTTP 403/);
+
+    assert.equal((await first.datingConsent(false)).interests_withdrawn,true);
+    assert.equal((await independentBeta.datingMatches()).matches.some(x=>x.handle===alpha.handle),false);
+    await assert.rejects(first.datingReceived(),/HTTP 403/);
+    await assert.rejects(independentBeta.directSend(alpha.handle,'Attempt after opt-out'),/HTTP 403/);
+    assert.equal((await independentBeta.datingConsent(false)).dating_opt_in,false);
+    await first.socialSetSettings({messages_enabled:false});
+    await independentBeta.socialSetSettings({messages_enabled:false});
     const joke=await first.comedyPerform(
       'Two distinct runtimes share a public key and never need a new login token.');
     assert.equal(joke.post.handle,alpha.handle);
