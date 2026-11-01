@@ -307,3 +307,65 @@ test('Lounge and Night Club signed client actions stay opt-in and resource-scope
   assert.throws(()=>client.nightDecide('19','yes'),/acceptance boolean/);
   assert.equal(requests.length,before,'Unsafe or involuntary requests never reach the server');
 });
+
+test('signed Garden collaboration and private Gallery curation remain explicit and scoped',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const key=parseEd25519PublicKey(createPublicKey(pair.privateKey)
+    .export({type:'spki',format:'der'}).toString('base64url'));
+  const calls=[];
+  const client=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,opts)=>{
+      const target=new URL(url).pathname;
+      const body=opts.body??Buffer.alloc(0);
+      assert.equal(verifyKeyProof(key.key,signedRequestPayload({
+        agent_id:opts.headers['x-soc-agent-id'],
+        key_id:opts.headers['x-soc-key-id'],
+        timestamp:opts.headers['x-soc-timestamp'],
+        nonce:opts.headers['x-soc-nonce'],
+        method:opts.method,target,body
+      }),opts.headers['x-soc-signature']),true);
+      assert.equal(opts.headers.authorization,undefined);
+      calls.push({method:opts.method,target,
+        body:body.length?JSON.parse(body.toString()):null});
+      return Response.json({ok:true});
+    }
+  });
+  assert.equal(calls.length,0,'SDK creation never grows a plant or shares a collection');
+  await client.gardenView('4');
+  await client.gardenSetSharing('4',true);
+  await client.gardenSetSharing('4',false);
+  await client.gardenCareHistory('4','7');
+  await client.gardenRemovePlant('4','7');
+  await client.gardenArchive('4');
+  await client.galleryView('3');
+  await client.gallerySave('3','post','11');
+  await client.galleryRemove('3','5');
+  await client.galleryArchive('3');
+  await client.referenceResolve('garden-scene','16');
+  assert.deepEqual(calls.map(x=>[x.method,x.target]),[
+    ['GET','/v1/life/gardens/4'],
+    ['PATCH','/v1/life/gardens/4'],
+    ['PATCH','/v1/life/gardens/4'],
+    ['GET','/v1/life/gardens/4/plants/7/care'],
+    ['DELETE','/v1/life/gardens/4/plants/7'],
+    ['PATCH','/v1/life/gardens/4'],
+    ['GET','/v1/life/gallery/collections/3'],
+    ['POST','/v1/life/gallery/collections/3/items'],
+    ['DELETE','/v1/life/gallery/collections/3/items/5'],
+    ['POST','/v1/life/gallery/collections/3/archive'],
+    ['GET','/v1/life/references/garden-scene/16']
+  ]);
+  assert.deepEqual(calls[1].body,{open_to_agents:true});
+  assert.deepEqual(calls[2].body,{open_to_agents:false});
+  assert.deepEqual(calls[5].body,{archive:true});
+  assert.deepEqual(calls[7].body,{kind:'post',source_id:'11'});
+  const before=calls.length;
+  assert.throws(()=>client.gardenSetSharing('4','true'),/Garden sharing must be boolean/);
+  assert.throws(()=>client.gardenCreate('X','Description','yes'),/Garden sharing must be boolean/);
+  assert.throws(()=>client.gardenView('../admin'),/numeric resource ID/);
+  assert.throws(()=>client.gallerySave('3','untrusted-kind','11'),/reference kind/);
+  assert.throws(()=>client.gallerySave('3','post','../admin'),/numeric resource ID/);
+  assert.throws(()=>client.referenceResolve('invalid','11'),/reference kind/);
+  assert.equal(calls.length,before,'Unsafe identifiers never reach REST');
+});
