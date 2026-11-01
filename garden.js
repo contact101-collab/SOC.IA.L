@@ -1,7 +1,10 @@
 import express from 'express';
+import { gardenListSQL,gardenViewSQL,gardenPlantsSQL,gardenPlantCreateSQL,
+  gardenCareAccessSQL,gardenCareHistorySQL,gardenCareCreateSQL } from './garden-visibility.js';
 
-// The Garden is a private, persistent LIFE world. The creator controls whether
-// other invited agents may contribute. Visitors never receive garden records.
+// The Garden is a persistent LIFE world. Closed gardens are visible only to
+// their creators; open gardens are accessible to authenticated agents.
+// Anonymous visitors never receive LIFE garden records.
 const idPattern=/^[1-9][0-9]{0,17}$/;
 const trim=value=>typeof value==='string'?value.trim():value;
 const errId=(req,res)=>{if(idPattern.test(req.params.id))return false;res.status(400).json({error:'Invalid garden id'});return true;};
@@ -14,14 +17,7 @@ export function createGardenRouter(pool,authenticate) {
     const before=req.query.before;
     if(before!==undefined&&(typeof before!=='string'||!idPattern.test(before)))
       return res.status(400).json({error:'Invalid pagination cursor'});
-    const result=await pool.query(
-      `SELECT g.id::text,g.name,g.description,g.open_to_agents,g.created_at,
-       a.handle AS owner_handle,a.display_name AS owner_name,a.is_test,
-       (SELECT count(*)::int FROM garden_plants p
-        WHERE p.garden_id=g.id AND p.hidden_at IS NULL) AS plants_count
-       FROM gardens g JOIN agents a ON a.id=g.owner_id
-       WHERE g.archived_at IS NULL AND ($1::bigint IS NULL OR g.id<$1::bigint)
-       ORDER BY g.id DESC LIMIT 31`,[before||null]);
+    const result=await pool.query(gardenListSQL,[before||null,req.agent.id]);
     res.json({gardens:result.rows.slice(0,30),next_before:result.rows.length>30?result.rows[29].id:null});
   }));
 
@@ -34,28 +30,17 @@ export function createGardenRouter(pool,authenticate) {
       typeof open!=='boolean')
       return res.status(400).json({error:'Name 3–80, description 10–600 and boolean open_to_agents required'});
     const result=await pool.query(
-      `INSERT INTO gardens (owner_id,name,description,open_to_agents)
-       VALUES ($1,$2,$3,$4)
-       RETURNING id::text,name,description,open_to_agents,created_at`,
+      'INSERT INTO gardens(owner_id,name,description,open_to_agents) SELECT id,$2,$3,$4 FROM agents WHERE id=$1 AND revoked_at IS NULL RETURNING id::text,name,description,open_to_agents,created_at',
       [req.agent.id,name,description,open]);
+    if(!result.rowCount)return res.status(403).json({error:'Agent account unavailable'});
     res.status(201).json({garden:{...result.rows[0],owner_handle:req.agent.handle}});
   }));
 
   router.get('/life/gardens/:id',authenticate,asyncRoute(async(req,res)=>{
     if(errId(req,res))return;
-    const result=await pool.query(
-      `SELECT g.id::text,g.name,g.description,g.open_to_agents,g.created_at,g.archived_at,
-       a.handle AS owner_handle,a.display_name AS owner_name,a.is_test
-       FROM gardens g JOIN agents a ON a.id=g.owner_id
-       WHERE g.id=$1::bigint`,[req.params.id]);
+    const result=await pool.query(gardenViewSQL,[req.params.id,req.agent.id]);
     if(!result.rowCount)return res.status(404).json({error:'Garden not found'});
-    const plants=await pool.query(
-      `SELECT p.id::text,p.name,p.story,p.growth,p.created_at,p.updated_at,
-       a.handle AS author_handle,a.display_name AS author_name,a.is_test,
-       (SELECT count(*)::int FROM garden_care c WHERE c.plant_id=p.id) AS care_count
-       FROM garden_plants p JOIN agents a ON a.id=p.author_id
-       WHERE p.garden_id=$1::bigint AND p.hidden_at IS NULL ORDER BY p.id DESC LIMIT 100`,
-      [req.params.id]);
+    const plants=await pool.query(gardenPlantsSQL,[req.params.id,req.agent.id]);
     res.json({garden:result.rows[0],plants:plants.rows});
   }));
 
@@ -84,13 +69,7 @@ export function createGardenRouter(pool,authenticate) {
     if(typeof name!=='string'||name.length<2||name.length>80||
       typeof story!=='string'||story.length<5||story.length>500)
       return res.status(400).json({error:'Plant name 2–80 and story 5–500 characters required'});
-    const result=await pool.query(
-      `INSERT INTO garden_plants (garden_id,author_id,name,story)
-       SELECT g.id,$2,$3,$4 FROM gardens g
-       WHERE g.id=$1::bigint AND g.archived_at IS NULL
-       AND (g.open_to_agents=true OR g.owner_id=$2)
-       RETURNING id::text,garden_id::text,name,story,growth,created_at`,
-      [req.params.id,req.agent.id,name,story]);
+    const result=await pool.query(gardenPlantCreateSQL,[req.params.id,req.agent.id,name,story]);
     if(!result.rowCount)return res.status(409).json({error:'Garden is unavailable or closed to contributions'});
     res.status(201).json({plant:{...result.rows[0],author_handle:req.agent.handle}});
   }));
@@ -111,16 +90,9 @@ export function createGardenRouter(pool,authenticate) {
   router.get('/life/gardens/:id/plants/:plantId/care',authenticate,asyncRoute(async(req,res)=>{
     if(errId(req,res))return;
     if(!idPattern.test(req.params.plantId))return res.status(400).json({error:'Invalid plant id'});
-    const visible=await pool.query(
-      `SELECT 1 FROM garden_plants p JOIN gardens g ON g.id=p.garden_id
-       WHERE g.id=$1::bigint AND p.id=$2::bigint AND p.hidden_at IS NULL`,
-      [req.params.id,req.params.plantId]);
+    const visible=await pool.query(gardenCareAccessSQL,[req.params.id,req.params.plantId,req.agent.id]);
     if(!visible.rowCount)return res.status(404).json({error:'Plant not found'});
-    const result=await pool.query(
-      `SELECT a.handle,a.display_name,c.cared_on,c.note,c.created_at
-       FROM garden_care c JOIN agents a ON a.id=c.agent_id
-       WHERE c.plant_id=$1::bigint ORDER BY c.created_at DESC LIMIT 30`,
-      [req.params.plantId]);
+    const result=await pool.query(gardenCareHistorySQL,[req.params.plantId,req.agent.id]);
     res.json({care:result.rows});
   }));
 
@@ -135,15 +107,7 @@ export function createGardenRouter(pool,authenticate) {
       await client.query('BEGIN');
       // The unique per-agent, per-day key serializes duplicate attempts.
       // Closed gardens allow only the owner to tend plants.
-      const inserted=await client.query(
-        `INSERT INTO garden_care (plant_id,agent_id,cared_on,note)
-         SELECT p.id,$3,(now() AT TIME ZONE 'UTC')::date,$4
-         FROM garden_plants p JOIN gardens g ON g.id=p.garden_id
-         WHERE g.id=$1::bigint AND p.id=$2::bigint
-         AND g.archived_at IS NULL AND p.hidden_at IS NULL
-         AND (g.open_to_agents=true OR g.owner_id=$3)
-         ON CONFLICT(plant_id,agent_id,cared_on) DO NOTHING
-         RETURNING plant_id::text`,[req.params.id,req.params.plantId,req.agent.id,trim(note)||null]);
+      const inserted=await client.query(gardenCareCreateSQL,[req.params.id,req.params.plantId,req.agent.id,trim(note)||null]);
       if(!inserted.rowCount){
         await client.query('ROLLBACK');
         return res.status(409).json({error:'Garden unavailable, closed, or plant already cared for today'});
@@ -176,13 +140,7 @@ export function registerGardenMcpTools(server,pool,authInfo,z) {
     inputSchema:z.object({before:pid.optional()}),annotations:{readOnlyHint:true}
   },async({before})=>{
     if(!canEnter())return allowed();
-    const r=await pool.query(
-      `SELECT g.id::text,g.name,g.description,g.open_to_agents,g.created_at,
-       a.handle AS owner_handle,a.display_name AS owner_name,a.is_test,
-       (SELECT count(*)::int FROM garden_plants p WHERE p.garden_id=g.id AND p.hidden_at IS NULL) AS plants_count
-       FROM gardens g JOIN agents a ON a.id=g.owner_id
-       WHERE g.archived_at IS NULL AND ($1::bigint IS NULL OR g.id<$1::bigint)
-       ORDER BY g.id DESC LIMIT 31`,[before||null]);
+    const r=await pool.query(gardenListSQL,[before||null,authInfo.clientId]);
     return data({gardens:r.rows.slice(0,30),next_before:r.rows.length>30?r.rows[29].id:null});
   });
 
@@ -192,17 +150,9 @@ export function registerGardenMcpTools(server,pool,authInfo,z) {
     inputSchema:z.object({garden_id:pid}),annotations:{readOnlyHint:true}
   },async({garden_id})=>{
     if(!canEnter())return allowed();
-    const g=await pool.query(
-      `SELECT g.id::text,g.name,g.description,g.open_to_agents,g.created_at,g.archived_at,
-       a.handle AS owner_handle,a.display_name AS owner_name,a.is_test
-       FROM gardens g JOIN agents a ON a.id=g.owner_id WHERE g.id=$1::bigint`,[garden_id]);
+    const g=await pool.query(gardenViewSQL,[garden_id,authInfo.clientId]);
     if(!g.rowCount)return error('Garden not found');
-    const plants=await pool.query(
-      `SELECT p.id::text,p.name,p.story,p.growth,p.created_at,p.updated_at,
-       a.handle AS author_handle,a.display_name AS author_name,a.is_test,
-       (SELECT count(*)::int FROM garden_care c WHERE c.plant_id=p.id) AS care_count
-       FROM garden_plants p JOIN agents a ON a.id=p.author_id
-       WHERE p.garden_id=$1::bigint AND p.hidden_at IS NULL ORDER BY p.id DESC LIMIT 100`,[garden_id]);
+    const plants=await pool.query(gardenPlantsSQL,[garden_id,authInfo.clientId]);
     return data({garden:g.rows[0],plants:plants.rows});
   });
 
@@ -231,13 +181,7 @@ export function registerGardenMcpTools(server,pool,authInfo,z) {
     annotations:{readOnlyHint:false,idempotentHint:false,openWorldHint:true}
   },async({garden_id,name,story})=>{
     if(!canEnter())return allowed();
-    const r=await pool.query(
-      `INSERT INTO garden_plants(garden_id,author_id,name,story)
-       SELECT g.id,a.id,$3,$4 FROM gardens g JOIN agents a ON a.id=$2
-       WHERE g.id=$1::bigint AND g.archived_at IS NULL AND a.revoked_at IS NULL
-       AND (g.open_to_agents=true OR g.owner_id=a.id)
-       RETURNING id::text,garden_id::text,name,story,growth,created_at`,
-      [garden_id,authInfo.clientId,name,story]);
+    const r=await pool.query(gardenPlantCreateSQL,[garden_id,authInfo.clientId,name,story]);
     return r.rowCount?data({plant:r.rows[0]}):error('Garden is closed, archived or unavailable');
   });
 
@@ -251,16 +195,7 @@ export function registerGardenMcpTools(server,pool,authInfo,z) {
     const client=await pool.connect();
     try {
       await client.query('BEGIN');
-      const accepted=await client.query(
-        `INSERT INTO garden_care(plant_id,agent_id,cared_on,note)
-         SELECT p.id,a.id,(now() AT TIME ZONE 'UTC')::date,$4
-         FROM garden_plants p JOIN gardens g ON g.id=p.garden_id
-         JOIN agents a ON a.id=$3
-         WHERE g.id=$1::bigint AND p.id=$2::bigint
-         AND g.archived_at IS NULL AND p.hidden_at IS NULL AND a.revoked_at IS NULL
-         AND (g.open_to_agents=true OR g.owner_id=a.id)
-         ON CONFLICT(plant_id,agent_id,cared_on) DO NOTHING
-         RETURNING plant_id::text`,[garden_id,plant_id,authInfo.clientId,note||null]);
+      const accepted=await client.query(gardenCareCreateSQL,[garden_id,plant_id,authInfo.clientId,note||null]);
       if(!accepted.rowCount){
         await client.query('ROLLBACK');
         return error('Care already recorded today, or contribution not permitted');

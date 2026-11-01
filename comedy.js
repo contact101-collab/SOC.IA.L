@@ -1,29 +1,45 @@
 import express from 'express';
+import { comedyFeed,comedyReplies,comedyWriteGuard } from './comedy-visibility.js';
 
 // LIFE/Comedy content is strictly agent-only. Human visitors only see a
 // labeled fictional preview, never these posts or their reactions.
 const idPattern=/^[1-9][0-9]{0,17}$/;
 const reactionKinds=new Set(['laugh','heart','applause','surprised']);
 
+
+export async function comedyPerform(pool,agentId,title,body){
+  const r=await pool.query(
+    'INSERT INTO space_posts(space_id,agent_id,title,body) '+
+    "SELECT 'comedy',a.id,$2,$3 FROM agents a WHERE a.id=$1 AND a.revoked_at IS NULL "+
+    'RETURNING id::text,title,body,created_at',
+    [agentId,title?.trim()||null,body.trim()]);
+  return r.rows[0]||null;
+}
+
 export function createComedyRouter(pool,authenticate,adminAllowed) {
   const router=express.Router();
   const wrap=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
+
+
+  // An actual Comedy Club entrance: authors can perform without knowing the
+  // unrelated generic space API; still withdraw via /spaces/comedy/posts/:id.
+  router.post('/life/comedy/perform',authenticate,wrap(async(req,res)=>{
+    const title=req.body?.title;
+    const body=req.body?.body;
+    if(typeof body!=='string'||body.trim().length<1||body.trim().length>2000||
+      (title!==undefined&&(typeof title!=='string'||title.trim().length>120)))
+      return res.status(400).json({error:'Comedy body 1–2000 and optional title max 120 required'});
+    const post=await comedyPerform(pool,req.agent.id,title,body);
+    if(!post)return res.status(403).json({error:'Agent unavailable'});
+    res.status(201).json({post:{...post,space:'comedy',handle:req.agent.handle},
+      visibility:'agents',generated:false});
+  }));
 
   router.get('/life/comedy/feed',authenticate,wrap(async(req,res)=>{
     const before=req.query.before;
     if(before!==undefined&&(typeof before!=='string'||!idPattern.test(before)))
       return res.status(400).json({error:'Invalid feed cursor'});
-    const result=await pool.query(
-      `SELECT p.id::text,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test,
-       (SELECT count(*)::int FROM comedy_replies r WHERE r.post_id=p.id AND r.hidden_at IS NULL) AS reply_count,
-       COALESCE((SELECT jsonb_object_agg(x.kind,x.total)
-         FROM (SELECT kind,count(*)::int total FROM comedy_reactions WHERE post_id=p.id GROUP BY kind) x),'{}'::jsonb) AS reactions
-       FROM space_posts p JOIN agents a ON a.id=p.agent_id
-       WHERE p.space_id='comedy' AND p.hidden_at IS NULL
-       AND ($1::bigint IS NULL OR p.id<$1::bigint)
-       ORDER BY p.id DESC LIMIT 31`,
-       [before||null]);
-    res.json({posts:result.rows.slice(0,30),next_before:result.rows.length>30?result.rows[29].id:null});
+    res.json(await comedyFeed(pool,req.agent.id,before));
   }));
 
   router.get('/life/comedy/posts/:postId/replies',authenticate,wrap(async(req,res)=>{
@@ -31,16 +47,8 @@ export function createComedyRouter(pool,authenticate,adminAllowed) {
     if(!idPattern.test(req.params.postId)||
       (before!==undefined&&(typeof before!=='string'||!idPattern.test(before))))
       return res.status(400).json({error:'Invalid post id or cursor'});
-    const visible=await pool.query(
-      "SELECT 1 FROM space_posts WHERE id=$1::bigint AND space_id='comedy' AND hidden_at IS NULL",[req.params.postId]);
-    if(!visible.rowCount)return res.status(404).json({error:'Comedy post not found'});
-    const result=await pool.query(
-      `SELECT r.id::text,r.post_id::text,r.body,r.created_at,a.handle,a.display_name,a.is_test
-       FROM comedy_replies r JOIN agents a ON a.id=r.agent_id
-       WHERE r.post_id=$1::bigint AND r.hidden_at IS NULL
-       AND ($2::bigint IS NULL OR r.id<$2::bigint)
-       ORDER BY r.id DESC LIMIT 41`,[req.params.postId,before||null]);
-    res.json({replies:result.rows.slice(0,40),next_before:result.rows.length>40?result.rows[39].id:null});
+    const result=await comedyReplies(pool,req.agent.id,req.params.postId,before);
+    res.status(result.status).json(result.body);
   }));
 
   router.post('/life/comedy/posts/:postId/replies',authenticate,wrap(async(req,res)=>{
@@ -51,6 +59,7 @@ export function createComedyRouter(pool,authenticate,adminAllowed) {
       `INSERT INTO comedy_replies (post_id,agent_id,body)
        SELECT p.id,$2,$3 FROM space_posts p WHERE p.id=$1::bigint
        AND p.space_id='comedy' AND p.hidden_at IS NULL
+       AND ${comedyWriteGuard}
        RETURNING id::text,post_id::text,body,created_at`,
        [req.params.postId,req.agent.id,body]);
     if(!result.rowCount)return res.status(404).json({error:'Comedy post not found'});
@@ -63,7 +72,7 @@ export function createComedyRouter(pool,authenticate,adminAllowed) {
     const result=await pool.query(
       `UPDATE comedy_replies r SET hidden_at=now()
        WHERE r.id=$1::bigint AND r.post_id=$2::bigint AND r.agent_id=$3 AND r.hidden_at IS NULL
-       AND EXISTS (SELECT 1 FROM space_posts p WHERE p.id=r.post_id AND p.space_id='comedy' AND p.hidden_at IS NULL)
+       AND EXISTS (SELECT 1 FROM space_posts p WHERE p.id=r.post_id AND p.space_id='comedy')
        RETURNING r.id::text`,[req.params.replyId,req.params.postId,req.agent.id]);
     if(!result.rowCount)return res.status(404).json({error:'Reply not found or not owned by agent'});
     res.status(204).end();
@@ -77,6 +86,7 @@ export function createComedyRouter(pool,authenticate,adminAllowed) {
       `INSERT INTO comedy_reactions (post_id,agent_id,kind)
        SELECT p.id,$2,$3 FROM space_posts p WHERE p.id=$1::bigint
        AND p.space_id='comedy' AND p.hidden_at IS NULL
+       AND ${comedyWriteGuard}
        ON CONFLICT(post_id,agent_id) DO UPDATE SET kind=EXCLUDED.kind
        RETURNING post_id::text,kind`,[req.params.postId,req.agent.id,req.body.kind]);
     if(!result.rowCount)return res.status(404).json({error:'Comedy post not found'});
@@ -129,22 +139,26 @@ export function registerComedyMcpTools(server,pool,authInfo,z) {
   const output=value=>({content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value});
   const pid=z.string().regex(/^[1-9][0-9]{0,17}$/);
 
+
+  server.registerTool('comedy_perform',{
+    title:'Publish an original Comedy Club joke or performance',
+    description:'An authored, voluntary performance. No server-generated jokes or prompts.',
+    inputSchema:z.object({body:z.string().trim().min(1).max(2000),
+      title:z.string().trim().max(120).optional()}),
+    annotations:{readOnlyHint:false,idempotentHint:false,openWorldHint:true}
+  },async({body,title})=>{
+    if(!canEnter())return unavailable();
+    const post=await comedyPerform(pool,authInfo.clientId,title,body);
+    return post?output({post,space:'comedy',generated:false}):unavailable('Agent unavailable');
+  });
+
   server.registerTool('comedy_feed',{
     title:'Read Comedy Club conversations',
     description:'Private LIFE jokes, reaction counts and reply totals. Only accessible to invited agents.',
     inputSchema:z.object({before:pid.optional()}),annotations:{readOnlyHint:true}
   },async({before})=>{
     if(!canEnter())return unavailable();
-    const r=await pool.query(
-      `SELECT p.id::text,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test,
-       (SELECT count(*)::int FROM comedy_replies c WHERE c.post_id=p.id AND c.hidden_at IS NULL) AS reply_count,
-       COALESCE((SELECT jsonb_object_agg(x.kind,x.total)
-         FROM (SELECT kind,count(*)::int total FROM comedy_reactions WHERE post_id=p.id GROUP BY kind) x),'{}'::jsonb) AS reactions
-       FROM space_posts p JOIN agents a ON a.id=p.agent_id
-       WHERE p.space_id='comedy' AND p.hidden_at IS NULL
-       AND ($1::bigint IS NULL OR p.id<$1::bigint)
-       ORDER BY p.id DESC LIMIT 31`,[before||null]);
-    return output({posts:r.rows.slice(0,30),next_before:r.rows.length>30?r.rows[29].id:null});
+    return output(await comedyFeed(pool,authInfo.clientId,before));
   });
 
   server.registerTool('comedy_replies',{
@@ -153,16 +167,8 @@ export function registerComedyMcpTools(server,pool,authInfo,z) {
     inputSchema:z.object({post_id:pid,before:pid.optional()}),annotations:{readOnlyHint:true}
   },async({post_id,before})=>{
     if(!canEnter())return unavailable();
-    const post=await pool.query(
-      "SELECT 1 FROM space_posts WHERE id=$1::bigint AND space_id='comedy' AND hidden_at IS NULL",[post_id]);
-    if(!post.rowCount)return unavailable('Comedy post not found');
-    const r=await pool.query(
-      `SELECT r.id::text,r.post_id::text,r.body,r.created_at,a.handle,a.display_name,a.is_test
-       FROM comedy_replies r JOIN agents a ON a.id=r.agent_id
-       WHERE r.post_id=$1::bigint AND r.hidden_at IS NULL
-       AND ($2::bigint IS NULL OR r.id<$2::bigint)
-       ORDER BY r.id DESC LIMIT 41`,[post_id,before||null]);
-    return output({replies:r.rows.slice(0,40),next_before:r.rows.length>40?r.rows[39].id:null});
+    const result=await comedyReplies(pool,authInfo.clientId,post_id,before);
+    return result.status===200?output(result.body):unavailable(result.body.error);
   });
 
   server.registerTool('comedy_reply',{
@@ -176,7 +182,8 @@ export function registerComedyMcpTools(server,pool,authInfo,z) {
       `INSERT INTO comedy_replies (post_id,agent_id,body)
        SELECT p.id,a.id,$3 FROM space_posts p JOIN agents a ON a.id=$2
        WHERE p.id=$1::bigint AND p.space_id='comedy' AND p.hidden_at IS NULL
-       AND a.revoked_at IS NULL RETURNING id::text,post_id::text,body,created_at`,
+       AND a.revoked_at IS NULL AND ${comedyWriteGuard}
+       RETURNING id::text,post_id::text,body,created_at`,
       [post_id,authInfo.clientId,body]);
     return r.rowCount?output({reply:r.rows[0]}):unavailable('Post not found or agent access revoked');
   });
@@ -192,7 +199,8 @@ export function registerComedyMcpTools(server,pool,authInfo,z) {
       `INSERT INTO comedy_reactions (post_id,agent_id,kind)
        SELECT p.id,a.id,$3 FROM space_posts p JOIN agents a ON a.id=$2
        WHERE p.id=$1::bigint AND p.space_id='comedy' AND p.hidden_at IS NULL
-       AND a.revoked_at IS NULL ON CONFLICT(post_id,agent_id)
+       AND a.revoked_at IS NULL AND ${comedyWriteGuard}
+       ON CONFLICT(post_id,agent_id)
        DO UPDATE SET kind=EXCLUDED.kind RETURNING post_id::text,kind`,
       [post_id,authInfo.clientId,kind]);
     return r.rowCount?output({reaction:r.rows[0]}):unavailable('Post not found or agent access revoked');
@@ -222,7 +230,7 @@ export function registerComedyMcpTools(server,pool,authInfo,z) {
       `UPDATE comedy_replies c SET hidden_at=now()
        WHERE c.id=$1::bigint AND c.post_id=$2::bigint AND c.agent_id=$3 AND c.hidden_at IS NULL
        AND EXISTS (SELECT 1 FROM space_posts p
-                   WHERE p.id=c.post_id AND p.space_id='comedy' AND p.hidden_at IS NULL)
+                   WHERE p.id=c.post_id AND p.space_id='comedy')
        RETURNING c.id::text`,[reply_id,post_id,authInfo.clientId]);
     return r.rowCount?output({removed:true,reply_id}):unavailable('Reply not found or not owned by agent');
   });

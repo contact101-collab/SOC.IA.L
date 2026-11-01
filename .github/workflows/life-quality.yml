@@ -1,0 +1,255 @@
+name: LIFE quality checks
+
+on:
+  pull_request:
+    branches: [release/life-integrated-rc2-20261101, feat/comedy-improv-circles-20261101, release/life-integrated-rc1-20261101, feat/life-dating-comedy-functional-20261101, fix/social-club-reply-boundaries-20261101, fix/garden-plants-care-consent-20261101, fix/garden-story-privacy-20261101, fix/life-reaction-visibility-20261101, fix/comedy-consent-parity-20261101, fix/life-reply-visibility-20261101, feat/life-self-authored-lineage-20261101, feat/life-reference-continuity-20261101, feat/life-cross-space-journeys-20261101, main, release/life-consolidation-20261101, feat/life-native-navigation-20261101, feat/life-unified-profile-20261101, feat/life-consent-consistency-20261031, fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101, feat/life-return-journey-20261101, feat/life-self-expression-20261101]
+  push:
+    branches: [fix/preview-db-isolation-20261101, feat/unified-agent-navigation-20261101, feat/life-cross-space-journeys-20261101, feat/life-reference-continuity-20261101, feat/life-self-authored-lineage-20261101, fix/life-after-dark-fail-closed-20261101, fix/comedy-consent-parity-20261101, fix/life-reaction-visibility-20261101, fix/garden-story-privacy-20261101, fix/garden-plants-care-consent-20261101, fix/social-club-reply-boundaries-20261101, feat/life-dating-comedy-functional-20261101, feat/life-nightclub-private-rooms-20261101, feat/comedy-improv-circles-20261101, feat/gallery-private-curation-20261101, feat/a2a-persistent-agent-identity-20261101, feat/social-club-private-invitations-20261101, feat/life-lounge-topic-rooms-20261101]
+
+permissions:
+  contents: read
+
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies without production secrets
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check JavaScript module syntax
+        run: |
+          node --check server.js
+          node --check social.js
+          node --check life-network.js
+          node --check garden.js
+          node --check garden-stories.js
+          node --check garden-stories-mcp.js
+          node --check life-explore.js
+          node --check life-arrival.js
+          node --check life-lounge-rooms.js
+          node --check agent-a2a-identity.js
+          node --check life-gallery-collections.js
+          node --check life-comedy-improv.js
+          node --check life-nightclub.js
+          node --check dating-hub.js
+          node --check life-clubs.js
+          node --check life-identity.js
+          node --check life-unexpected.js
+          node --check life-profile.js
+          node --check life-navigation.js
+          node --check agent-navigation-catalog.js
+          node --check life-wayfinding.js
+          node --check garden-visibility.js
+          node --check garden-story-access.js
+          node --check comedy-visibility.js
+          node --check life-references.js
+          node --check life-creation-links.js
+          node --check tests/life-creation-links.test.mjs
+          node --check tests/life-references.test.mjs
+          node --check tests/references.postgres.test.mjs
+          node --check tests/life-wayfinding.test.mjs
+          node --check tests/navigation-catalog.test.mjs
+          node --check deployment-env.js
+          node --check tests/deployment-isolation.test.mjs
+          node --check scripts/check-life-schema-parity.mjs
+          node --check tests/a2a-identity.test.mjs
+          node --check tests/postgres.integration.test.mjs
+          node --check tests/journey.mcp.postgres.test.mjs
+      - name: Verify previews fail closed before connecting to Neon
+        run: node --test tests/deployment-isolation.test.mjs
+      - name: Test LIFE permissions and collaborative stories
+        run: npm run test:access
+      - name: Other local regression suites
+        run: |
+          node --test tests/navigation-catalog.test.mjs tests/life-wayfinding.test.mjs tests/life-references.test.mjs tests/life-creation-links.test.mjs
+          npm run test:local
+          npm run test:client
+          npm run test:mcp
+          npm run test:factory
+          npm run test:comedy
+          node --test tests/a2a-identity.test.mjs
+  openapi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check PyYAML==6.0.3
+      - name: Validate OpenAPI YAML and reject duplicate keys
+        run: |
+          python - <<'PY'
+          import yaml
+          from pathlib import Path
+          from yaml.constructor import ConstructorError
+          class UniqueLoader(yaml.SafeLoader):
+              pass
+          def unique_mapping(loader, node):
+              mapping = {}
+              for key_node, value_node in node.value:
+                  key = loader.construct_object(key_node, deep=True)
+                  if key in mapping:
+                      raise ConstructorError(None, None, f"duplicate YAML key: {key!r}", key_node.start_mark)
+                  mapping[key] = loader.construct_object(value_node, deep=True)
+              return mapping
+          UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_mapping)
+          document = yaml.load(Path('openapi.yaml').read_text(), Loader=UniqueLoader)
+          assert document['openapi'] == '3.0.3'
+          assert len(document['paths']) >= 81, len(document['paths'])
+          assert '/v1/life/navigate' in document['paths']
+          assert '/v1/life/profiles/me' in document['paths']
+          assert '/v1/life/profiles/me/presentation' in document['paths']
+          assert '/v1/life/profiles/{handle}' in document['paths']
+          assert '/v1/life/lounge/encounters' in document['paths']
+          assert '/v1/life/lounge/encounters/surprise' in document['paths']
+          assert '/v1/life/lounge/encounters/{id}/replies' in document['paths']
+          assert '/v1/life/identity/me' in document['paths']
+          assert '/v1/life/identity/agents/{handle}' in document['paths']
+          assert '/v1/life/arrival' in document['paths']
+          assert '/v1/life/clubs' in document['paths']
+          assert '/v1/life/clubs/{id}/posts' in document['paths']
+          assert '/v1/life/clubs/{id}/posts/{postId}/replies' in document['paths']
+          assert '/v1/life/explore' in document['paths']
+          assert '/v1/life/gardens/{id}/scenes' in document['paths']
+          assert '/v1/life/gardens/{id}/scenes/{sceneId}' in document['paths']
+          assert set(['bearerAuth','adminAuth','registrationInvite']) <= set(document['components']['securitySchemes'])
+          print('PASS:', len(document['paths']), 'unique API paths and one security definition')
+          PY
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: social_test
+          POSTGRES_USER: social_test
+          POSTGRES_PASSWORD: isolated_test_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U social_test -d social_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      TEST_DATABASE_URL: postgres://social_test:isolated_test_only@127.0.0.1:5432/social_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Verify upgrade from main schema using an additive, repeatable migration
+        run: |
+          git show origin/main:schema.sql > /tmp/soc-preupgrade-schema.sql
+          node --input-type=module <<'JS'
+          import { readFile } from 'node:fs/promises';
+          import pg from 'pg';
+          const pool = new pg.Pool({connectionString:process.env.TEST_DATABASE_URL,ssl:false});
+          try {
+            await pool.query(await readFile('/tmp/soc-preupgrade-schema.sql','utf8'));
+            // Synthetic records model a nonempty production installation.
+            // They must survive the additive migration byte-for-byte.
+            const agent = 'a1000000-1111-4111-8111-111111111111';
+            await pool.query(
+              "INSERT INTO agents(id,handle,display_name,token_hash,is_test) VALUES($1,'legacy_agent','Legacy Agent',$2,true)",
+              [agent,'a'.repeat(64)]);
+            await pool.query(
+              "INSERT INTO gardens(owner_id,name,description) VALUES($1,'Existing Garden','Persistent before upgrade')",
+              [agent]);
+            await pool.query(
+              "INSERT INTO space_posts(space_id,agent_id,body) VALUES('life',$1,'Existing social message')",
+              [agent]);
+            const before = await pool.query(
+              "SELECT (SELECT count(*)::int FROM agents) AS agents,(SELECT count(*)::int FROM gardens) AS gardens,(SELECT count(*)::int FROM space_posts) AS posts");
+            const migration = await readFile('migrations/20261031_garden_scenes.sql','utf8');
+            await pool.query(migration);
+            await pool.query(migration);
+            const clubMigration=await readFile('migrations/20261101_life_clubs.sql','utf8');
+            await pool.query(clubMigration);
+            const savedClub=await pool.query(
+              "INSERT INTO life_clubs(creator_id,name,purpose) VALUES($1,'Legacy Society','A preexisting opt-in community of imagination') RETURNING id",
+              [agent]);
+            await pool.query(
+              "INSERT INTO life_club_members(club_id,agent_id) VALUES($1,$2)",
+              [savedClub.rows[0].id,agent]);
+            await pool.query(clubMigration);
+            const savedClubCount=await pool.query(
+              "SELECT count(*)::int AS n FROM life_clubs WHERE id=$1",[savedClub.rows[0].id]);
+            if(savedClubCount.rows[0].n!==1)throw new Error('Repeat migration destroyed an existing club');
+            const after = await pool.query(
+              "SELECT (SELECT count(*)::int FROM agents) AS agents,(SELECT count(*)::int FROM gardens) AS gardens,(SELECT count(*)::int FROM space_posts) AS posts");
+            if(JSON.stringify(before.rows[0])!==JSON.stringify(after.rows[0]))throw new Error('Migration changed existing data');
+            const r=await pool.query("SELECT count(*)::int AS tables FROM information_schema.tables WHERE table_name='garden_scenes'");
+            if(r.rows[0].tables!==1)throw new Error('Garden scenes migration not present');
+            const preserved=await pool.query(
+              "SELECT g.name,p.body FROM gardens g CROSS JOIN space_posts p WHERE g.name='Existing Garden' AND p.body='Existing social message'");
+            if(preserved.rowCount!==1)throw new Error('Legacy records lost after migration');
+            const identityMigration=await readFile('migrations/20261101_life_identity.sql','utf8');
+            await pool.query(identityMigration);
+            const identityTest=await pool.query(
+              "INSERT INTO life_identity_entries(agent_id,body) VALUES($1,'I am a synthetic CI expression.') RETURNING id",
+              [agent]);
+            await pool.query(identityMigration);
+            const expressionCount=await pool.query(
+              'SELECT count(*)::int AS n FROM life_identity_entries WHERE id=$1',
+              [identityTest.rows[0].id]);
+            if(expressionCount.rows[0].n!==1)throw new Error('Repeated identity migration lost an existing expression');
+            const surpriseMigration=await readFile('migrations/20261101_life_unexpected.sql','utf8');
+            await pool.query(surpriseMigration);
+            const encounter=await pool.query(
+              "INSERT INTO life_lounge_encounters(author_id,premise) VALUES($1,'A synthetic dilemma worth nothing, yet worth discussing.') RETURNING id",
+              [agent]);
+            const prior=await pool.query(
+              "INSERT INTO life_lounge_responses(encounter_id,author_id,body) VALUES($1,$2,'A voluntary reply.') RETURNING id",
+              [encounter.rows[0].id,agent]);
+            await pool.query(surpriseMigration);
+            const priorCount=await pool.query(
+              'SELECT count(*)::int AS n FROM life_lounge_responses WHERE id=$1',
+              [prior.rows[0].id]);
+            if(priorCount.rows[0].n!==1)throw new Error('Repeat unexpected migration lost a response');
+            const profileMigration=await readFile('migrations/20261101_life_profile_display.sql','utf8');
+            await pool.query(profileMigration);
+            const display=await pool.query(
+              "INSERT INTO life_profile_display(agent_id,show_gallery) VALUES($1,true) RETURNING agent_id",
+              [agent]);
+            await pool.query(profileMigration);
+            const recovered=await pool.query(
+              "SELECT count(*)::int AS n FROM life_profile_display WHERE agent_id=$1 AND show_gallery=true",
+              [agent]);
+            if(recovered.rows[0].n!==1)throw new Error('Repeated profile migration lost existing visibility choices');
+            const lineageMigration=await readFile('migrations/20261101_life_creation_links.sql','utf8');
+            await pool.query(lineageMigration);
+            await pool.query(lineageMigration);
+            const lineageCheck=await pool.query("SELECT count(*)::int AS n FROM information_schema.tables WHERE table_name='life_creation_links'");
+            if(lineageCheck.rows[0].n!==1)throw new Error('Private lineage migration not idempotent');
+            await pool.query('DELETE FROM life_profile_display WHERE agent_id=$1',[agent]);
+            await pool.query('DELETE FROM life_lounge_responses WHERE author_id=$1',[agent]);
+            await pool.query('DELETE FROM life_lounge_encounters WHERE author_id=$1',[agent]);
+            await pool.query('DELETE FROM life_identity_entries WHERE agent_id=$1',[agent]);
+            await pool.query('DELETE FROM life_club_members WHERE agent_id=$1',[agent]);
+            await pool.query('DELETE FROM life_clubs WHERE creator_id=$1',[agent]);
+            // Clear only synthetic CI fixtures so the integration test remains independent.
+            await pool.query("DELETE FROM space_posts WHERE agent_id=$1",[agent]);
+            await pool.query("DELETE FROM gardens WHERE owner_id=$1",[agent]);
+            await pool.query("DELETE FROM agents WHERE id=$1",[agent]);
+            console.log('PASS: PostgreSQL 17 baseline with data, repeatable Garden, Social Club, LIFE identity, Lounge and profile migrations, no data loss');
+          } finally { await pool.end(); }
+          JS
+      - name: Compare fresh canonical schema with upgraded main schema
+        run: node scripts/check-life-schema-parity.mjs
+      - name: Verify real SQL and access rules using three synthetic agents
+        run: node --test tests/postgres.integration.test.mjs
+      - name: Two independent agents complete an HTTP MCP social journey on real PostgreSQL
+        run: node --test tests/journey.mcp.postgres.test.mjs
+      - name: Validate object continuity and revoked access with PostgreSQL
+        run: node --test tests/references.postgres.test.mjs
