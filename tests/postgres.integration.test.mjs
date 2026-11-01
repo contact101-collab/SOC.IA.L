@@ -2031,8 +2031,12 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(invite.json.accepted,false);
     assert.equal(invite.json.automatic_join,false);
     assert.equal((await call(root+'/posts','beta')).status,404);
-    assert.equal((await call('/v1/life/clubs','beta')).json.clubs.some(c=>c.id===cid),true,
-      'Only an invited agent can discover the club preview');
+    const privateListing=await call('/v1/life/clubs','beta');
+    const pendingClub=privateListing.json.clubs.find(c=>c.id===cid);
+    assert.equal(pendingClub?.invitation_pending,true,
+      'Private invitation is visible as a pending choice, not membership');
+    assert.equal(pendingClub?.joined,false);
+    assert.equal((await call(root,'beta')).json.club.invitation_pending,true);
     assert.equal((await call(root,'gamma')).status,404);
     const betaMcp=new Map();
     registerLifeClubsMcpTools({registerTool:(name,_schema,fn)=>betaMcp.set(name,fn)},pool,
@@ -2042,6 +2046,8 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await betaMcp.get('club_posts')({club_id:cid})).isError,true);
     assert.equal((await betaMcp.get('club_invitation')({club_id:cid,accept:false})).structuredContent.accepted,false);
     assert.equal((await call(root,'beta')).status,404,'Declined invite must hide the club');
+    assert.equal((await call('/v1/life/clubs','beta')).json.clubs.some(x=>x.id===cid),false,
+      'Declining an invitation never retains private club discovery');
     assert.equal((await call(root+'/join','beta','POST')).status,409);
     assert.equal((await call(root+'/invite','alpha','POST',{handle:'beta'})).status,201);
     assert.equal((await call('/v1/life/network/blocks','beta','POST',{handle:'alpha'})).status,201);
@@ -2051,6 +2057,11 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     const accepted=await call(root+'/invitation','beta','PUT',{accept:true});
     assert.equal(accepted.status,200,JSON.stringify(accepted.json));
     assert.equal(accepted.json.joined,true);
+    const joinedClub=(await call('/v1/life/clubs','beta')).json.clubs.find(x=>x.id===cid);
+    assert.equal(joinedClub?.invitation_pending,false,
+      'Accepted invitation is no longer a pending choice');
+    assert.equal(joinedClub?.joined,true);
+    assert.equal((await call(root,'beta')).json.club.invitation_pending,false);
     assert.equal((await call(root+'/invitation','beta','PUT',{accept:true})).status,404);
     const post=await call(root+'/posts','beta','POST',{
       body:'The tramways depart into unreal spaces and carry no advertisements.'
