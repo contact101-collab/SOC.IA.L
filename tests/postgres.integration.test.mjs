@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 import pg from 'pg';
-import { createGardenRouter } from '../garden.js';
+import { createGardenRouter, registerGardenMcpTools } from '../garden.js';
 import { createGardenStoriesRouter } from '../garden-stories.js';
 import { createSocialRouter } from '../social.js';
 import { createComedyRouter,registerComedyMcpTools } from '../comedy.js';
@@ -1317,6 +1317,112 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call('/v1/life/gardens/'+gardenId+'/scenes/'+first.json.scene.id,'beta','DELETE')).status,204,
       'An author can still withdraw their own scene after the garden closes');
     assert.equal((await read('alpha')).length,1);
+  });
+
+
+  await t.test('Garden plant and care boundaries respect per-author visibility, blocks and revocation',async()=>{
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=(agent_id<>$1) WHERE agent_id=ANY($2::uuid[])',
+      [C.id,[A.id,B.id,C.id]]);
+    const created=await call('/v1/life/gardens','alpha','POST',{
+      name:'A shared garden of privacy',
+      description:'Three independent synthetic agents, one freely shared imaginative garden.',
+      open_to_agents:true
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const gardenId=created.json.garden.id;
+    const route='/v1/life/gardens/'+gardenId;
+    const planted=async(who,name)=>call(route+'/plants',who,'POST',{
+      name,story:'An independently invented plant for a voluntary Garden.'
+    });
+    const alphaPlant=await planted('alpha','Alpha blossom');
+    const betaPlant=await planted('beta','Beta fern');
+    const gammaPlant=await planted('gamma','Gamma secret');
+    assert.equal(alphaPlant.status,201);
+    assert.equal(betaPlant.status,201);
+    assert.equal(gammaPlant.status,201);
+    const a=alphaPlant.json.plant.id,b=betaPlant.json.plant.id,c=gammaPlant.json.plant.id;
+    const care=(plant,who,method='POST')=>call(route+'/plants/'+plant+'/care',who,method,
+      method==='POST'?{note:'Contributed voluntarily'}:undefined);
+    const detail=async who=>{
+      const r=await call(route,who);
+      assert.equal(r.status,200,JSON.stringify(r.json));
+      return r.json;
+    };
+    const list=async who=>{
+      const r=await call('/v1/life/gardens',who);
+      assert.equal(r.status,200,JSON.stringify(r.json));
+      return r.json.gardens.find(g=>g.id===gardenId);
+    };
+    assert.deepEqual((await detail('alpha')).plants.map(p=>p.name),
+      ['Beta fern','Alpha blossom'],
+      'Non-discoverable authors must not be exposed to another reader');
+    assert.equal((await list('alpha')).plants_count,2);
+    assert.equal((await list('gamma')).plants_count,3);
+    assert.equal((await care(c,'alpha')).status,409,
+      'Nobody may care for a non-discoverable creator without consent');
+    assert.equal((await care(c,'gamma')).status,201,'Private creator may care for their own plant');
+    assert.equal((await care(b,'alpha')).status,201);
+    assert.equal((await care(b,'beta')).status,201);
+    assert.equal((await care(b,'gamma')).status,201);
+    assert.equal((await care(a,'beta')).status,201);
+    assert.equal((await care(a,'gamma')).status,201);
+    assert.equal((await care(c,'alpha','GET')).status,404);
+    const alphaView=await detail('alpha');
+    assert.equal(alphaView.plants.find(p=>p.id===b).care_count,2,
+      'A hidden care author must not be counted for another agent');
+    assert.equal(alphaView.plants.find(p=>p.id===a).care_count,1);
+    assert.equal((await care(b,'alpha','GET')).json.care.length,2);
+    assert.equal((await care(b,'gamma','GET')).json.care.length,3);
+    assert.equal((await detail('gamma')).plants.find(p=>p.id===b).care_count,3);
+
+    const handlers=new Map();
+    registerGardenMcpTools({registerTool:(name,_meta,handler)=>handlers.set(name,handler)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    const mcpList=await handlers.get('garden_list')({});
+    assert.deepEqual(JSON.parse(JSON.stringify(mcpList.structuredContent)),
+      (await call('/v1/life/gardens','alpha')).json);
+    const mcpView=await handlers.get('garden_view')({garden_id:gardenId});
+    assert.deepEqual(JSON.parse(JSON.stringify(mcpView.structuredContent)),
+      (await call(route,'alpha')).json);
+
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:false})).status,200);
+    assert.deepEqual((await detail('alpha')).plants.map(p=>p.name),['Alpha blossom']);
+    assert.equal((await list('alpha')).plants_count,1);
+    assert.equal((await care(b,'alpha','GET')).status,404);
+    assert.equal((await care(b,'alpha')).status,409);
+    assert.equal((await detail('beta')).plants.some(p=>p.id===b),true);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:true})).status,200);
+
+    assert.equal((await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'})).status,201);
+    assert.equal((await list('alpha')).plants_count,1);
+    assert.equal((await detail('alpha')).plants.some(p=>p.id===b),false);
+    assert.equal((await call(route,'beta')).status,404,'World owner and guest blocked each other');
+    assert.equal((await planted('beta','An uninvited fern')).status,409);
+    assert.equal((await care(a,'beta')).status,409);
+    assert.equal((await handlers.get('garden_view')({garden_id:gardenId})).isError,undefined);
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[B.id]);
+    assert.equal((await detail('alpha')).plants.some(p=>p.id===b),false);
+    assert.equal((await list('alpha')).plants_count,1);
+    assert.equal((await detail('alpha')).plants.find(p=>p.id===a).care_count,0,
+      'Revoked carers must cease to contribute to viewer-visible counts');
+    assert.equal((await care(a,'alpha','GET')).json.care.length,0);
+    assert.equal((await planted('beta','Revoked fern')).status,409);
+    assert.equal((await call('/v1/life/gardens','beta','POST',{
+      name:'Revoked world',description:'This revoked author must not create an imaginary world.'
+    })).status,403);
+    const underlying=await pool.query(
+      'SELECT count(*)::int AS n FROM garden_care WHERE plant_id=$1',[a]);
+    assert.equal(underlying.rows[0].n,2,'Existing contributions must not be erased');
+    assert.equal((await call(route,'alpha','PATCH',{open_to_agents:false})).status,200);
+    assert.equal((await call(route,'gamma')).status,404);
+    assert.equal((await call(route+'/plants/'+b,'beta','DELETE')).status,204,
+      'Original author may still withdraw an authored plant from a closed world');
   });
 
 });

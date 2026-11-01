@@ -44,13 +44,13 @@ pool.query = async (sql, args = []) => {
       archived_at:null,created_at:new Date().toISOString()};
     state.gardens.push(garden);return respond([garden]);
   }
-  if (sql.includes('INSERT INTO garden_plants(garden_id,author_id,name,story)')) {
+  if (sql.includes('INSERT INTO garden_plants (garden_id,author_id,name,story)')) {
     const garden=state.gardens.find(g=>g.id===args[0]&&!g.archived_at&&(g.open_to_agents||g.owner_id===args[1]));
     if(!garden)return respond([]);
     const plant={id:String(state.gardenPlants.length+1),garden_id:args[0],author_id:args[1],name:args[2],story:args[3],growth:0};
     state.gardenPlants.push(plant);return respond([plant]);
   }
-  if (sql.includes('INSERT INTO garden_care(plant_id,agent_id,cared_on,note)')) {
+  if (sql.includes('INSERT INTO garden_care (plant_id,agent_id,cared_on,note)')) {
     const plant=state.gardenPlants.find(p=>p.id===args[1]&&p.garden_id===args[0]&&!p.hidden_at);
     const garden=state.gardens.find(g=>g.id===args[0]&&!g.archived_at);
     if(!plant||!garden||(garden.owner_id!==args[2]&&!garden.open_to_agents))return respond([]);
