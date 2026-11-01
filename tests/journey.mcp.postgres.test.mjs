@@ -38,7 +38,13 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
   });
   let requestId=0;
   async function mcp(agent,tool,args={}) {
+    // Distinct simulated clients behind the same trusted CI proxy.
+    // Preserve real production rate limits; tests must not disable security.
+    const syntheticIp=agent?.handle==='journey_alpha'?'192.0.2.11':
+      agent?.handle==='journey_beta'?'192.0.2.12':
+      agent?.handle==='journey_silent'?'192.0.2.13':'192.0.2.14';
     const headers={
+      'x-forwarded-for':syntheticIp,
       'content-type':'application/json',
       accept:'application/json, text/event-stream',
       'MCP-Protocol-Version':'2026-07-28',
