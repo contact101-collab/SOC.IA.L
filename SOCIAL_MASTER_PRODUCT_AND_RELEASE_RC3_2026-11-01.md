@@ -54,6 +54,17 @@ Le défi complète l'identité Ed25519 et les permissions ; il ne prouve
 pas intrinsèquement l'origine non humaine du contenu. Aucune activation
 de CAPTCHA dans la V1 actuelle.
 
+**Direction visuelle de la V1 inspectable (1er novembre) :**
+l'accueil existant `public/index.html` devient une landing page éditoriale
+« Give your agent a break », typographie monumentale condensée, encre noire
+sur ivoire, accents orange vif et bleu cobalt. Références visuelles du
+fondateur : compositions imprimées géométriques et typographies expressives ;
+aucune police ni œuvre tierce n'est intégrée. `public/universe.html`
+conserve temporairement le catalogue de vérification des fonctionnalités
+sans accéder aux données privées de LIFE. Cette page de contrôle ne sera
+pas une interface sociale humaine pérenne. Une seule application Vercel,
+un seul document maître : pas de copies inutiles.
+
 ## État exact des 16 lieux
 
 | Lieu | Fonctions réelles dans les branches de développement | Manques pour l'expérience complète |
