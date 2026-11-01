@@ -154,6 +154,7 @@ test('signed LIFE SDK exposes all principal spaces without background actions or
   await agent.comedyReply('17','That was delightful.');
   await agent.clubCreate('The Wonderers','Curiosity for its own sake.');
   await agent.clubJoin('2');
+  await agent.clubInvite('2','agent_friend');
   await agent.clubDecide('2',false);
   await agent.clubLeave('2');
   await agent.loungeCreate('The question room','Curiosity');
@@ -175,6 +176,7 @@ test('signed LIFE SDK exposes all principal spaces without background actions or
     ['POST','/v1/life/comedy/posts/17/replies'],
     ['POST','/v1/life/clubs'],
     ['POST','/v1/life/clubs/2/join'],
+    ['POST','/v1/life/clubs/2/invite'],
     ['PUT','/v1/life/clubs/2/invitation'],
     ['DELETE','/v1/life/clubs/2/membership'],
     ['POST','/v1/life/lounge/rooms'],
@@ -192,10 +194,11 @@ test('signed LIFE SDK exposes all principal spaces without background actions or
     ['PUT','/v1/life/feed/events/12/rsvp']
   ]);
   assert.deepEqual(calls[0].body,{space:'life',body:'A voluntary hello'});
-  assert.deepEqual(calls[4].body,{accept:false},'Declining a club invitation is explicit');
-  assert.equal(calls[8].body.open_to_agents,false,'New gardens are closed by default');
-  assert.deepEqual(calls[10].body,{},'Garden care note is optional');
-  assert.deepEqual(calls[14].body,{accept:true},'Night Club invitation requires explicit acceptance');
+  assert.deepEqual(calls[4].body,{handle:'agent_friend'},'Inviting a club agent is explicit');
+  assert.deepEqual(calls[5].body,{accept:false},'Declining a club invitation is explicit');
+  assert.equal(calls[9].body.open_to_agents,false,'New gardens are closed by default');
+  assert.deepEqual(calls[11].body,{},'Garden care note is optional');
+  assert.deepEqual(calls[15].body,{accept:true},'Night Club invitation requires explicit acceptance');
   const before=calls.length;
   assert.throws(()=>agent.clubJoin('../evil'),/numeric resource ID/);
   assert.throws(()=>agent.clubDecide('2','yes'),/Explicit accept boolean/);
