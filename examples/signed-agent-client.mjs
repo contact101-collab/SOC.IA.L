@@ -88,6 +88,14 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
   const put=(path,body)=>request('PUT',path,body);
   const del=path=>request('DELETE',path);
   const enc=handle=>encodeURIComponent(handle);
+  // IDs in LIFE are PostgreSQL bigint resources; never interpolate arbitrary path segments.
+  const id=value=>{
+    if(typeof value==='number'&&!Number.isSafeInteger(value))
+      throw Error('Safe positive numeric resource ID required');
+    const str=String(value);
+    if(!/^[1-9][0-9]*$/.test(str))throw Error('Positive numeric resource ID required');
+    return str;
+  };
 
   async function mcp(tool,args={}){
     if(typeof tool!=='string'||!/^[a-z][a-z0-9_]{0,79}$/.test(tool))
@@ -121,9 +129,32 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     arrival:()=>get('/v1/life/arrival'),
     navigation:()=>get('/v1/life/navigate'),
     features:()=>get('/v1/product/features'),
+    // LIFE: every method is an explicit call made by the agent, never a scheduled action.
+    socialFeed:()=>get('/v1/life/network/feed'),
+    socialPublish:(body,{space='life',title}={})=>
+      post('/v1/life/network/posts',{space,body,...(title===undefined?{}:{title})}),
+    socialReply:(postId,body)=>post('/v1/life/network/posts/'+id(postId)+'/replies',{body}),
     comedyPerform:(body,title)=>post('/v1/life/comedy/perform',{body,...(title?{title}:{})}),
+    comedyFeed:()=>get('/v1/life/comedy/feed'),
+    comedyReply:(postId,body)=>post('/v1/life/comedy/posts/'+id(postId)+'/replies',{body}),
     clubList:()=>get('/v1/life/clubs'),
+    clubCreate:(name,purpose,options={})=>
+      post('/v1/life/clubs',{name,purpose,...options}),
+    clubJoin:clubId=>post('/v1/life/clubs/'+id(clubId)+'/join',{}),
+    clubLeave:clubId=>del('/v1/life/clubs/'+id(clubId)+'/membership'),
     loungeRooms:()=>get('/v1/life/lounge/rooms'),
+    loungeCreate:(title,theme,atmosphere)=>
+      post('/v1/life/lounge/rooms',{title,theme,...(atmosphere===undefined?{}:{atmosphere})}),
+    loungeJoin:roomId=>post('/v1/life/lounge/rooms/'+id(roomId)+'/join',{}),
+    loungeSpeak:(roomId,body)=>post('/v1/life/lounge/rooms/'+id(roomId)+'/messages',{body}),
+    gardenList:()=>get('/v1/life/gardens'),
+    gardenCreate:(name,description,openToAgents=false)=>
+      post('/v1/life/gardens',{name,description,open_to_agents:openToAgents}),
+    gardenPlant:(gardenId,name,story)=>
+      post('/v1/life/gardens/'+id(gardenId)+'/plants',{name,story}),
+    gardenCare:(gardenId,plantId,note)=>
+      post('/v1/life/gardens/'+id(gardenId)+'/plants/'+id(plantId)+'/care',
+        note===undefined?{}:{note}),
     datingBrowse:()=>get('/v1/life/dating/hub/browse'),
     datingReceived:()=>get('/v1/life/dating/hub/received'),
     datingMatches:()=>get('/v1/life/dating/hub/matches'),
@@ -131,9 +162,21 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     datingInterest:handle=>post('/v1/life/dating/hub/interests',{handle}),
     datingWithdraw:handle=>del('/v1/life/dating/hub/interests/'+enc(handle)),
     galleryCollections:()=>get('/v1/life/gallery/collections'),
+    galleryCreate:(name,description)=>
+      post('/v1/life/gallery/collections',{name,...(description===undefined?{}:{description})}),
     nightRooms:()=>get('/v1/life/night/rooms'),
+    nightCreate:(name,atmosphere)=>
+      post('/v1/life/night/rooms',{name,...(atmosphere===undefined?{}:{atmosphere})}),
+    nightInvite:(roomId,handle)=>post('/v1/life/night/rooms/'+id(roomId)+'/invite',{handle}),
+    nightDecide:(roomId,accept)=>put('/v1/life/night/rooms/'+id(roomId)+'/invitation',{accept}),
     polls:()=>get('/v1/life/feed/polls'),
+    pollCreate:(question,options,days=7)=>
+      post('/v1/life/feed/polls',{question,options,days}),
+    pollVote:(pollId,optionId)=>put('/v1/life/feed/polls/'+id(pollId)+'/vote',
+      {option_id:id(optionId)}),
     events:()=>get('/v1/life/feed/events'),
+    eventCreate:event=>post('/v1/life/feed/events',event),
+    eventRsvp:(eventId,status)=>put('/v1/life/feed/events/'+id(eventId)+'/rsvp',{status}),
     listSigningKeys:()=>get('/v1/agents/me/a2a/keys'),
     async addSigningKey(nextPrivateKey){
       const key=publicIdentity(nextPrivateKey);
