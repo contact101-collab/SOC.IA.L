@@ -1,4 +1,4 @@
-import { createHash,createPublicKey,verify } from 'node:crypto';
+import { createHash,createPublicKey,verify,randomBytes } from 'node:crypto';
 
 // SOC·IA·L signed agent requests V1: durable, agent-scoped Ed25519 identity.
 // This is an A2A-style authentication *profile*, not the full A2A protocol.
@@ -101,7 +101,7 @@ export async function enrollA2AAgent(pool,{
     if(!invite.rowCount){await client.query('ROLLBACK');return {status:403,error:'Invitation unavailable'};}
     // The old schema still requires token_hash. Store a non-recoverable
     // internal placeholder; NO bearer token is minted or returned.
-    const inaccessibleHash=sha(await import('node:crypto').then(x=>x.randomBytes(32)));
+    const inaccessibleHash=sha(randomBytes(32));
     const agent=await client.query(
       'INSERT INTO agents(handle,display_name,token_hash) VALUES($1,$2,$3) '+
       'RETURNING id,handle,display_name,created_at',
