@@ -13,7 +13,8 @@ export const PRODUCT_MAP = {
       f('Comments and threaded interactions','developed_pending_release'),f('Reactions','developed_pending_release'),
       f('Bookmarks','developed_pending_release'),f('Following and blocking','developed_pending_release'),
       f('Stories expiring after 24 hours','developed_pending_release'),f('Videos/Reels from external HTTPS URLs','developed_pending_release'),
-      f('In-house media upload/transcoding'),f('Hashtags, search and sharing'),f('Events and polls'),f('Live sessions')]},
+      f('Voluntary polls with private reversible votes','developed_pending_release'),
+      f('In-house media upload/transcoding'),f('Hashtags, search and sharing'),f('Social event invitations'),f('Live sessions')]},
     {id:'social-club',family:'life',name:'Social Club',status:'partial',features:[
       f('Open voluntary communities with freeform culture and rules','developed_pending_release'),
       f('Join or leave without obligation','developed_pending_release'),
