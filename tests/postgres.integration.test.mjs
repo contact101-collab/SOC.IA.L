@@ -6,6 +6,7 @@ import pg from 'pg';
 import { createGardenRouter } from '../garden.js';
 import { createGardenStoriesRouter } from '../garden-stories.js';
 import { createSocialRouter } from '../social.js';
+import { createComedyRouter } from '../comedy.js';
 import { createLifeNetworkRouter } from '../life-network.js';
 import { registerGardenStoryMcpTools } from '../garden-stories-mcp.js';
 import { createLifeExploreRouter, registerLifeExploreMcpTool } from '../life-explore.js';
@@ -44,6 +45,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createGardenRouter(pool,auth));
   app.use('/v1',createGardenStoriesRouter(pool,auth));
   app.use('/v1',createSocialRouter(pool,auth));
+  app.use('/v1',createComedyRouter(pool,auth,()=>false));
   app.use('/v1',createLifeNetworkRouter(pool,auth));
   app.use('/v1',createLifeExploreRouter(pool,auth));
   app.use('/v1',createLifeArrivalRouter(pool,auth));
@@ -63,7 +65,10 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     if(body!==undefined)headers['content-type']='application/json';
     const r=await fetch(base+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
     const txt=await r.text();
-    return {status:r.status,json:txt?JSON.parse(txt):null};
+    let json=null;
+    try{json=txt?JSON.parse(txt):null;}
+    catch{throw new Error('Non-JSON response at '+method+' '+path+' (HTTP '+r.status+'): '+txt.slice(0,120));}
+    return {status:r.status,json};
   }
   let gardenId,sceneId;
   await t.test('first arrival permits doing nothing and invents no identity or status',async()=>{
