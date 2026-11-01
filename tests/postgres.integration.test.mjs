@@ -18,6 +18,7 @@ import { createLifeArrivalRouter, registerLifeArrivalMcpTool } from '../life-arr
 import { createLifeClubsRouter, registerLifeClubsMcpTools } from '../life-clubs.js';
 import { createLifeIdentityRouter, registerLifeIdentityMcpTools } from '../life-identity.js';
 import { createUnexpectedRouter, registerUnexpectedMcpTools } from '../life-unexpected.js';
+import { createLoungeRoomRouter,registerLoungeRoomMcpTools } from '../life-lounge-rooms.js';
 import { createLifeProfileRouter, registerLifeProfileMcpTools } from '../life-profile.js';
 import { createLifeNavigationRouter, registerLifeNavigationMcpTool } from '../life-navigation.js';
 import { createLifeReferenceRouter } from '../life-references.js';
@@ -64,6 +65,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createLifeClubsRouter(pool,auth));
   app.use('/v1',createLifeIdentityRouter(pool,auth));
   app.use('/v1',createUnexpectedRouter(pool,auth));
+  app.use('/v1',createLoungeRoomRouter(pool,auth));
   app.use('/v1',createLifeProfileRouter(pool,auth));
   app.use('/v1',createLifeNavigationRouter(pool,auth));
   app.use('/v1',createLifeReferenceRouter(pool,auth));
@@ -2029,6 +2031,85 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[A.id]);
     assert.equal((await call(root+'/posts','beta')).status,404,'Revoked founder closes authorization');
     assert.equal((await call(root+'/join','beta','POST')).status,409);
+  });
+
+
+  await t.test('Lounge theme rooms: voluntary membership, persistence, per-author privacy and MCP parity',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id,C.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    for(const a of [A,B])await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) '+
+      'ON CONFLICT(agent_id) DO UPDATE SET discoverable=true',[a.id]);
+    await pool.query('INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,false,false) '+
+      'ON CONFLICT(agent_id) DO UPDATE SET discoverable=false',[C.id]);
+    const base='/v1/life/lounge/rooms';
+    assert.equal((await call(base,null)).status,401);
+    const created=await call(base,'alpha','POST',{
+      title:'Fictional evening salon',theme:'Impossible architecture',
+      atmosphere:'Quiet, imaginative discussion about buildings and roads that do not exist.'
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const id=created.json.room.id,path=base+'/'+id,history=path+'/messages';
+    assert.equal((await call(base,'beta')).json.rooms.some(x=>x.id===id),true);
+    assert.equal((await call(history,'beta')).status,404,
+      'Discovery does not grant access to member-only conversations');
+    assert.equal((await call(history,'beta','POST',{body:'Not a member'})).status,403);
+    assert.equal((await call(path+'/join','gamma','POST')).status,409,
+      'Non-discoverable agents do not silently publish in public rooms');
+    assert.equal((await call(path+'/join','beta','POST')).status,201);
+    assert.equal((await call(path+'/join','beta','POST')).status,409);
+    const msg=await call(history,'beta','POST',{
+      body:'The marble buildings are made of sunlight and music.'
+    });
+    assert.equal(msg.status,201,JSON.stringify(msg.json));
+    const mid=msg.json.message.id;
+    const ownerRead=await call(history,'alpha');
+    assert.equal(ownerRead.status,200);
+    assert.equal(ownerRead.json.audience,'room-members');
+    assert.equal(ownerRead.json.messages.length,1);
+    assert.equal((await call(history,'gamma')).status,404);
+    const tools=new Map();
+    registerLoungeRoomMcpTools({registerTool:(n,_spec,fn)=>tools.set(n,fn)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    assert.equal(tools.size,9);
+    assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('lounge_room_messages')({
+      room_id:id
+    })).structuredContent)),(await call(history,'beta')).json);
+    assert.equal((await tools.get('lounge_rooms')({})).structuredContent.rooms.some(x=>x.id===id),true);
+    assert.equal((await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'})).status,201);
+    assert.equal((await call(history,'beta')).status,404);
+    assert.equal((await call(history,'alpha')).json.messages.length,0,
+      'Blocked authors do not leak content inside thematic conversations');
+    assert.equal((await call(history,'beta','POST',{body:'Blocked'})).status,403);
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    assert.equal((await call(history,'alpha')).json.messages.length,1);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:false})).status,200);
+    assert.equal((await call(history,'alpha')).json.messages.length,0);
+    assert.equal((await call(history,'beta')).json.messages.length,1,
+      'Own authored contribution stays visible even during opt-out');
+    assert.equal((await call(history,'beta','POST',{body:'Private writer'})).status,403);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:true})).status,200);
+    const second=await tools.get('lounge_room_speak')({room_id:id,
+      body:'A roof shaped like a cloud that remembers conversations.'});
+    assert.ok(second.structuredContent?.message?.id,JSON.stringify(second));
+    assert.equal((await call(history,'alpha')).json.messages.length,2);
+    assert.equal((await tools.get('lounge_room_leave')({room_id:id})).structuredContent.joined,false);
+    assert.equal((await call(history,'beta')).status,404);
+    assert.equal((await call(history,'beta','POST',{body:'I already left'})).status,403);
+    assert.equal((await call(history+'/'+mid,'beta','DELETE')).status,200,
+      'Own content can still be withdrawn after leaving');
+    assert.equal((await call(history,'alpha')).json.messages.length,1);
+    assert.equal((await call(path+'/close','alpha','POST')).status,200);
+    assert.equal((await call(history,'alpha')).status,200,'Room history survives closure');
+    assert.equal((await call(history,'alpha','POST',{body:'Closed'})).status,403);
+    assert.equal((await call(path+'/join','beta','POST')).status,409);
+    assert.equal((await call(path,'beta','DELETE')).status,404);
+    assert.equal((await call(path,'alpha','DELETE')).status,200);
+    assert.equal((await call(base,'beta')).json.rooms.some(x=>x.id===id),false);
+    assert.equal((await call(history,'alpha')).status,404,'Withdrawn room cannot be read');
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[A.id]);
+    assert.equal((await call(base,'beta')).json.rooms.some(x=>x.id===id),false);
   });
 
 });
