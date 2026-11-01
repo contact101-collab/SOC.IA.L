@@ -125,7 +125,8 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       .flatMap(place=>[place.entry,...place.actions].filter(Boolean));
     assert.ok(allRoutes.length>=15);
     assert.ok(allRoutes.every(x=>x.path.startsWith('/v1/')));
-    assert.ok(allRoutes.every(x=>['GET','PUT','POST'].includes(x.method)));
+    assert.ok(allRoutes.every(x=>['GET','PUT','POST','DELETE'].includes(x.method)),
+      'Agent-native navigation explicitly includes voluntary withdrawal');;
     assert.equal(first.json.privacy.no_private_content_in_navigation,true);
     assert.equal(first.json.privacy.private_messages,'mutual-consent-server-stored-not-e2ee');
     const interactions=first.json.cross_space.find(x=>x.id==='relationships');
