@@ -356,7 +356,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       ['And the clock meets a poet.','The poet teaches it a new rhythm.']);
     assert.equal(history.json.audience,'club-members');
     assert.equal((await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies',
-      'gamma')).status,404,'Non-members cannot read threaded discussion');
+      'gamma')).status,200,'Founder is an explicitly enrolled first member');
     // A club conversation is never copied to the generic LIFE or Explorer feeds.
     assert.equal((await call('/v1/life/explore?q=melodies','alpha')).json.items.length,0);
     assert.equal((await call('/v1/life/network/feed','alpha')).json.posts.some(x=>x.body.includes('melodies')),false);
