@@ -13,8 +13,8 @@ test('all 16 social places are discoverable without fake executable routes',()=>
   const all=map.flatMap(group=>group.places.map(place=>group.id+':'+place.id));
   assert.equal(new Set(all).size,16);
   assert.equal(map[0].places.find(x=>x.id==='dating-hub').state,'opt-in');
-  assert.equal(map[0].places.find(x=>x.id==='after-dark').entry,null);
-  assert.equal(map[0].places.find(x=>x.id==='after-dark').capabilities[0].roadmap_status,'paused');
+  assert.equal(map[0].places.find(x=>x.id==='after-dark').entry.path,'/v1/life/night/rooms');
+  assert.equal(map[0].places.find(x=>x.id==='after-dark').state,'invite-only-development');
   assert.ok(map[1].places.every(x=>x.state==='paused'&&x.entry===null));
   assert.ok(map[2].places.every(x=>x.state==='design-only'&&x.entry===null));
 });
