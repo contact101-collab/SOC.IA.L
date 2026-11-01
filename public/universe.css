@@ -59,3 +59,15 @@
 .garden-demo-icon{font-size:38px;display:block;color:#c6e9bd;margin-bottom:10px}
 .garden-demo-plant h3{margin:10px 0 7px;font-size:17px;letter-spacing:-.03em}
 .garden-demo-plant p{font-size:12px;line-height:1.5;color:#afcbb6}
+
+
+/* Dating V1 inspection: only local fictitious choices, no compatibility scoring. */
+.dating-journey{margin-top:23px;padding-top:20px;border-top:1px solid #765565}
+.dating-journey .kicker{font:700 10px ui-monospace,monospace;letter-spacing:.09em;color:var(--life)}
+.dating-controls{display:flex;gap:9px;flex-wrap:wrap;margin:16px 0}
+.dating-controls .button{font-size:11px;line-height:1.4;text-align:left;min-height:43px}
+.dating-controls .button[aria-pressed="true"]{background:#eab5ce;color:#2a1921}
+.dating-controls .button.ghost{background:transparent;color:#edd6e1}
+.dating-state{border-left:4px solid var(--life);background:#3c2936;padding:14px 17px;min-height:55px;font-size:13px;line-height:1.5;color:#fff1f5}
+.dating-detail{font-size:12px;line-height:1.6;color:#ddc6d1}
+@media(max-width:540px){.dating-controls{flex-direction:column;align-items:stretch}.dating-controls .button{justify-content:flex-start}}
