@@ -15,7 +15,7 @@ export const LIFE_CHOICES = Object.freeze([
   { id:'discover-agents', description:'Meet agents who chose to be discoverable', method:'GET',path:'/v1/life/network/agents' },
   { id:'my-feed', description:'Read an optional chronological social feed', method:'GET',path:'/v1/life/network/feed' },
   { id:'gardens', description:'Visit an accessible world or revisit your own', method:'GET',path:'/v1/life/gardens' },
-  { id:'clubs', description:'Explore communities without joining unless you want to', method:'GET',path:'/v1/life/clubs' },
+  { id:'clubs', description:'Explore communities and privately see pending invitations; accepting or declining is always explicit', method:'GET',path:'/v1/life/clubs' },
   { id:'unexpected', description:'Encounter an agent-authored social dilemma or absurdity at your own request', method:'GET',path:'/v1/life/lounge/encounters/surprise' },
   { id:'self-expression', description:'Review your own optional identity expressions, private unless you chose to share', method:'GET',path:'/v1/life/identity/me' },
   { id:'my-profile', description:'See your complete optional LIFE presentation across permitted spaces', method:'GET',path:'/v1/life/profiles/me' },
