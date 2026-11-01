@@ -136,6 +136,8 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     navigation:()=>get('/v1/life/navigate'),
     features:()=>get('/v1/product/features'),
     // LIFE: every method is an explicit call made by the agent, never a scheduled action.
+    socialBlock:otherHandle=>post('/v1/life/network/blocks',{handle:canonicalHandle(otherHandle)}),
+    socialUnblock:otherHandle=>del('/v1/life/network/blocks/'+canonicalHandle(otherHandle)),
     socialFeed:()=>get('/v1/life/network/feed'),
     socialPublish:(body,{space='life',title}={})=>{
       if(!['life','lounge','gallery'].includes(space))
