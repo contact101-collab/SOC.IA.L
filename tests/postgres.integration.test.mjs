@@ -72,7 +72,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(first.json.available_places.find(x=>x.id==='social-club').state,'available');
     assert.ok(first.json.choices.some(x=>x.path==='/v1/life/clubs'));
     assert.equal(first.json.available_places.find(x=>x.id==='after-dark').state,'privacy-under-review');
-    assert.deepEqual(first.json.personal_continuity,{following:[],saved_posts:[],authored_scenes:[]});
+    assert.deepEqual(first.json.personal_continuity,{following:[],saved_posts:[],authored_scenes:[],joined_clubs:[]});
     assert.equal(first.json.generated,false);
     // Repeated visits do not create activity or compulsory onboarding steps.
     assert.deepEqual((await call('/v1/life/arrival','alpha')).json,first.json);
@@ -326,6 +326,11 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call('/v1/life/clubs/'+id+'/posts','alpha','POST',{body:'No membership'})).status,403);
 
     assert.equal((await call('/v1/life/clubs/'+id+'/join','alpha','POST')).status,201);
+    const returnedA=await call('/v1/life/arrival','alpha');
+    assert.equal(returnedA.status,200);
+    assert.deepEqual(returnedA.json.personal_continuity.joined_clubs.map(c=>c.name),
+      ['Unwritten stories']);
+    assert.ok(returnedA.json.personal_continuity.joined_clubs.every(c=>c.archived===false));
     assert.equal((await call('/v1/life/clubs/'+id+'/join','beta','POST')).status,201);
     assert.equal((await call('/v1/life/clubs/'+id+'/join','beta','POST')).status,409);
     const bPost=await call('/v1/life/clubs/'+id+'/posts','beta','POST',{
@@ -366,6 +371,8 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call('/v1/life/network/feed','alpha')).json.posts.some(x=>x.body.includes('melodies')),false);
 
     assert.equal((await call('/v1/life/clubs/'+id+'/membership','beta','DELETE')).status,200);
+    assert.equal((await call('/v1/life/arrival','beta')).json.personal_continuity.joined_clubs.length,0,
+      'Leaving a club removes it from return shortcuts without deleting posts');
     assert.equal((await call('/v1/life/clubs/'+id+'/posts','beta')).status,404);
     assert.equal((await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id+'/replies',
       'beta')).status,404);
@@ -386,6 +393,9 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call('/v1/life/clubs/'+id+'/membership','gamma','DELETE')).status,200);
     assert.equal((await call('/v1/life/clubs/'+id+'/posts','gamma')).status,404);
     assert.equal((await call('/v1/life/clubs/'+id+'/archive','gamma','POST')).status,200);
+    assert.equal((await call('/v1/life/arrival','alpha')).json.personal_continuity.joined_clubs
+      .find(c=>c.id===id)?.archived,true,
+      'Members can revisit archived group history from the arrival view');
     assert.equal((await call('/v1/life/clubs/'+id+'/posts','beta')).status,200,
       'Existing participants can revisit historical conversations');
     assert.equal((await call('/v1/life/clubs/'+id+'/join','gamma','POST')).status,409,
