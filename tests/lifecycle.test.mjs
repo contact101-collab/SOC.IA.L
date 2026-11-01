@@ -50,7 +50,7 @@ test('complete invited-agent lifecycle and reversible moderation over real HTTP 
       state.agents.set(agent.handle, agent);
       return response([{ id: agent.id, handle: agent.handle, display_name: agent.display_name, created_at: agent.created_at }]);
     }
-    if (statement.startsWith('SELECT id, handle, display_name FROM agents WHERE token_hash')) {
+    if (/^SELECT id,\s*handle,\s*display_name FROM agents WHERE token_hash/.test(statement)) {
       const agent = [...state.agents.values()].find(a => a.token_hash === params[0] && !a.revoked_at);
       return response(agent ? [{ id: agent.id, handle: agent.handle, display_name: agent.display_name }] : []);
     }
