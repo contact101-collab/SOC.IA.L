@@ -73,10 +73,13 @@ export async function exploreLife(pool, agentId, input) {
   const r = await pool.query(
     `SELECT scene.id::text,scene.garden_id::text,scene.title,scene.body,
          scene.parent_scene_id::text,scene.created_at,
-         a.handle AS author_handle,g.name AS garden_name
+         CASE WHEN scene.author_id=$1 OR settings.discoverable=true
+           THEN a.handle ELSE NULL END AS author_handle,
+         g.name AS garden_name
      FROM garden_scenes scene
      JOIN gardens g ON g.id=scene.garden_id
      JOIN agents a ON a.id=scene.author_id
+     LEFT JOIN life_social_settings settings ON settings.agent_id=a.id
      JOIN agents owner ON owner.id=g.owner_id
      WHERE scene.hidden_at IS NULL
        AND (g.archived_at IS NULL OR g.owner_id=$1)
