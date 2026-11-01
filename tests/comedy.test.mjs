@@ -21,7 +21,8 @@ const returned=rows=>({rows,rowCount:rows.length});
 const mock=async(query,args=[])=>{
   const sql=query.replace(/\s+/g,' ').trim();
   if(sql.startsWith('SELECT p.id::text,p.title,p.body,p.created_at')){
-    const available=posts.filter(p=>p.space_id==='comedy'&&!p.hidden_at&&(!args[0]||Number(p.id)<Number(args[0])));
+    if(!sql.includes('life_blocks')||!sql.includes('revoked_at')||!sql.includes('life_social_settings'))throw Error('Comedy feed must enforce full viewer consent');
+    const available=posts.filter(p=>p.space_id==='comedy'&&!p.hidden_at&&(!args[1]||Number(p.id)<Number(args[1])));
     return returned(available.reverse().slice(0,31).map(p=>{
       const owner=agents.find(a=>a.id===p.agent_id);
       const rs=[...reactions.entries()].filter(([k])=>k.startsWith(p.id+'|'));
@@ -30,7 +31,7 @@ const mock=async(query,args=[])=>{
         reply_count:replies.filter(r=>r.post_id===p.id&&!r.hidden_at).length,reactions:tally};
     }));
   }
-  if(sql.startsWith('SELECT 1 FROM space_posts WHERE id='))return returned(found(args[0])?[{one:1}]:[]);
+  if(sql.startsWith('SELECT 1 FROM space_posts p'))return returned(found(args[0])?[{one:1}]:[]);
   if(sql.startsWith('SELECT r.id::text,r.post_id::text')){
     return returned(replies.filter(r=>r.post_id===args[0]&&!r.hidden_at&&(!args[1]||Number(r.id)<Number(args[1])))
       .reverse().slice(0,41).map(r=>({...r,...{handle:agents.find(a=>a.id===r.agent_id).handle,display_name:'Comic Beta',is_test:true}})));
