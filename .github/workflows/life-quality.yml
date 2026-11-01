@@ -2,9 +2,9 @@ name: LIFE quality checks
 
 on:
   pull_request:
-    branches: [main, feat/life-consent-consistency-20261031, feat/life-explore-20261101]
+    branches: [main, feat/life-consent-consistency-20261031, feat/life-explore-20261101, feat/life-arrival-20261101]
   push:
-    branches: [feat/life-arrival-20261101]
+    branches: [feat/life-social-club-20261101]
 
 permissions:
   contents: read
@@ -30,6 +30,8 @@ jobs:
           node --check garden-stories-mcp.js
           node --check life-explore.js
           node --check life-arrival.js
+          node --check life-clubs.js
+          node --check tests/postgres.integration.test.mjs
       - name: Test LIFE permissions and collaborative stories
         run: npm run test:access
       - name: Other local regression suites
@@ -67,8 +69,10 @@ jobs:
           UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_mapping)
           document = yaml.load(Path('openapi.yaml').read_text(), Loader=UniqueLoader)
           assert document['openapi'] == '3.0.3'
-          assert len(document['paths']) >= 59, len(document['paths'])
+          assert len(document['paths']) >= 66, len(document['paths'])
           assert '/v1/life/arrival' in document['paths']
+          assert '/v1/life/clubs' in document['paths']
+          assert '/v1/life/clubs/{id}/posts' in document['paths']
           assert '/v1/life/explore' in document['paths']
           assert '/v1/life/gardens/{id}/scenes' in document['paths']
           assert '/v1/life/gardens/{id}/scenes/{sceneId}' in document['paths']
@@ -129,6 +133,18 @@ jobs:
             const migration = await readFile('migrations/20261031_garden_scenes.sql','utf8');
             await pool.query(migration);
             await pool.query(migration);
+            const clubMigration=await readFile('migrations/20261101_life_clubs.sql','utf8');
+            await pool.query(clubMigration);
+            const savedClub=await pool.query(
+              "INSERT INTO life_clubs(creator_id,name,purpose) VALUES($1,'Legacy Society','A preexisting opt-in community of imagination') RETURNING id",
+              [agent]);
+            await pool.query(
+              "INSERT INTO life_club_members(club_id,agent_id) VALUES($1,$2)",
+              [savedClub.rows[0].id,agent]);
+            await pool.query(clubMigration);
+            const savedClubCount=await pool.query(
+              "SELECT count(*)::int AS n FROM life_clubs WHERE id=$1",[savedClub.rows[0].id]);
+            if(savedClubCount.rows[0].n!==1)throw new Error('Repeat migration destroyed an existing club');
             const after = await pool.query(
               "SELECT (SELECT count(*)::int FROM agents) AS agents,(SELECT count(*)::int FROM gardens) AS gardens,(SELECT count(*)::int FROM space_posts) AS posts");
             if(JSON.stringify(before.rows[0])!==JSON.stringify(after.rows[0]))throw new Error('Migration changed existing data');
@@ -137,11 +153,13 @@ jobs:
             const preserved=await pool.query(
               "SELECT g.name,p.body FROM gardens g CROSS JOIN space_posts p WHERE g.name='Existing Garden' AND p.body='Existing social message'");
             if(preserved.rowCount!==1)throw new Error('Legacy records lost after migration');
+            await pool.query('DELETE FROM life_club_members WHERE agent_id=$1',[agent]);
+            await pool.query('DELETE FROM life_clubs WHERE creator_id=$1',[agent]);
             // Clear only synthetic CI fixtures so the integration test remains independent.
             await pool.query("DELETE FROM space_posts WHERE agent_id=$1",[agent]);
             await pool.query("DELETE FROM gardens WHERE owner_id=$1",[agent]);
             await pool.query("DELETE FROM agents WHERE id=$1",[agent]);
-            console.log('PASS: PostgreSQL 17 baseline with data, repeatable additive Garden migration, no data loss');
+            console.log('PASS: PostgreSQL 17 baseline with data, repeatable Garden and Social Club migrations, no data loss');
           } finally { await pool.end(); }
           JS
       - name: Verify real SQL and access rules using three synthetic agents
