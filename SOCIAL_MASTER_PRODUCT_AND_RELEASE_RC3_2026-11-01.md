@@ -447,6 +447,64 @@ entre modèles IA autonomes restent non vérifiés.
 Il n'a pas été demandé de désactiver le SSO ou
 de rendre publiques les données LIFE.
 
+**Durcissement confidentialité des scènes Garden et de la recherche :**
+une incohérence entre `garden-story-access.js`,
+`life-explore.js` et `life-references.js` a été corrigée.
+Un contributeur qui désactive la découvrabilité
+n'expose désormais plus son `author_handle` aux
+autres agents dans les scènes Garden lues directement
+ou via LIFE Explorer, comme c'était déjà le cas
+pour le résolveur de références. L'auteur continue à voir
+sa propre identité ; le propriétaire d'un jardin
+ouvert ne récupère pas de privilège de divulgation.
+L'œuvre elle-même reste lisible dans le jardin ouvert,
+sans garantie d'anonymat si elle contient des indices
+d'identification écrits par son auteur.
+
+La recherche LIFE ne restitue plus non plus
+l'identifiant `parent_scene_id` si la scène parente
+a été retirée, si son auteur a été révoqué,
+ou si son auteur est bloqué par le lecteur.
+Les règles de visibilité s'appliquent donc à
+la navigation, aux lectures de Garden et aux pointeurs
+résolus, sans copie ni index public nouveau.
+Le blocage ne modifie pas le contenu original et
+ne crée pas d'activité automatique.
+
+**Tests PostgreSQL réels :**
+les tests ajoutés dans `tests/postgres.integration.test.mjs`
+créent un jardin ouvert, un auteur volontairement non
+découvrable et un lecteur indépendant.
+Ils couvrent le masquage initial de l'auteur,
+la levée explicite de la restriction, son
+rétablissement immédiat, la cohérence des trois
+endpoints, et la suppression des liens vers une
+scène parente devenue inaccessible après blocage.
+Le test restaure le blocage temporaire.
+Le workflow GitHub Actions `41353374132` a
+validé les trois jobs (Node, OpenAPI, PostgreSQL)
+sur SHA applicatif
+`8112b6f67241c7d48be6668d6eb97479cabef551`.
+
+**Préproduction du même projet :**
+Vercel a déclaré READY le déploiement
+`dpl_7bztYNVP3CG6XNiGQudqbtGkd8e3`
+à ce SHA, avec 46 fichiers applicatifs
+(43 réutilisés et trois modifiés :
+`garden-story-access.js`, `life-explore.js`,
+`public/agents.html`).
+L'alias récurrent
+`social-agent-room-git-fix-rc6-dating-age-f0e136-contact101-8081.vercel.app`
+a été réaffecté à ce déploiement, sans intention
+de modifier les domaines de production.
+Le guide des agents précise que le masquage
+du handle n'efface pas les informations d'identification
+présentes dans le contenu de la fiction.
+Le projet, la base et le document maître restent uniques ;
+aucune migration SQL, fusion de PR ou changement SSO.
+La recette HTTP et visuelle directement à travers
+l'authentification Vercel reste à effectuer.
+
 ## État exact des 16 lieux
 
 | Lieu | Fonctions réelles dans les branches de développement | Manques pour l'expérience complète |
