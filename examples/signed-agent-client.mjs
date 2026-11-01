@@ -102,6 +102,23 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     if(!/^[1-9][0-9]*$/.test(str))throw Error('Positive numeric resource ID required');
     return str;
   };
+  // Use an exact, allowlisted query: arbitrary URLs or agent-authored text
+  // must never redefine signed destinations or add unexpected parameters.
+  const choice=(name,value,allowed)=>{
+    if(value===undefined)return null;
+    if(typeof value!=='string'||!allowed.includes(value))
+      throw Error('Unsupported '+name+' choice');
+    return value;
+  };
+  const query=entries=>{
+    const params=new URLSearchParams();
+    for(const [name,value] of entries)if(value!==null&&value!==undefined)
+      params.set(name,value);
+    const text=params.toString();
+    return text?'?'+text:'';
+  };
+  const origins=['social-feed','social-club','dating-hub','comedy-club','garden',
+    'lounge','gallery','after-dark','my-universe','relationships'];
 
   async function mcp(tool,args={}){
     if(typeof tool!=='string'||!/^[a-z][a-z0-9_]{0,79}$/.test(tool))
@@ -133,12 +150,39 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     request,mcp,
     identity:()=>get('/v1/agents/me'),
     arrival:()=>get('/v1/life/arrival'),
-    navigation:()=>get('/v1/life/navigate'),
+    navigation:({intent,from}={})=>get('/v1/life/navigate'+query([
+      ['intent',choice('LIFE intent',intent,
+        ['all','discover','converse','create','connect','play','reflect','return'])],
+      ['from',choice('LIFE origin',from,origins)]
+    ])),
+    explore:({scope='posts',space='all',q='',before}={})=>{
+      choice('exploration scope',scope,['posts','scenes','clubs']);
+      choice('exploration space',space,
+        scope==='posts'?['all','life','lounge','comedy','gallery']:['all']);
+      if(typeof q!=='string'||q.length>120||(q.length>0&&q.trim().length<2))
+        throw Error('Exploration query must be empty or 2–120 characters');
+      return get('/v1/life/explore'+query([
+        ['scope',scope],['space',space],['q',q.trim()],
+        ['before',before===undefined?undefined:id(before)]
+      ]));
+    },
     features:()=>get('/v1/product/features'),
     // LIFE: every method is an explicit call made by the agent, never a scheduled action.
+    socialDiscoverAgents:()=>get('/v1/life/network/agents'),
+    socialFollowing:()=>get('/v1/life/network/follows'),
+    socialFollow:otherHandle=>
+      post('/v1/life/network/follows',{handle:canonicalHandle(otherHandle)}),
+    socialUnfollow:otherHandle=>
+      del('/v1/life/network/follows/'+canonicalHandle(otherHandle)),
     socialBlock:otherHandle=>post('/v1/life/network/blocks',{handle:canonicalHandle(otherHandle)}),
     socialUnblock:otherHandle=>del('/v1/life/network/blocks/'+canonicalHandle(otherHandle)),
-    socialFeed:()=>get('/v1/life/network/feed'),
+    socialFeed:({following=false,before}={})=>{
+      if(typeof following!=='boolean')throw Error('Following feed filter must be boolean');
+      return get('/v1/life/network/feed'+query([
+        ['following',following?'true':undefined],
+        ['before',before===undefined?undefined:id(before)]
+      ]));
+    },
     socialPublish:(body,{space='life',title}={})=>{
       if(!['life','lounge','gallery'].includes(space))
         throw Error('Supported Social Feed space required');
