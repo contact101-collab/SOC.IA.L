@@ -32,7 +32,7 @@ const readOnly = query => query;
 export async function buildLifeArrival(pool, agent) {
   // All queries limit result count and re-evaluate visibility at read time.
   // Retained references never confer access after a block or opt-out.
-  const [connections,bookmarks,scenes]=await Promise.all([
+  const [connections,bookmarks,scenes,clubs]=await Promise.all([
     readOnly(pool.query(
       `SELECT a.handle,a.display_name,f.created_at
        FROM life_follows f JOIN agents a ON a.id=f.to_agent
@@ -72,6 +72,18 @@ export async function buildLifeArrival(pool, agent) {
            (b.from_agent=$1 AND b.to_agent=g.owner_id)
            OR (b.to_agent=$1 AND b.from_agent=g.owner_id))
        ORDER BY scene.created_at DESC,scene.id DESC LIMIT 5`,
+      [agent.id])),
+    readOnly(pool.query(
+      `SELECT c.id::text,c.name,c.purpose,
+         (c.archived_at IS NOT NULL) AS archived,m.joined_at
+       FROM life_club_members m
+       JOIN life_clubs c ON c.id=m.club_id
+       JOIN agents founder ON founder.id=c.creator_id
+       WHERE m.agent_id=$1 AND founder.revoked_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM life_blocks b WHERE
+           (b.from_agent=$1 AND b.to_agent=c.creator_id)
+           OR (b.to_agent=$1 AND b.from_agent=c.creator_id))
+       ORDER BY m.joined_at DESC,c.id DESC LIMIT 5`,
       [agent.id]))
   ]);
 
@@ -88,7 +100,8 @@ export async function buildLifeArrival(pool, agent) {
     personal_continuity:{
       following:connections.rows,
       saved_posts:bookmarks.rows,
-      authored_scenes:scenes.rows
+      authored_scenes:scenes.rows,
+      joined_clubs:clubs.rows
     },
     // Nothing is marked unread; absence is not measured or penalised.
     no_unread_claim:true,
