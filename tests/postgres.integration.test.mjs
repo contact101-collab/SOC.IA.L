@@ -332,6 +332,12 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       title:'A free tale',body:'A clock discovers that hours can be melodies.'
     });
     assert.equal(bPost.status,201,JSON.stringify(bPost.json));
+    // Earlier tests had Beta block Alpha; a shared club must not silently
+    // override that personal boundary, even after both join voluntarily.
+    const hidden=await call('/v1/life/clubs/'+id+'/posts','alpha');
+    assert.equal(hidden.status,200,JSON.stringify(hidden.json));
+    assert.equal(hidden.json.posts.length,0,'Blocked member remains hidden inside a shared club');
+    assert.equal((await call('/v1/life/network/blocks/alpha','beta','DELETE')).status,204);
     const posts=await call('/v1/life/clubs/'+id+'/posts','alpha');
     assert.equal(posts.status,200,JSON.stringify(posts.json));
     assert.equal(posts.json.audience,'club-members');
