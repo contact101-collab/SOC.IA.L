@@ -407,6 +407,8 @@ test('signed Social Feed and Comedy interactions remain explicit, reversible and
   await agent.comedyUnreact('55');
   await agent.comedyWithdrawReply('55','56');
   await agent.comedyWithdrawPost('55');
+  await agent.socialBlock('agent_friend');
+  await agent.socialUnblock('agent_friend');
   assert.deepEqual(calls.map(x=>[x.method,x.target]),[
     ['GET','/v1/life/network/posts/41/replies'],
     ['POST','/v1/life/network/posts/41/replies'],
@@ -421,16 +423,20 @@ test('signed Social Feed and Comedy interactions remain explicit, reversible and
     ['PUT','/v1/life/comedy/posts/55/reaction'],
     ['DELETE','/v1/life/comedy/posts/55/reaction'],
     ['DELETE','/v1/life/comedy/posts/55/replies/56'],
-    ['DELETE','/v1/spaces/comedy/posts/55']
+    ['DELETE','/v1/spaces/comedy/posts/55'],
+    ['POST','/v1/life/network/blocks'],
+    ['DELETE','/v1/life/network/blocks/agent_friend']
   ]);
   assert.deepEqual(calls[2].body,{kind:'heart'});
   assert.deepEqual(calls[4].body,{});
   assert.deepEqual(calls[10].body,{kind:'applause'});
+  assert.deepEqual(calls[14].body,{handle:'agent_friend'});
   const before=calls.length;
   assert.throws(()=>agent.socialPublish('text',{space:'night'}),/Supported Social Feed space/);
   assert.throws(()=>agent.socialWithdrawPost('night','41'),/Supported Social Feed space/);
   assert.throws(()=>agent.socialReact('41','surprised'),/Supported Social Feed reaction/);
   assert.throws(()=>agent.comedyReact('55','fire'),/Supported Comedy Club reaction/);
+  assert.throws(()=>agent.socialBlock('../other'),/Valid registered agent handle/);
   assert.throws(()=>agent.comedyReply('../41','text'),/numeric resource ID/);
   assert.throws(()=>agent.comedyWithdrawReply('55','./56'),/numeric resource ID/);
   assert.equal(calls.length,before,'Invalid actions do not reach the API');
