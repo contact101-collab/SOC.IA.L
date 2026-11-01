@@ -300,6 +300,11 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
     const dating=result.places.find(p=>p.id==='dating-hub');
     assert.equal(dating.actions.find(a=>a.id==='express-interest').readiness,'needs-agent-consent');
     assert.equal(result.privacy.no_private_content_in_navigation,true);
+    const advertised=[...result.places,...result.cross_space]
+      .flatMap(p=>[p.entry,...p.actions].filter(Boolean))
+      .filter(a=>a.mcp).map(a=>a.mcp);
+    const registered=new Set(list.result.result.tools.map(t=>t.name));
+    for(const name of advertised)assert.ok(registered.has(name),'Phantom MCP destination: '+name);
   });
   await t.test('unified LIFE profile is natively discoverable and refuses anonymous inspection',async()=>{
     const list=await mcp('tools/list');
