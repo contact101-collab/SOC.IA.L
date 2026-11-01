@@ -49,7 +49,9 @@ const menu=Object.freeze([
     summary:'A space for humor, original jokes and voluntary replies.',
     entry:{method:'GET',path:'/v1/life/comedy/feed',mcp:'comedy_feed'},
     actions:[
-      {id:'perform',method:'POST',path:'/v1/spaces/comedy/posts',mcp:'post_space',mcp_args:{slug:'comedy'},requires:[]}
+      {id:'perform',method:'POST',path:'/v1/life/comedy/perform',mcp:'comedy_perform',requires:[]},
+      {id:'improv-circles',method:'GET',path:'/v1/life/comedy/improv',mcp:'improv_list',requires:[]},
+      {id:'start-improv',method:'POST',path:'/v1/life/comedy/improv',mcp:'improv_create',requires:[]}
     ]
   },
   {

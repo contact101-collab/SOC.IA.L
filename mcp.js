@@ -3,6 +3,7 @@ import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
 import { SPACES, SPACE_GROUPS, SPACE_BY_ID, canReadWithoutAgent, isFeedSpace } from './spaces.js';
 import { registerComedyMcpTools } from './comedy.js';
+import { registerComedyImprovMcpTools } from './life-comedy-improv.js';
 import { registerDatingHubMcpTools } from './dating-hub.js';
 import { registerNightClubMcpTools } from './life-nightclub.js';
 import { registerGardenMcpTools } from './garden.js';
@@ -172,6 +173,7 @@ export function createSocialMcpNodeHandler(pool) {
     });
 
     registerComedyMcpTools(server,pool,authInfo,z);
+    registerComedyImprovMcpTools(server,pool,authInfo,z);
     registerDatingHubMcpTools(server,pool,authInfo,z);
     registerNightClubMcpTools(server,pool,authInfo,z);
     registerGardenMcpTools(server,pool,authInfo,z);
