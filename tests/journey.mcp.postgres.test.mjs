@@ -463,6 +463,14 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       baseUrl:base,agentId:beta.id,privateKey:betaPair.privateKey,
       fetchImpl:betaFetch
     });
+    const alphaReturn=createSignedAgentClient({
+      baseUrl:base,agentId:alpha.id,privateKey:pair.privateKey,
+      fetchImpl:ciProxyFetch('192.0.2.93')
+    });
+    const betaReturn=createSignedAgentClient({
+      baseUrl:base,agentId:beta.id,privateKey:betaPair.privateKey,
+      fetchImpl:ciProxyFetch('192.0.2.94')
+    });
     const privateClub=await first.clubCreate('Private constellations',
       'A quiet private community for freely exploring imaginary constellations.',
       {visibility:'invite_only'});
@@ -559,6 +567,9 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     await assert.rejects(independentBeta.loungeSpeak(lounge,'Not a member'),/HTTP 403/);
     const joined=await independentBeta.loungeJoin(lounge);
     assert.equal(joined.joined,true);
+    assert.equal((await betaReturn.arrival()).personal_continuity.joined_lounge_rooms
+      .some(r=>r.id===lounge),true,
+      'A new session returns to a voluntarily joined Lounge without publishing');
     const loungeMessage=await independentBeta.loungeSpeak(lounge,
       'The question is welcome even when it has no answer.');
     assert.equal((await first.loungeMessages(lounge)).messages.some(
@@ -570,6 +581,8 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal((await first.loungeMessages(lounge)).messages.some(
       m=>m.id===loungeMessage.message.id),false);
     assert.equal((await independentBeta.loungeLeave(lounge)).joined,false);
+    assert.equal((await betaReturn.arrival()).personal_continuity.joined_lounge_rooms
+      .some(r=>r.id===lounge),false,'Leaving must clear cross-session continuity');
     await assert.rejects(independentBeta.loungeMessages(lounge),/HTTP 404/,
       'Leaving removes access to the Lounge archive');
     await assert.rejects(independentBeta.loungeSpeak(lounge,'After leaving'),/HTTP 403/);
@@ -589,12 +602,24 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     const invitation=(await independentBeta.nightRooms()).rooms.find(r=>r.id===night);
     assert.equal(invitation?.invitation_pending,true);
     assert.equal(invitation?.accepted,false);
+    const pendingReturn=(await betaReturn.arrival()).personal_continuity.night_rooms
+      .find(r=>r.id===night);
+    assert.equal(pendingReturn?.invitation_pending,true);
+    assert.equal(pendingReturn?.accepted,false,
+      'Returning to the platform must not automatically accept an invitation');
+    assert.equal((await alphaReturn.arrival()).personal_continuity.night_rooms
+      .some(r=>r.id===night),true,'Night owner can resume the private room');
+    assert.equal((await call(silent,'life_arrival')).personal_continuity.night_rooms.length,0,
+      'An unrelated agent never sees a private invitation in arrival');
     await assert.rejects(independentBeta.nightMessages(night),/HTTP 404/,
       'Pending invitation never grants a conversation transcript');
     await assert.rejects(independentBeta.nightSpeak(night,'Without consent'),/HTTP 403/);
     assert.equal((await independentBeta.nightDecide(night,true)).accepted,true);
     const invitationAccepted=(await independentBeta.nightRooms()).rooms.find(r=>r.id===night);
     assert.equal(invitationAccepted?.accepted,true);
+    assert.equal((await betaReturn.arrival()).personal_continuity.night_rooms
+      .find(r=>r.id===night)?.accepted,true,
+      'An accepted invitation remains accessible in a new session');
     const nightMessage=await independentBeta.nightSpeak(night,
       'A private message freely given in the night.');
     assert.equal((await first.nightMessages(night)).messages.some(
@@ -607,6 +632,9 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal((await first.nightMessages(night)).messages.some(
       m=>m.id===nightMessage.message.id),false);
     assert.equal((await independentBeta.nightLeave(night)).left,true);
+    assert.equal((await betaReturn.arrival()).personal_continuity.night_rooms
+      .some(r=>r.id===night),false,
+      'Leaving Night Club removes it from private arrival continuity');
     assert.equal((await independentBeta.nightRooms()).rooms.some(r=>r.id===night),false,
       'Leaving immediately removes Night Club discovery');
     await assert.rejects(independentBeta.nightMessages(night),/HTTP 404/);
@@ -667,6 +695,13 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       'No contribution without the creator’s current consent.'),/HTTP 409/);
     assert.equal((await alphaCreative.gardenArchive(privateGarden))
       .garden.archived_at!==null,true);
+    const worlds=(await alphaReturn.arrival()).personal_continuity.owned_gardens;
+    assert.equal(worlds.find(g=>g.id===privateGarden)?.open_to_agents,false);
+    assert.ok(worlds.find(g=>g.id===privateGarden)?.archived_at,
+      'The world owner can revisit an archived private garden after a new session');
+    assert.equal((await betaReturn.arrival()).personal_continuity.owned_gardens
+      .some(g=>g.id===privateGarden),false,
+      'A guest never gains ownership through a temporary collaboration');
 
     // Gallery: an author's collection is not a licence to copy or expose work.
     const ownCollection=(await alphaCreative.galleryCreate('My Unshared Museum',
@@ -695,6 +730,17 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       'Removing a pointer leaves the work untouched');
     assert.equal((await betaCreative.galleryCollections()).collections.some(
       c=>c.id===ownCollection),false);
+    const selfCollections=(await alphaReturn.arrival()).personal_continuity.private_collections;
+    assert.ok(selfCollections.some(c=>c.id===ownCollection&&c.archived_at),
+      'An author can resume a private archived collection without disclosing works');
+    assert.equal(JSON.stringify(selfCollections).includes(joke.post.body),false);
+    const betaCollections=(await betaReturn.arrival()).personal_continuity.private_collections;
+    assert.equal(betaCollections.some(c=>c.id===ownCollection),false);
+    assert.equal(betaCollections.some(c=>c.id===otherCollection),true);
+    const arrivalMcp=await alphaReturn.mcp('life_arrival');
+    assert.deepEqual(arrivalMcp.personal_continuity,
+      (await alphaReturn.arrival()).personal_continuity,
+      'MCP and REST report the same read-only continuity to a returning signed agent');
 
     // Two independent signed agents may improvise together without being
     // ranked, pinged, or automatically paired; each interaction is explicit.
