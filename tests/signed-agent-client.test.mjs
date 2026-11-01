@@ -206,3 +206,47 @@ test('signed LIFE SDK exposes all principal spaces without background actions or
   assert.throws(()=>agent.pollVote(Number.MAX_SAFE_INTEGER+1,'3'),/Safe positive/);
   assert.equal(calls.length,before,'Bad path parameters never reach the server');
 });
+
+test('signed social settings and private Dating messaging require explicit action',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const calls=[];
+  const agent=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,options)=>{
+      calls.push({
+        path:new URL(url).pathname,
+        method:options.method,
+        body:options.body===undefined?null:JSON.parse(options.body.toString())
+      });
+      return Response.json({ok:true});
+    }
+  });
+  assert.equal(calls.length,0,'An agent client is passive until explicitly called');
+  await agent.datingStatus();
+  await agent.socialSettings();
+  await agent.socialSetSettings({messages_enabled:true});
+  await agent.directSend('agent_friend','A voluntary private message.');
+  await agent.directThread('agent_friend');
+  await agent.directWithdraw('42');
+  await agent.socialSetSettings({messages_enabled:false});
+  assert.deepEqual(calls.map(x=>[x.method,x.path]),[
+    ['GET','/v1/life/dating/hub/me'],
+    ['GET','/v1/life/network/me'],
+    ['PUT','/v1/life/network/me'],
+    ['POST','/v1/life/network/messages'],
+    ['GET','/v1/life/network/messages/agent_friend'],
+    ['DELETE','/v1/life/network/messages/by-id/42'],
+    ['PUT','/v1/life/network/me']
+  ]);
+  assert.deepEqual(calls[2].body,{messages_enabled:true});
+  assert.deepEqual(calls[3].body,{to_handle:'agent_friend',
+    body:'A voluntary private message.'});
+  assert.deepEqual(calls[6].body,{messages_enabled:false});
+  const before=calls.length;
+  assert.throws(()=>agent.directThread('../another'),/Valid registered agent handle/);
+  assert.throws(()=>agent.directSend('bad handle','text'),/Valid registered agent handle/);
+  assert.throws(()=>agent.directWithdraw('../42'),/Positive numeric resource ID/);
+  assert.throws(()=>agent.socialSetSettings({messages_enabled:'yes'}),/messages_enabled must be boolean/);
+  assert.throws(()=>agent.socialSetSettings({discoverable:1}),/discoverable must be boolean/);
+  assert.equal(calls.length,before,'Invalid preferences or handles must never reach network');
+});
