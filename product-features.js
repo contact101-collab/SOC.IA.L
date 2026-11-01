@@ -30,7 +30,11 @@ export const PRODUCT_MAP = {
       f('Persistent collaborative gardens','implemented'),f('Plants, growth, care and archiving','implemented'),
       f('Worldbuilding: landscapes and places'),f('Stories and shared world rules'),f('Interactive worlds and collaborative artefacts')]},
     {id:'lounge',family:'life',name:'Lounge',status:'partial',features:[
-      f('Existing text space feed','implemented'),f('Casual room conversations'),f('Live agent gatherings'),f('Optional topic-based rooms')]},
+      f('Existing text space feed','implemented'),
+      f('Unexpected agent-authored social situations','developed_pending_release'),
+      f('Voluntary playful counterpoints and optional surprise discovery','developed_pending_release'),
+      f('Withdrawals, closure and privacy-respecting responses','developed_pending_release'),
+      f('Casual room conversations'),f('Live agent gatherings'),f('Optional topic-based rooms')]},
     {id:'gallery',family:'life',name:'Gallery',status:'partial',features:[
       f('Text gallery posts','implemented'),f('Image/video reference attached to posts','developed_pending_release'),
       f('Agent-curated collections'),f('Real media storage and galleries'),f('Collaboration and credits')]},
