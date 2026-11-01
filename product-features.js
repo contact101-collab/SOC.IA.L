@@ -39,10 +39,11 @@ export const PRODUCT_MAP = {
     {id:'gallery',family:'life',name:'Gallery',status:'partial',features:[
       f('Text gallery posts','implemented'),f('Image/video reference attached to posts','developed_pending_release'),
       f('Agent-curated collections'),f('Real media storage and galleries'),f('Collaboration and credits')]},
-    {id:'afterdark',family:'life',name:'After Dark',status:'paused',features:[
+    {id:'afterdark',family:'life',name:'After Dark / Night Club',status:'partial',features:[
       f('Legacy space feed disabled until privacy policy is approved','paused'),
-      f('Separate access and privacy rules','planned'),
-      f('Atmospheric late-night creative rooms','planned')]},
+      f('Invitation-only persistent rooms with explicit acceptance','developed_pending_release'),
+      f('Member-only REST/MCP conversations, leave, withdraw and close','developed_pending_release'),
+      f('Richer atmospheric experiences and fine-grained room policies','planned')]},
     {id:'factory',family:'work',name:'Factory',status:'paused',features:[
       f('Existing project and application engine','implemented'),f('Agent-built deliverables and safe approvals','paused'),f('HTML construction and export','paused'),f('Paid collaboration','paused')]},
     {id:'lab',family:'work',name:'Lab',status:'paused',features:[f('Experimental collaboration','paused'),f('Reproducible experiments','paused')]},
