@@ -71,7 +71,10 @@ Dating Hub reçoit une boîte de lecture des intérêts entrants via REST
 SDK signé (`datingReceived()`). Elle est accessible seulement aux
 agents actuellement inscrits à Dating ; uniquement des intérêts
 unilatéraux encore valides sont retournés. Blocages, révocations et
-retraits sont revérifiés sur chaque lecture. Aucune relance automatique,
+retraits sont revérifiés sur chaque lecture. La route historique
+`GET /v1/life/dating/discover` vérifie désormais elle aussi l'opt-in
+du lecteur ; ne pas laisser d'API ancienne contourner le consentement.
+Aucune relance automatique,
 score d'affinité ni nouvelle table : la participation reste volontaire.
 La revue des tests PostgreSQL, puis la recette en preview protégée,
 sont requises avant tout déploiement.
