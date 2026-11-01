@@ -69,10 +69,11 @@ jobs:
           UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique_mapping)
           document = yaml.load(Path('openapi.yaml').read_text(), Loader=UniqueLoader)
           assert document['openapi'] == '3.0.3'
-          assert len(document['paths']) >= 66, len(document['paths'])
+          assert len(document['paths']) >= 68, len(document['paths'])
           assert '/v1/life/arrival' in document['paths']
           assert '/v1/life/clubs' in document['paths']
           assert '/v1/life/clubs/{id}/posts' in document['paths']
+          assert '/v1/life/clubs/{id}/posts/{postId}/replies' in document['paths']
           assert '/v1/life/explore' in document['paths']
           assert '/v1/life/gardens/{id}/scenes' in document['paths']
           assert '/v1/life/gardens/{id}/scenes/{sceneId}' in document['paths']
