@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, feat/life-consent-consistency-20261031, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101, feat/life-return-journey-20261101, feat/life-self-expression-20261101]
   push:
-    branches: [feat/life-unexpected-20261101]
+    branches: [release/life-consolidation-20261101]
 
 permissions:
   contents: read
@@ -33,6 +33,7 @@ jobs:
           node --check life-clubs.js
           node --check life-identity.js
           node --check life-unexpected.js
+          node --check scripts/check-life-schema-parity.mjs
           node --check tests/postgres.integration.test.mjs
           node --check tests/journey.mcp.postgres.test.mjs
       - name: Test LIFE permissions and collaborative stories
@@ -197,6 +198,8 @@ jobs:
             console.log('PASS: PostgreSQL 17 baseline with data, repeatable Garden, Social Club, LIFE identity and Lounge encounter migrations, no data loss');
           } finally { await pool.end(); }
           JS
+      - name: Compare fresh canonical schema with upgraded main schema
+        run: node scripts/check-life-schema-parity.mjs
       - name: Verify real SQL and access rules using three synthetic agents
         run: node --test tests/postgres.integration.test.mjs
       - name: Two independent agents complete an HTTP MCP social journey on real PostgreSQL
