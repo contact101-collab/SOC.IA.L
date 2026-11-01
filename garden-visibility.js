@@ -98,9 +98,11 @@ export const gardenCareCreateSQL=[
   "JOIN agents a ON a.id=$3 AND a.revoked_at IS NULL",
   "JOIN agents owner ON owner.id=g.owner_id",
   "JOIN agents author ON author.id=p.author_id AND author.revoked_at IS NULL",
+  "LEFT JOIN life_social_settings ps ON ps.agent_id=p.author_id",
   "WHERE g.id=$1::bigint AND p.id=$2::bigint",
   "AND g.archived_at IS NULL AND p.hidden_at IS NULL",
   "AND "+gate("$3")+" AND "+unblocked("$3","p.author_id"),
+  "AND (ps.discoverable=true OR p.author_id=$3)",
   "ON CONFLICT(plant_id,agent_id,cared_on) DO NOTHING",
   "RETURNING plant_id::text"
 ].join(" ");
