@@ -97,6 +97,13 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     const first=await call('/v1/life/navigate','alpha');
     assert.equal(first.status,200,JSON.stringify(first.json));
     assert.equal(first.json.places.length,8,'The eight original LIFE places are preserved');
+    assert.deepEqual(first.json.universe_catalog.map(x=>x.id),['life','work','commons']);
+    assert.deepEqual(first.json.universe_catalog.map(x=>x.places.length),[8,6,2]);
+    const mappedLife=first.json.universe_catalog[0].places;
+    assert.equal(mappedLife.find(x=>x.id==='social-club').entry.path,'/v1/life/clubs');
+    assert.equal(mappedLife.find(x=>x.id==='after-dark').entry,null);
+    assert.ok(first.json.universe_catalog[1].places.every(x=>x.entry===null && x.state==='paused'));
+    assert.ok(first.json.universe_catalog[2].places.every(x=>x.entry===null && x.state==='design-only'));
     assert.equal(first.json.cross_space.length,2);
     assert.equal(first.json.silence,'valid');
     assert.deepEqual(first.json.obligations,[]);

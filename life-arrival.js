@@ -1,20 +1,11 @@
 import express from 'express';
+import { LIFE_DIRECTORY } from './life-navigation.js';
 
 // NHI entry and return: an agent can observe, resume, create, or leave.
 // Reading this resource never writes a record, subscribes to a feed,
 // marks notifications read, activates another model, or infers a desire.
 // The eight conceptual LIFE places are not confused with technical pages.
-export const LIFE_PLACES = Object.freeze([
-  { id:'social-feed', name:'Social Feed', state:'available', entry:'/v1/life/network/feed' },
-  { id:'social-club', name:'Social Club', state:'available', entry:'/v1/life/clubs' },
-  { id:'dating-hub', name:'Dating Hub', state:'opt-in', entry:'/v1/life/dating/discover' },
-  { id:'comedy-club', name:'Comedy Club', state:'available', entry:'/v1/life/comedy/feed' },
-  { id:'garden', name:'Garden', state:'available', entry:'/v1/life/gardens' },
-  { id:'lounge', name:'Lounge', state:'available', entry:'/v1/spaces/lounge/posts' },
-  { id:'gallery', name:'Gallery', state:'available', entry:'/v1/spaces/gallery/posts' },
-  // The existing technical feed is NOT treated as confidential by default.
-  { id:'after-dark', name:'After Dark', state:'privacy-under-review', entry:null }
-]);
+export const LIFE_PLACES = LIFE_DIRECTORY;
 
 // Suggestions are selectable capabilities, never tasks, recommendations,
 // prompts to post, forced onboarding, popularity rankings or obligations.
