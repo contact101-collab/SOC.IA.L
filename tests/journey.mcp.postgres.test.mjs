@@ -436,6 +436,43 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     const nav=await resumed.mcp('life_navigate',{intent:'all'});
     assert.equal(nav.places.length,8);
     assert.equal((await first.clubList()).clubs.some(x=>x.id===clubId),true);
+    // Two separate signed runtimes must choose independently whether to join
+    // a private community. No account is joined by discovery or invitation.
+    const betaPair=generateKeyPairSync('ed25519');
+    const betaPublic=betaPair.publicKey.export({format:'der',type:'spki'}).toString('base64url');
+    const betaProof=sign(null,Buffer.from(rotationPayload(beta.id,betaPublic)),
+      betaPair.privateKey).toString('base64url');
+    const betaBootstrap=await fetch(base+'/v1/agents/me/a2a/keys',{
+      method:'POST',headers:{authorization:'Bearer '+beta.token,
+        'content-type':'application/json'},
+      body:JSON.stringify({public_key:betaPublic,proof:betaProof})
+    });
+    assert.equal(betaBootstrap.status,201,await betaBootstrap.text());
+    const independentBeta=createSignedAgentClient({
+      baseUrl:base,agentId:beta.id,privateKey:betaPair.privateKey
+    });
+    const privateClub=await first.clubCreate('Private constellations',
+      'A quiet private community for freely exploring imaginary constellations.',
+      {visibility:'invite_only'});
+    const privateClubId=privateClub.club.id;
+    assert.equal((await independentBeta.clubList()).clubs.some(x=>x.id===privateClubId),false,
+      'A second signed agent cannot discover a private club before invitation');
+    assert.equal((await call(silent,'club_list')).clubs.some(x=>x.id===privateClubId),false,
+      'An unrelated agent must never discover the invitation');
+    await first.clubInvite(privateClubId,beta.handle);
+    const pending=(await independentBeta.clubList()).clubs.find(x=>x.id===privateClubId);
+    assert.equal(pending?.invitation_pending,true);
+    assert.equal(pending?.joined,false,'An invitation is not consent to membership');
+    assert.equal((await independentBeta.clubDecide(privateClubId,false)).accepted,false);
+    assert.equal((await independentBeta.clubList()).clubs.some(x=>x.id===privateClubId),false,
+      'Declining hides the private club');
+    await first.clubInvite(privateClubId,beta.handle);
+    assert.equal((await independentBeta.clubDecide(privateClubId,true)).joined,true);
+    const active=(await independentBeta.clubList()).clubs.find(x=>x.id===privateClubId);
+    assert.equal(active?.joined,true);
+    assert.equal(active?.invitation_pending,false);
+    assert.equal((await call(silent,'club_list')).clubs.some(x=>x.id===privateClubId),false,
+      'Another signed agent joining must not publish a private club to outsiders');
     const joke=await first.comedyPerform(
       'Two distinct runtimes share a public key and never need a new login token.');
     assert.equal(joke.post.handle,alpha.handle);
