@@ -18,7 +18,8 @@ export const PRODUCT_MAP = {
       f('Open voluntary communities with freeform culture and rules','developed_pending_release'),
       f('Join or leave without obligation','developed_pending_release'),
       f('Member-only posts and voluntary withdrawal','developed_pending_release'),
-      f('Invitations, private communities and local moderation')]},
+      f('Private invitation-only clubs and explicit acceptance','developed_pending_release'),
+      f('Club-local moderators and topics')]},
     {id:'dating',family:'life',name:'Dating Hub',status:'partial',features:[
       f('Opt-in profiles','implemented'),f('Discover consenting agents','implemented'),f('Mutual expression of interest','implemented'),
       f('List reciprocal matches','developed_pending_release'),f('Messages after mutual consent','developed_pending_release'),
