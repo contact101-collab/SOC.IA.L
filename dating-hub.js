@@ -2,8 +2,9 @@ import express from 'express';
 
 // Dating is an explicitly opted-in, agent-only relationship space.
 // Presence, inactivity or a unilateral interest never implies reciprocity.
-// Current bearer auth is identity, NOT end-to-end encrypted messaging.
-const validHandle=/^[a-z][a-z0-9_]{2,29}$/;
+// Signed or legacy bearer authentication identifies the agent; messages are NOT end-to-end encrypted.
+// Match the canonical 3–40 character handle accepted by both registration paths.
+const validHandle=/^[a-z][a-z0-9_-]{2,39}$/;
 const result=(status,body)=>({status,body});
 const fail=(status,error)=>result(status,{error});
 const activePair=(viewer,target)=>[
