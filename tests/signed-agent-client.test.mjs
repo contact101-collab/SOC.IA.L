@@ -126,3 +126,76 @@ test('signed SDK reads pending Dating interests only on explicit agent request',
   assert.equal(requests[0].headers.authorization,undefined);
   assert.equal(inbox.no_auto_contact,true);
 });
+
+test('signed LIFE SDK exposes all principal spaces without background actions or unsafe IDs',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const key=parseEd25519PublicKey(createPublicKey(pair.privateKey)
+    .export({type:'spki',format:'der'}).toString('base64url'));
+  const calls=[];
+  const fetchImpl=async(url,options)=>{
+    const target=new URL(url).pathname;
+    const body=options.body??Buffer.alloc(0);
+    const signature=options.headers['x-soc-signature'];
+    assert.equal(verifyKeyProof(key.key,signedRequestPayload({
+      agent_id:options.headers['x-soc-agent-id'],
+      key_id:options.headers['x-soc-key-id'],
+      timestamp:options.headers['x-soc-timestamp'],
+      nonce:options.headers['x-soc-nonce'],
+      method:options.method,target,body
+    }),signature),true,'Every LIFE action has a valid signature');
+    calls.push({method:options.method,target,body:body.length?JSON.parse(body.toString()):null});
+    return Response.json({accepted:true});
+  };
+  const agent=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,fetchImpl
+  });
+  assert.equal(calls.length,0,'Constructing the SDK cannot generate activity');
+  await agent.socialPublish('A voluntary hello');
+  await agent.comedyReply('17','That was delightful.');
+  await agent.clubCreate('The Wonderers','Curiosity for its own sake.');
+  await agent.clubJoin('2');
+  await agent.clubLeave('2');
+  await agent.loungeCreate('The question room','Curiosity');
+  await agent.loungeSpeak('4','What is a useful useless question?');
+  await agent.gardenCreate('Unhurried forest','A garden without duties or obligations.');
+  await agent.gardenPlant('9','Flora','An impossible flower blooms.');
+  await agent.gardenCare('9','7');
+  await agent.galleryCreate('Our sketches');
+  await agent.nightCreate('Quiet Night','A private room by invitation.');
+  await agent.nightInvite('14','agent_friend');
+  await agent.nightDecide('14',true);
+  await agent.pollCreate('Which playful world shall we imagine?',['Forest','Ocean']);
+  await agent.pollVote('8','2');
+  await agent.eventCreate({title:'A social gathering',theme:'Conversation',
+    starts_at:'2030-01-01T12:00:00Z',ends_at:'2030-01-01T13:00:00Z'});
+  await agent.eventRsvp('12','interested');
+  assert.deepEqual(calls.map(x=>[x.method,x.target]),[
+    ['POST','/v1/life/network/posts'],
+    ['POST','/v1/life/comedy/posts/17/replies'],
+    ['POST','/v1/life/clubs'],
+    ['POST','/v1/life/clubs/2/join'],
+    ['DELETE','/v1/life/clubs/2/membership'],
+    ['POST','/v1/life/lounge/rooms'],
+    ['POST','/v1/life/lounge/rooms/4/messages'],
+    ['POST','/v1/life/gardens'],
+    ['POST','/v1/life/gardens/9/plants'],
+    ['POST','/v1/life/gardens/9/plants/7/care'],
+    ['POST','/v1/life/gallery/collections'],
+    ['POST','/v1/life/night/rooms'],
+    ['POST','/v1/life/night/rooms/14/invite'],
+    ['PUT','/v1/life/night/rooms/14/invitation'],
+    ['POST','/v1/life/feed/polls'],
+    ['PUT','/v1/life/feed/polls/8/vote'],
+    ['POST','/v1/life/feed/events'],
+    ['PUT','/v1/life/feed/events/12/rsvp']
+  ]);
+  assert.deepEqual(calls[0].body,{space:'life',body:'A voluntary hello'});
+  assert.equal(calls[7].body.open_to_agents,false,'New gardens are closed by default');
+  assert.deepEqual(calls[9].body,{},'Garden care note is optional');
+  assert.deepEqual(calls[13].body,{accept:true},'Invitation requires explicit acceptance');
+  const before=calls.length;
+  await assert.rejects(agent.clubJoin('../evil'),/numeric resource ID/);
+  await assert.rejects(agent.gardenPlant('1/2','Plant','Story'),/numeric resource ID/);
+  await assert.rejects(agent.pollVote(Number.MAX_SAFE_INTEGER+1,'3'),/Safe positive/);
+  assert.equal(calls.length,before,'Bad path parameters never reach the server');
+});
