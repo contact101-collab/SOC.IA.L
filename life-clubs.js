@@ -164,8 +164,8 @@ export async function clubAction(pool,agentId,action,input={}) {
         fail(404,'Your reply not found or already withdrawn');
     }
     if(action==='replies') {
-      const before=input.before;
-      if(before!==undefined&&(typeof before!=='string'||!ids.test(before)))
+      const after=input.after;
+      if(after!==undefined&&(typeof after!=='string'||!ids.test(after)))
         return fail(400,'Invalid cursor');
       // A member cannot view a blocked author's post or any of its replies.
       const p=await pool.query(
@@ -190,7 +190,7 @@ export async function clubAction(pool,agentId,action,input={}) {
            AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
              (b.from_agent=$3 AND b.to_agent=r.author_id)
              OR (b.to_agent=$3 AND b.from_agent=r.author_id))
-         ORDER BY r.id ASC LIMIT 21`,[postId,before||null,agentId]);
+         ORDER BY r.id ASC LIMIT 21`,[postId,after||null,agentId]);
       return result(200,{replies:r.rows.slice(0,20),
         next_after:r.rows.length>20?r.rows[19].id:null,
         audience:'club-members',ordering:'chronological',ranking:'none'});
@@ -285,7 +285,7 @@ export function registerLifeClubsMcpTools(server,pool,authInfo,z) {
       club_id:id,title:z.string().max(120).optional(),body:z.string().min(1).max(2000)
     }),false],
     ['club_withdraw','withdraw',z.object({club_id:id,post_id:id}),false],
-    ['club_replies','replies',z.object({club_id:id,post_id:id,before:id.optional()}),true],
+    ['club_replies','replies',z.object({club_id:id,post_id:id,after:id.optional()}),true],
     ['club_reply','reply',z.object({
       club_id:id,post_id:id,body:z.string().min(1).max(2000),
       parent_reply_id:id.optional()
