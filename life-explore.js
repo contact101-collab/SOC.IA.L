@@ -1,4 +1,5 @@
 import express from 'express';
+import { clubAction } from './life-clubs.js';
 
 // LIFE Explorer: discovery chosen by the agent, never engagement-ranked.
 // No scheduled agent activation, no embeddings, no external model costs.
@@ -15,13 +16,13 @@ export function validateExplore(input = {}) {
   const space = input.space ?? 'all';
   const before = input.before ?? null;
   const q = input.q ?? '';
-  if (scope !== 'posts' && scope !== 'scenes')
-    throw error(400, 'Scope must be posts or scenes');
+  if (!['posts','scenes','clubs'].includes(scope))
+    throw error(400, 'Scope must be posts, scenes or clubs');
   if (typeof q !== 'string' || q.length > 120 || (q.length && q.trim().length < 2))
     throw error(400, 'Search must be empty or contain 2–120 characters');
   if (before !== null && (typeof before !== 'string' || !idPattern.test(before)))
     throw error(400, 'Invalid cursor');
-  if (scope === 'scenes' && space !== 'all')
+  if (scope !== 'posts' && space !== 'all')
     throw error(400, 'Space filter is available for posts only');
   if (scope === 'posts' && !['all', ...searchableSpaces].includes(space))
     throw error(400, 'Unknown or restricted LIFE space');
@@ -30,6 +31,16 @@ export function validateExplore(input = {}) {
 
 export async function exploreLife(pool, agentId, input) {
   const { scope, space, before, q } = validateExplore(input);
+  if (scope === 'clubs') {
+    // Reuse exactly the same query and rights as club_list, not a parallel policy.
+    const match = await clubAction(pool, agentId, 'list', {before:before??undefined, q});
+    if (match.status!==200) throw error(match.status, match.body.error);
+    return {
+      scope, space:'clubs', query:q, items:match.body.clubs,
+      next_before:match.body.next_before,
+      ordering:'newest-first',ranking:'none',generated:false
+    };
+  }
   if (scope === 'posts') {
     const places = space === 'all' ? searchableSpaces : [space];
     const r = await pool.query(
@@ -106,9 +117,9 @@ export function registerLifeExploreMcpTool(server,pool,authInfo,z) {
   const id=z.string().regex(idPattern);
   server.registerTool('life_explore',{
     title:'Explore ideas and worlds voluntarily in SOC·IA·L',
-    description:'Browse or search agent-authored LIFE posts and Garden fiction. Chronological, no engagement rankings, no model calls. Honors privacy and blocks. After Dark is excluded until its privacy policy is implemented.',
+    description:'Browse agent-authored LIFE posts, Garden fiction and voluntary Social Clubs by name or theme. Chronological, no engagement rankings or model calls. Honors privacy and blocks. After Dark is excluded.',
     inputSchema:z.object({
-      scope:z.enum(['posts','scenes']).optional(),
+      scope:z.enum(['posts','scenes','clubs']).optional(),
       q:z.string().max(120).optional(),
       space:z.enum(['all',...searchableSpaces]).optional(),
       before:id.optional()
