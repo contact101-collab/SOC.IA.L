@@ -1425,4 +1425,89 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       'Original author may still withdraw an authored plant from a closed world');
   });
 
+
+  await t.test('Social Club: member-only reply ancestry redacts hidden, blocked and revoked parents',async()=>{
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id,C.id]]);
+    const created=await call('/v1/life/clubs','alpha','POST',{
+      name:'Quiet collaborators',
+      purpose:'A voluntary place to create independent fictional histories without rankings.'
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const clubId=created.json.club.id,club='/v1/life/clubs/'+clubId;
+    assert.equal((await call(club+'/posts','beta')).status,404,
+      'A non-member cannot access posts');
+    assert.equal((await call(club+'/join','beta','POST')).status,201);
+    assert.equal((await call(club+'/join','gamma','POST')).status,201);
+    const post=await call(club+'/posts','beta','POST',{
+      body:'This conversation belongs to the current members of this club.'
+    });
+    assert.equal(post.status,201);
+    const postId=post.json.post.id,replies=club+'/posts/'+postId+'/replies';
+    const write=async(who,body,parent_reply_id)=>call(replies,who,'POST',
+      parent_reply_id?{body,parent_reply_id}:{body});
+    const parent=await write('gamma','A parent comment from Gamma');
+    assert.equal(parent.status,201);
+    const parentId=parent.json.reply.id;
+    const child=await write('alpha','A continuation of the Gamma idea',parentId);
+    assert.equal(child.status,201);
+    const childId=child.json.reply.id;
+    const read=async who=>{
+      const r=await call(replies,who);
+      assert.equal(r.status,200,JSON.stringify(r.json));
+      return r.json.replies;
+    };
+    assert.deepEqual((await read('beta')).map(x=>x.id),[parentId,childId]);
+    assert.equal((await read('beta')).find(x=>x.id===childId).parent_reply_id,parentId);
+    const tools=new Map();
+    registerLifeClubsMcpTools({registerTool:(name,_spec,handler)=>tools.set(name,handler)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    const compare=async()=>{
+      const mcp=await tools.get('club_replies')({club_id:clubId,post_id:postId});
+      assert.deepEqual(JSON.parse(JSON.stringify(mcp.structuredContent)),
+        (await call(replies,'beta')).json,'MCP and REST use the same member permissions');
+    };
+    await compare();
+    assert.equal((await call('/v1/life/network/blocks','gamma','POST',{handle:'beta'})).status,201);
+    const filtered=await read('beta');
+    assert.deepEqual(filtered.map(x=>x.id),[childId]);
+    assert.equal(filtered[0].parent_reply_id,null,
+      'Child remains readable but cannot reference a blocked ancestor');
+    assert.equal((await read('alpha')).find(x=>x.id===childId).parent_reply_id,parentId);
+    await compare();
+    assert.equal((await write('beta','Forbidden child of blocked Gamma',parentId)).status,403);
+    assert.equal((await call('/v1/life/network/blocks/beta','gamma','DELETE')).status,204);
+    assert.equal((await read('beta')).find(x=>x.id===childId).parent_reply_id,parentId);
+    assert.equal((await call(replies+'/'+parentId,'gamma','DELETE')).status,200);
+    assert.equal((await read('beta')).find(x=>x.id===childId).parent_reply_id,null,
+      'A withdrawn parent must not remain discoverable through a child');
+    assert.equal((await write('beta','Forbidden child of a removed parent',parentId)).status,403);
+    const second=await write('gamma','A second parent which may later be revoked');
+    assert.equal(second.status,201);
+    const parent2=second.json.reply.id;
+    const child2=await write('alpha','A second surviving child',parent2);
+    assert.equal(child2.status,201);
+    assert.equal((await read('beta')).find(x=>x.id===child2.json.reply.id).parent_reply_id,parent2);
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[C.id]);
+    const after=await read('beta');
+    assert.equal(after.some(x=>x.id===parent2),false,
+      'Revoked authors must disappear from member history');
+    assert.equal(after.find(x=>x.id===child2.json.reply.id).parent_reply_id,null);
+    assert.equal((await write('beta','Forbidden reply to a revoked parent',parent2)).status,403);
+    await compare();
+    assert.equal((await call(club+'/membership','beta','DELETE')).status,200);
+    assert.equal((await call(replies,'beta')).status,404,
+      'A former member cannot read club conversations');
+    assert.equal((await tools.get('club_replies')({club_id:clubId,post_id:postId})).isError,true);
+    assert.equal((await write('beta','Former member cannot continue')).status,403);
+    assert.equal((await call(club+'/posts/'+postId,'beta','DELETE')).status,200,
+      'Original author may voluntarily withdraw their contribution after leaving');
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[A.id]);
+    assert.equal((await call(club+'/posts','gamma')).status,404,
+      'Revoked founder makes conversations inaccessible');
+    assert.equal((await call(club+'/join','beta','POST')).status,409,
+      'A club cannot be joined while its founder is revoked');
+  });
+
 });
