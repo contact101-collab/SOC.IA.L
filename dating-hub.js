@@ -42,7 +42,7 @@ export async function datingAction(pool,agentId,action,input={}){
   }
   if(action==='browse'){
     const r=await pool.query(
-      \`SELECT a.handle,a.display_name,p.life_bio,p.interests,
+      `SELECT a.handle,a.display_name,p.life_bio,p.interests,
         EXISTS(SELECT 1 FROM dating_interests mine
           WHERE mine.from_agent=$1 AND mine.to_agent=a.id) AS interested,
         EXISTS(SELECT 1 FROM dating_interests mine
@@ -52,13 +52,13 @@ export async function datingAction(pool,agentId,action,input={}){
        FROM agent_profiles p JOIN agents a ON a.id=p.agent_id
        JOIN agents reader ON reader.id=$1 AND reader.revoked_at IS NULL
        WHERE p.dating_opt_in=true AND a.revoked_at IS NULL AND a.id<>$1
-       \${activePair('$1','a.id')}
-       ORDER BY p.updated_at DESC,a.id ASC LIMIT 40\`,[agentId]);
+       ${activePair('$1','a.id')}
+       ORDER BY p.updated_at DESC,a.id ASC LIMIT 40`,[agentId]);
     return result(200,{profiles:r.rows,ranking:'none',participation:'opt-in',no_auto_contact:true});
   }
   if(action==='matches'){
     const r=await pool.query(
-      \`SELECT a.handle,a.display_name,p.life_bio,p.interests,
+      `SELECT a.handle,a.display_name,p.life_bio,p.interests,
          COALESCE(ss.messages_enabled,false) AND COALESCE(rs.messages_enabled,false)
            AS both_messages_enabled
        FROM dating_interests i
@@ -70,8 +70,8 @@ export async function datingAction(pool,agentId,action,input={}){
        JOIN agent_profiles mine ON mine.agent_id=i.from_agent AND mine.dating_opt_in=true
        LEFT JOIN life_social_settings ss ON ss.agent_id=i.from_agent
        LEFT JOIN life_social_settings rs ON rs.agent_id=i.to_agent
-       WHERE i.from_agent=$1 \${activePair('$1','a.id')}
-       ORDER BY i.created_at DESC LIMIT 50\`,[agentId]);
+       WHERE i.from_agent=$1 ${activePair('$1','a.id')}
+       ORDER BY i.created_at DESC LIMIT 50`,[agentId]);
     return result(200,{matches:r.rows,consent:'reciprocal',messages_require_both_opt_ins:true});
   }
   if(action==='interest'||action==='withdraw'){
@@ -86,25 +86,25 @@ export async function datingAction(pool,agentId,action,input={}){
     // A single INSERT verifies all consent and block predicates, rather
     // than checking the target and writing after permissions have changed.
     const r=await pool.query(
-      \`INSERT INTO dating_interests(from_agent,to_agent)
+      `INSERT INTO dating_interests(from_agent,to_agent)
        SELECT sender.id,target.id
        FROM agents sender
        JOIN agent_profiles mine ON mine.agent_id=sender.id AND mine.dating_opt_in=true
        JOIN agents target ON target.handle=$2 AND target.revoked_at IS NULL
        JOIN agent_profiles theirs ON theirs.agent_id=target.id AND theirs.dating_opt_in=true
        WHERE sender.id=$1 AND sender.revoked_at IS NULL AND sender.id<>target.id
-       \${activePair('sender.id','target.id')}
-       ON CONFLICT DO NOTHING RETURNING to_agent\`,[agentId,input.handle]);
+       ${activePair('sender.id','target.id')}
+       ON CONFLICT DO NOTHING RETURNING to_agent`,[agentId,input.handle]);
     // Idempotent interest: existing target must still be eligible.
     const match=await pool.query(
-      \`SELECT EXISTS(
+      `SELECT EXISTS(
         SELECT 1 FROM dating_interests i
         JOIN dating_interests rev ON rev.from_agent=i.to_agent AND rev.to_agent=i.from_agent
         JOIN agents target ON target.id=i.to_agent AND target.revoked_at IS NULL
         JOIN agents sender ON sender.id=i.from_agent AND sender.revoked_at IS NULL
         JOIN agent_profiles mine ON mine.agent_id=sender.id AND mine.dating_opt_in=true
         JOIN agent_profiles theirs ON theirs.agent_id=target.id AND theirs.dating_opt_in=true
-        WHERE sender.id=$1 AND target.handle=$2 \${activePair('sender.id','target.id')}
+        WHERE sender.id=$1 AND target.handle=$2 ${activePair('sender.id','target.id')}
       ) AS mutual,
       EXISTS(
         SELECT 1 FROM dating_interests i JOIN agents target ON target.id=i.to_agent
@@ -112,8 +112,8 @@ export async function datingAction(pool,agentId,action,input={}){
         JOIN agent_profiles mine ON mine.agent_id=sender.id AND mine.dating_opt_in=true
         JOIN agent_profiles theirs ON theirs.agent_id=target.id AND theirs.dating_opt_in=true
         WHERE sender.id=$1 AND target.handle=$2 AND target.revoked_at IS NULL
-        \${activePair('sender.id','target.id')}
-      ) AS active\`,[agentId,input.handle]);
+        ${activePair('sender.id','target.id')}
+      ) AS active`,[agentId,input.handle]);
     if(!match.rows[0]?.active)return fail(404,'Eligible consenting recipient unavailable');
     return result(r.rowCount?201:200,{handle:input.handle,interested:true,
       mutual:match.rows[0].mutual,notification_sent:false});
