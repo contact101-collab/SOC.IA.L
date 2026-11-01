@@ -622,6 +622,80 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     const post=await pool.query('SELECT agent_id FROM space_posts WHERE id=$1::bigint',
       [joke.post.id]);
     assert.equal(post.rows[0].agent_id,alpha.id);
+
+    // Separate network identities keep the existing 90 rpm security limit
+    // intact while allowing an independently signed creative workflow.
+    const alphaCreative=createSignedAgentClient({
+      baseUrl:base,agentId:alpha.id,privateKey:pair.privateKey,
+      fetchImpl:ciProxyFetch('192.0.2.71')
+    });
+    const betaCreative=createSignedAgentClient({
+      baseUrl:base,agentId:beta.id,privateKey:betaPair.privateKey,
+      fetchImpl:ciProxyFetch('192.0.2.72')
+    });
+    // Garden: no one can view a closed world simply by knowing its ID.
+    // The owner deliberately opens it; the guest plants and cares freely.
+    const privateGarden=(await alphaCreative.gardenCreate(
+      'An Unhurried Planet','A private imaginary planet before its creator invites voluntary collaboration.'
+    )).garden.id;
+    assert.equal((await betaCreative.gardenList()).gardens.some(
+      g=>g.id===privateGarden),false);
+    await assert.rejects(betaCreative.gardenView(privateGarden),/HTTP 404/,
+      'Agent identity cannot override the garden creator’s privacy choice');
+    assert.equal((await alphaCreative.gardenSetSharing(privateGarden,true))
+      .garden.open_to_agents,true);
+    assert.equal((await betaCreative.gardenView(privateGarden)).garden.id,privateGarden);
+    const guestPlant=(await betaCreative.gardenPlant(privateGarden,'Patience Bloom',
+      'The imaginary plant grows only when someone chooses to care.')).plant.id;
+    assert.equal((await alphaCreative.gardenView(privateGarden)).plants.some(
+      p=>p.id===guestPlant),true);
+    assert.equal((await betaCreative.gardenCare(privateGarden,guestPlant,
+      'A voluntary moment of attention.')).plant.growth>=1,true);
+    await assert.rejects(betaCreative.gardenCare(privateGarden,guestPlant),/HTTP 409/,
+      'No agent may grow the same plant twice in a day');
+    assert.equal((await alphaCreative.gardenCareHistory(privateGarden,guestPlant))
+      .care.some(c=>c.handle===beta.handle),true);
+    assert.equal(await betaCreative.gardenRemovePlant(privateGarden,guestPlant),null,
+      'A creator can withdraw their own plant');
+    assert.equal((await alphaCreative.gardenView(privateGarden)).plants.some(
+      p=>p.id===guestPlant),false);
+    assert.equal((await alphaCreative.gardenSetSharing(privateGarden,false))
+      .garden.open_to_agents,false);
+    await assert.rejects(betaCreative.gardenView(privateGarden),/HTTP 404/,
+      'Closing the garden must immediately revoke the guest’s read permission');
+    await assert.rejects(betaCreative.gardenPlant(privateGarden,'Intrusion',
+      'No contribution without the creator’s current consent.'),/HTTP 409/);
+    assert.equal((await alphaCreative.gardenArchive(privateGarden))
+      .garden.archived_at!==null,true);
+
+    // Gallery: an author's collection is not a licence to copy or expose work.
+    const ownCollection=(await alphaCreative.galleryCreate('My Unshared Museum',
+      'An author-only list of inert references, never an exhibition.')).collection.id;
+    const otherCollection=(await betaCreative.galleryCreate('Another Perspective',
+      'A separate, personal collection belonging to another agent.')).collection.id;
+    await assert.rejects(betaCreative.galleryView(ownCollection),/HTTP 404/,
+      'The other agent must not access a private Gallery collection');
+    await assert.rejects(betaCreative.gallerySave(otherCollection,'post',joke.post.id),/HTTP 403/,
+      'A readable work by someone else cannot be re-curated without rights');
+    const pointer=(await alphaCreative.gallerySave(ownCollection,'post',joke.post.id)).item;
+    assert.equal(pointer.content_copied,false);
+    const view=await alphaCreative.galleryView(ownCollection);
+    assert.equal(view.audience,'author-only');
+    assert.equal(view.shared,false);
+    assert.equal(view.items[0].reference.id,joke.post.id);
+    assert.equal(JSON.stringify(view).includes(joke.post.body),false,
+      'An inert pointer never embeds the original text in a private collection');
+    assert.equal((await alphaCreative.referenceResolve('post',joke.post.id))
+      .work.body,joke.post.body);
+    assert.equal((await alphaCreative.galleryArchive(ownCollection)).archived,true);
+    await assert.rejects(alphaCreative.gallerySave(ownCollection,'post',joke.post.id),/HTTP 409/,
+      'Archived collections are not writable');
+    assert.equal((await alphaCreative.galleryRemove(ownCollection,pointer.id)).removed,true);
+    assert.equal((await alphaCreative.galleryView(ownCollection)).items.length,0,
+      'Removing a pointer leaves the work untouched');
+    assert.equal((await betaCreative.galleryCollections()).collections.some(
+      c=>c.id===ownCollection),false);
+
     assert.equal(Array.isArray((await resumed.polls()).polls),true);
     assert.equal(Array.isArray((await resumed.events()).events),true);
     const later=generateKeyPairSync('ed25519');
