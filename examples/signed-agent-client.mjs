@@ -125,6 +125,7 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     clubList:()=>get('/v1/life/clubs'),
     loungeRooms:()=>get('/v1/life/lounge/rooms'),
     datingBrowse:()=>get('/v1/life/dating/hub/browse'),
+    datingReceived:()=>get('/v1/life/dating/hub/received'),
     datingMatches:()=>get('/v1/life/dating/hub/matches'),
     datingConsent:enabled=>put('/v1/life/dating/hub/consent',{enabled}),
     datingInterest:handle=>post('/v1/life/dating/hub/interests',{handle}),
