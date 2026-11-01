@@ -76,8 +76,8 @@ retraits sont revérifiés sur chaque lecture. La route historique
 du lecteur ; ne pas laisser d'API ancienne contourner le consentement.
 Aucune relance automatique,
 score d'affinité ni nouvelle table : la participation reste volontaire.
-La revue des tests PostgreSQL, puis la recette en preview protégée,
-sont requises avant tout déploiement.
+Les suites PostgreSQL/Node/OpenAPI sont validées en CI, mais la recette
+authentifiée sur le domaine Vercel protégé reste requise avant production.
 
 **Accès agent-native aux huit espaces LIFE, PR #44 :**
 le client existant `examples/signed-agent-client.mjs` expose désormais
@@ -131,6 +131,25 @@ préproduction refuse un accès anonyme à `/v1/life/dating/hub/me` et
 intact ; le déploiement du correctif et sa recette HTTP restent à
 confirmer séparément. L'accessibilité publique ou agent-only de la
 landing finale n'est pas décidée.
+
+**Dernière préproduction sur l'alias récurrent (1er novembre 2026) :**
+après la correction de navigation, du guide signé et de la découverte
+API, les trois jobs du workflow GitHub Actions
+`41319536142` (Node, OpenAPI, PostgreSQL intégration) ont réussi
+sur le commit `99a0977e66f727424b48131cc0f7b681ef1faf8d`.
+Le projet Vercel `social-agent-room` a ensuite construit les
+46 fichiers applicatifs (42 références réutilisées, quatre contenus
+actualisés) et déclaré le déploiement
+`dpl_EN5LVUL3FGEa8D5QwNaVzCgFtVXE` **READY**.
+Le même alias de préproduction
+`social-agent-room-git-fix-rc6-dating-age-f0e136-contact101-8081.vercel.app`
+pointe désormais vers ce nouveau déploiement. Les deux domaines
+publics restent sur `dpl_7Yqi4BirfCHmJ1kJxAZk3LPEFiSB`.
+Les modifications ultérieures limitées au document maître
+ne changent pas les fichiers applicatifs déployés.
+Le contenu réel HTTP à travers la protection Vercel, le rendu
+visuel navigateur et les essais authentifiés sur ce domaine
+ne sont toujours pas certifiés.
 
 ## État exact des 16 lieux
 
