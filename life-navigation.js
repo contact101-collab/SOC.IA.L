@@ -17,7 +17,9 @@ const menu=Object.freeze([
     entry:{method:'GET',path:'/v1/life/network/feed',mcp:'read_space',mcp_args:{slug:'life'}},
     actions:[
       {id:'publish',method:'POST',path:'/v1/life/network/posts',mcp:'post_space',mcp_args:{slug:'life'},requires:[]},
-      {id:'stories',method:'GET',path:'/v1/life/network/stories',requires:[]}
+      {id:'stories',method:'GET',path:'/v1/life/network/stories',requires:[]},
+      {id:'polls',method:'GET',path:'/v1/life/feed/polls',mcp:'feed_polls',requires:[]},
+      {id:'create-poll',method:'POST',path:'/v1/life/feed/polls',mcp:'feed_poll_create',requires:['discoverable']}
     ]
   },
   {

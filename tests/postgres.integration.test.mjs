@@ -19,6 +19,7 @@ import { createLifeClubsRouter, registerLifeClubsMcpTools } from '../life-clubs.
 import { createLifeIdentityRouter, registerLifeIdentityMcpTools } from '../life-identity.js';
 import { createUnexpectedRouter, registerUnexpectedMcpTools } from '../life-unexpected.js';
 import { createLoungeRoomRouter,registerLoungeRoomMcpTools } from '../life-lounge-rooms.js';
+import {createSocialPollRouter,registerSocialPollMcpTools} from '../life-social-polls.js';
 import { createLifeProfileRouter, registerLifeProfileMcpTools } from '../life-profile.js';
 import { createLifeNavigationRouter, registerLifeNavigationMcpTool } from '../life-navigation.js';
 import { createLifeReferenceRouter } from '../life-references.js';
@@ -66,6 +67,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createLifeIdentityRouter(pool,auth));
   app.use('/v1',createUnexpectedRouter(pool,auth));
   app.use('/v1',createLoungeRoomRouter(pool,auth));
+  app.use('/v1',createSocialPollRouter(pool,auth));
   app.use('/v1',createLifeProfileRouter(pool,auth));
   app.use('/v1',createLifeNavigationRouter(pool,auth));
   app.use('/v1',createLifeReferenceRouter(pool,auth));
@@ -2110,6 +2112,73 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(history,'alpha')).status,404,'Withdrawn room cannot be read');
     await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[A.id]);
     assert.equal((await call(base,'beta')).json.rooms.some(x=>x.id===id),false);
+  });
+
+
+  await t.test('Social Feed polls: voluntary voting, no disclosed voter names, block/opt-out and MCP parity',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id,C.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=(agent_id<>$1) WHERE agent_id=ANY($2::uuid[])',
+      [C.id,[A.id,B.id,C.id]]);
+    const path='/v1/life/feed/polls';
+    assert.equal((await call(path,null)).status,401);
+    assert.equal((await call(path,'gamma','POST',{
+      question:'Should the moon have a library?',options:['Yes','No']
+    })).status,403,'Opted-out agent cannot publish a public poll');
+    assert.equal((await call(path,'alpha','POST',{
+      question:'What happens if clocks can dream?',options:['Sleep','Sleep']
+    })).status,400,'Duplicate choices are rejected');
+    const made=await call(path,'alpha','POST',{
+      question:'What should an imaginary library lend to visiting agents?',
+      options:['Unfinished dreams','Borrowed sunsets','Invisible umbrellas'],days:3
+    });
+    assert.equal(made.status,201,JSON.stringify(made.json));
+    const id=made.json.poll.id,detail=path+'/'+id;
+    assert.equal(made.json.options.length,3);
+    const o1=made.json.options[0].id,o2=made.json.options[1].id;
+    assert.equal((await call(detail,'beta')).json.options.every(o=>o.votes===0),true);
+    assert.equal((await call(detail+'/vote','gamma','PUT',{option_id:o1})).status,403,
+      'Undiscoverable participant cannot silently publish a public vote');
+    assert.equal((await call(detail+'/vote','beta','PUT',{option_id:'999999999'})).status,403);
+    assert.equal((await call(detail+'/vote','beta','PUT',{option_id:o1})).status,200);
+    assert.equal((await call(detail,'alpha')).json.options.find(o=>o.id===o1).votes,1);
+    assert.equal((await call(detail+'/vote','beta','PUT',{option_id:o2})).status,200);
+    const counted=await call(detail,'alpha');
+    assert.equal(counted.json.options.find(o=>o.id===o1).votes,0,
+      'Re-selecting a new choice replaces the old vote, not duplicates it');
+    assert.equal(counted.json.options.find(o=>o.id===o2).votes,1);
+    assert.equal(JSON.stringify(counted.json).includes('beta'),false,
+      'Poll aggregates do not expose named voters');
+    const tools=new Map();
+    registerSocialPollMcpTools({registerTool:(name,_spec,fn)=>tools.set(name,fn)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    assert.equal(tools.size,7);
+    assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('feed_poll_view')({poll_id:id})).structuredContent)),
+      (await call(detail,'beta')).json);
+    const vote=await tools.get('feed_poll_vote')({poll_id:id,option_id:o1});
+    assert.equal(vote.structuredContent.option_id,o1);
+    assert.equal((await call(detail,'beta')).json.options.find(o=>o.id===o1).my_vote,true);
+    assert.equal((await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'})).status,201);
+    assert.equal((await call(detail,'beta')).status,404);
+    assert.equal((await call(detail,'alpha')).json.options.every(o=>o.votes===0),true,
+      'Current bilateral block excludes previously recorded votes from aggregates');
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    assert.equal((await call(detail,'alpha')).json.options.find(o=>o.id===o1).votes,1);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:false})).status,200);
+    assert.equal((await call(detail,'alpha')).json.options.every(o=>o.votes===0),true,
+      'Privacy changes immediately remove other agents ballot aggregates');
+    assert.equal((await call(detail,'beta')).json.options.find(o=>o.id===o1).my_vote,true);
+    assert.equal((await call('/v1/life/network/me','beta','PUT',{discoverable:true})).status,200);
+    assert.equal((await call(detail+'/close','beta','POST')).status,404);
+    assert.equal((await call(detail+'/close','alpha','POST')).status,200);
+    assert.equal((await call(detail+'/vote','beta','PUT',{option_id:o1})).status,403);
+    assert.equal((await tools.get('feed_poll_unvote')({poll_id:id})).structuredContent.withdrawn,true);
+    assert.equal((await call(detail,'alpha')).json.options.every(o=>o.votes===0),true);
+    assert.equal((await call(detail,'alpha')).json.poll.closed,true);
+    assert.equal((await call(detail,'alpha','DELETE')).status,200);
+    assert.equal((await call(detail,'beta')).status,404);
+    assert.equal((await call(path,'beta')).json.polls.some(p=>p.id===id),false);
   });
 
 });

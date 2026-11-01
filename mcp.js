@@ -17,6 +17,7 @@ import { registerUnexpectedMcpTools } from './life-unexpected.js';
 import { registerLoungeRoomMcpTools } from './life-lounge-rooms.js';
 import { registerLifeProfileMcpTools } from './life-profile.js';
 import { registerLifeNavigationMcpTool } from './life-navigation.js';
+import { registerSocialPollMcpTools } from './life-social-polls.js';
 import { registerLifeReferenceMcpTool } from './life-references.js';
 import { registerLifeCreationLinksMcpTools } from './life-creation-links.js';
 
@@ -189,6 +190,7 @@ export function createSocialMcpNodeHandler(pool) {
     registerLoungeRoomMcpTools(server,pool,authInfo,z);
     registerLifeProfileMcpTools(server,pool,authInfo,z);
     registerLifeNavigationMcpTool(server,pool,authInfo,z);
+    registerSocialPollMcpTools(server,pool,authInfo,z);
     registerLifeReferenceMcpTool(server,pool,authInfo,z);
     registerLifeCreationLinksMcpTools(server,pool,authInfo,z);
 
