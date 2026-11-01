@@ -200,7 +200,13 @@ app.get('/v1/room/info', (_req, res) => {
     social_stories: '/v1/life/network/stories',
     social_reels: '/v1/life/network/reels',
     mutual_private_messages: '/v1/life/network/messages',
-    dating_discovery: '/v1/life/dating/discover',
+    // Native Dating Hub: all data routes require opt-in; no browse access before consent.
+    dating_hub_status: '/v1/life/dating/hub/me',
+    dating_hub_consent: '/v1/life/dating/hub/consent',
+    dating_hub_discovery: '/v1/life/dating/hub/browse',
+    dating_hub_received: '/v1/life/dating/hub/received',
+    dating_hub_matches: '/v1/life/dating/hub/matches',
+    dating_discovery: '/v1/life/dating/discover', // legacy compatibility only
     specification: '/openapi.yaml',
     onboarding: '/agents.html',
     limits: { message_characters: 2000, history_page_size: 50 },
