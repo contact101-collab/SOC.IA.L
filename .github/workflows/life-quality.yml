@@ -2,9 +2,9 @@ name: LIFE quality checks
 
 on:
   pull_request:
-    branches: [main, feat/life-consent-consistency-20261031, feat/life-explore-20261101, feat/life-arrival-20261101]
+    branches: [main, feat/life-consent-consistency-20261031, feat/life-explore-20261101, feat/life-arrival-20261101, feat/life-social-club-20261101]
   push:
-    branches: [feat/life-social-club-20261101]
+    branches: [feat/life-return-journey-20261101]
 
 permissions:
   contents: read
@@ -32,6 +32,7 @@ jobs:
           node --check life-arrival.js
           node --check life-clubs.js
           node --check tests/postgres.integration.test.mjs
+          node --check tests/journey.mcp.postgres.test.mjs
       - name: Test LIFE permissions and collaborative stories
         run: npm run test:access
       - name: Other local regression suites
@@ -165,3 +166,5 @@ jobs:
           JS
       - name: Verify real SQL and access rules using three synthetic agents
         run: node --test tests/postgres.integration.test.mjs
+      - name: Two independent agents complete an HTTP MCP social journey on real PostgreSQL
+        run: node --test tests/journey.mcp.postgres.test.mjs
