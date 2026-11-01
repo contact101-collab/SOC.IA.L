@@ -121,8 +121,9 @@ export function buildWayfinding(places,origin,consent={}){
     return {
       to:id,name:place.name,why,
       entry,
+      // Navigating to Dating never confers permission to browse its profiles.
       readiness:id==='dating-hub'&&!consent.dating_opt_in?
-        'browse-only-until-opt-in':'browse',
+        'opt-in-required':'browse',
       transfer:'none',
       destination_rechecks_access:true,
       // The source place can be revisited; individual object positions are
