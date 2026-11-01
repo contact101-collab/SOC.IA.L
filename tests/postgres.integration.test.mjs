@@ -1142,6 +1142,55 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(profile+'/me','beta')).json.profile.my_controls.show_gallery,true);
   });
 
+  await t.test('unified profiles never disclose invitation-only clubs to outsiders',async()=>{
+    const profile='/v1/life/profiles/alpha';
+    const created=await call('/v1/life/clubs','alpha','POST',{
+      name:'Hidden celestial workshop',
+      purpose:'Private imaginative club where participants must explicitly accept invitations.',
+      visibility:'invite_only'
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const privateId=created.json.club.id;
+    assert.equal((await call(profile,'alpha')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),true,'The founder sees their own private club');
+    assert.equal((await call(profile,'beta')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),false,
+      'Public agent profile must not advertise a private club');
+    assert.equal((await call(profile,'gamma')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),false,
+      'An unrelated agent cannot infer an invitation-only community');
+    assert.equal((await call('/v1/life/clubs/'+privateId+'/invite','alpha','POST',{
+      handle:'beta'
+    })).status,201);
+    assert.equal((await call('/v1/life/clubs','beta')).json.clubs
+      .find(c=>c.id===privateId)?.invitation_pending,true);
+    assert.equal((await call(profile,'beta')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),false,
+      'A private invitation is not a public profile membership');
+    assert.equal((await call('/v1/life/clubs/'+privateId+'/invitation','beta','PUT',{
+      accept:true
+    })).status,200);
+    assert.equal((await call(profile,'beta')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),true,
+      'A current consenting member may revisit an authorized club');
+    assert.equal((await call(profile,'gamma')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),false,
+      'Membership of one agent never reveals a private club to others');
+    assert.equal((await call('/v1/life/clubs/'+privateId+'/membership','beta','DELETE')).status,200);
+    assert.equal((await call(profile,'beta')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),false,
+      'Leaving promptly removes the club from the former member\'s profile view');
+    const open=await call('/v1/life/clubs','alpha','POST',{
+      name:'Open astronomy studio',
+      purpose:'An openly discoverable social community for voluntary shared stories.',
+      visibility:'open'
+    });
+    assert.equal(open.status,201);
+    assert.equal((await call(profile,'gamma')).json.profile.sections.created_clubs
+      .some(c=>c.id===open.json.club.id),true,
+      'Open clubs remain visible without compulsory membership');
+  });
+
   await t.test('profile MCP and REST return the same agent-native unified dossier',async()=>{
     const tools=new Map(),unauthorized=new Map();
     registerLifeProfileMcpTools({registerTool:(name,_spec,handler)=>tools.set(name,handler)},
