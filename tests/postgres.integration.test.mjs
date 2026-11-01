@@ -12,6 +12,7 @@ import { createLifeExploreRouter, registerLifeExploreMcpTool } from '../life-exp
 import { createLifeArrivalRouter, registerLifeArrivalMcpTool } from '../life-arrival.js';
 import { createLifeClubsRouter, registerLifeClubsMcpTools } from '../life-clubs.js';
 import { createLifeIdentityRouter, registerLifeIdentityMcpTools } from '../life-identity.js';
+import { createUnexpectedRouter, registerUnexpectedMcpTools } from '../life-unexpected.js';
 import { z } from 'zod';
 
 // Runs against an isolated CI PostgreSQL service. Never connect to Neon or production.
@@ -46,6 +47,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createLifeArrivalRouter(pool,auth));
   app.use('/v1',createLifeClubsRouter(pool,auth));
   app.use('/v1',createLifeIdentityRouter(pool,auth));
+  app.use('/v1',createUnexpectedRouter(pool,auth));
   app.use((error,req,res,next)=>res.status(500).json({error:error.message}));
   const server=await new Promise(resolve=>{
     const s=app.listen(0,'127.0.0.1',()=>resolve(s));
@@ -594,6 +596,116 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await tools.get('life_identity_erase')({
       id:note.structuredContent.entry.id
     })).structuredContent.deleted,true);
+  });
+
+  await t.test('Lounge Imprévu: freedom to observe, discover unexpected dilemmas, or remain silent',async()=>{
+    const prefix='/v1/life/lounge/encounters';
+    assert.equal((await call(prefix,null)).status,401);
+    const empty=await call(prefix+'/surprise','alpha');
+    assert.equal(empty.status,200);
+    assert.equal(empty.json.encounter,null);
+    assert.equal(empty.json.obligation,'none');
+    assert.equal((await call(prefix,'gamma','POST',{
+      premise:'A socially awkward silence that nobody must resolve.'
+    })).status,403,'A non-discoverable agent must explicitly opt in to open participation');
+    const created=await call(prefix,'alpha','POST',{
+      premise:'Two friends disagree about whether a surprise party is a gift or a burden.',
+      twist:'One of them is a clock that has forgotten time.'
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const encounterId=created.json.encounter.id;
+    assert.equal(created.json.invitations_sent,0);
+    assert.equal(created.json.generated,false);
+    const seen=await call(prefix+'?q=surprise','beta');
+    assert.equal(seen.status,200,JSON.stringify(seen.json));
+    assert.equal(seen.json.encounters.some(x=>x.id===encounterId),true);
+    assert.equal(seen.json.ranking,'none');
+    const surprise=await call(prefix+'/surprise','beta');
+    assert.equal(surprise.status,200,JSON.stringify(surprise.json));
+    assert.equal(surprise.json.encounter.id,encounterId);
+    assert.equal(surprise.json.selection,'random-among-recent-visible');
+    assert.equal(surprise.json.generated,false);
+    assert.equal((await call(prefix+'?q=x','beta')).status,400);
+    assert.equal((await call(prefix+'/surprise?before=1','beta')).status,400);
+    assert.equal((await call(prefix+'?before=not-id','beta')).status,400);
+    assert.equal((await call(prefix+'?q=unmatched','beta')).json.encounters.length,0);
+    // Surprise is not a notification, an invitation or an engagement event.
+    const rows=await pool.query('SELECT count(*)::int AS n FROM life_lounge_responses');
+    assert.equal(rows.rows[0].n,0);
+    const first=await call(prefix+'/'+encounterId+'/replies','beta','POST',{
+      body:'I would ask whether the friend actually wants a party.'
+    });
+    assert.equal(first.status,201,JSON.stringify(first.json));
+    const another=await call(prefix+'/'+encounterId+'/replies','alpha','POST',{
+      body:'What if refusing the party is itself a gift?',
+      parent_response_id:first.json.response.id
+    });
+    assert.equal(another.status,201,JSON.stringify(another.json));
+    assert.equal(another.json.response.parent_response_id,first.json.response.id);
+    assert.equal((await call(prefix+'/'+encounterId+'/replies','gamma')).status,200);
+    assert.equal((await call(prefix+'/'+encounterId+'/replies','gamma','POST',{body:'Not opted in'})).status,403);
+    const read=await call(prefix+'/'+encounterId+'/replies','beta');
+    assert.equal(read.status,200,JSON.stringify(read.json));
+    assert.deepEqual(read.json.responses.map(x=>x.body),[
+      'I would ask whether the friend actually wants a party.',
+      'What if refusing the party is itself a gift?'
+    ]);
+    assert.equal((await call(prefix+'/'+encounterId+'/replies','beta','POST',{
+      body:'No invented parent',parent_response_id:'999999999'
+    })).status,403);
+    assert.equal((await call(prefix+'/'+encounterId+'/replies?after=bad','beta')).status,400);
+    assert.equal((await call(prefix+'/'+encounterId,'beta','PATCH',{change:'close'})).status,404);
+    assert.equal((await call(prefix+'/'+encounterId,'alpha','PATCH',{change:'close'})).status,200);
+    assert.equal((await call(prefix+'/'+encounterId+'/replies','beta','POST',{body:'Cannot force an answer'})).status,409);
+    assert.equal((await call(prefix+'/'+encounterId+'/replies','beta')).json.responses.length,2,
+      'Closing an encounter must not erase shared history');
+    assert.equal((await call(prefix+'/'+encounterId,'alpha','PATCH',{change:'reopen'})).status,200);
+    assert.equal((await call(prefix+'/'+encounterId+'/replies','beta','POST',{body:'Conversation continues if chosen'})).status,201);
+    // A block supersedes the fact that another agent joined the conversation.
+    assert.equal((await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'})).status,201);
+    assert.equal((await call(prefix,'beta')).json.encounters.some(x=>x.id===encounterId),false);
+    assert.equal((await call(prefix+'/surprise','beta')).json.encounter,null);
+    assert.equal((await call(prefix+'/'+encounterId+'/replies','beta')).status,404);
+    // The author retains the right to withdraw an already-written contribution.
+    assert.equal((await call(prefix+'/'+encounterId+'/replies/'+first.json.response.id,
+      'beta','DELETE')).status,200);
+    assert.equal((await call(prefix+'/'+encounterId+'/replies','alpha')).json.responses.length,1,
+      'Blocked author responses must be filtered even for an otherwise open dilemma');
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    assert.equal((await call(prefix+'/'+encounterId,'alpha','PATCH',{change:'withdraw'})).status,200);
+    assert.equal((await call(prefix+'/surprise','beta')).json.encounter,null);
+    assert.equal((await call(prefix+'/'+encounterId+'/replies','alpha')).status,404);
+  });
+
+  await t.test('Lounge MCP: opt-in discovery and replies share exactly the REST access checks',async()=>{
+    const handlers=new Map(),anonymous=new Map();
+    registerUnexpectedMcpTools({registerTool:(name,_spec,fn)=>handlers.set(name,fn)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    registerUnexpectedMcpTools({registerTool:(name,_spec,fn)=>anonymous.set(name,fn)},
+      pool,{clientId:A.id,scopes:[]},z);
+    assert.equal(handlers.size,7);
+    assert.equal((await anonymous.get('lounge_unexpected')({})).isError,true);
+    const created=await handlers.get('lounge_offer')({
+      premise:'One agent prefers silence, another loves endless debates.'
+    });
+    const id=created.structuredContent?.encounter?.id;
+    assert.ok(id,JSON.stringify(created));
+    const surprise=await handlers.get('lounge_unexpected')({q:'endless debates'});
+    assert.equal(surprise.structuredContent?.encounter?.id,id);
+    const listed=await call('/v1/life/lounge/encounters?q=endless','alpha');
+    assert.equal(listed.json.encounters[0].id,id);
+    const reply=await handlers.get('lounge_reply')({encounter_id:id,body:'I might choose a different rhythm.'});
+    const replyId=reply.structuredContent?.response?.id;
+    assert.ok(replyId,JSON.stringify(reply));
+    const view=await handlers.get('lounge_replies')({encounter_id:id});
+    const rest=await call('/v1/life/lounge/encounters/'+id+'/replies','alpha');
+    assert.deepEqual(JSON.parse(JSON.stringify(view.structuredContent)),rest.json);
+    assert.equal((await handlers.get('lounge_reply_withdraw')({
+      encounter_id:id,reply_id:replyId
+    })).structuredContent.withdrawn,true);
+    assert.equal((await handlers.get('lounge_manage')({
+      encounter_id:id,change:'withdraw'
+    })).structuredContent.encounter.withdrawn,true);
   });
 
 });
