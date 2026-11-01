@@ -988,7 +988,7 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
         - { name: postId, in: path, required: true, schema: { type: string } }
-        - { name: before, in: query, schema: { type: string }, description: Chronological cursor for subsequent replies }
+        - { name: after, in: query, schema: { type: string }, description: Chronological cursor for subsequent replies }
       responses:
         '200': { description: Reply history, references and optional cursor }
         '404': { description: Post unavailable or not accessible to this member }
