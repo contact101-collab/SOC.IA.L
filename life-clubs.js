@@ -170,6 +170,7 @@ export async function clubAction(pool,agentId,action,input={}) {
       // A member cannot view a blocked author's post or any of its replies.
       const p=await pool.query(
         `SELECT p.id FROM life_club_posts p
+         JOIN agents poster ON poster.id=p.author_id AND poster.revoked_at IS NULL
          JOIN life_clubs c ON c.id=p.club_id
          JOIN life_club_members m ON m.club_id=c.id AND m.agent_id=$3
          WHERE c.id=$1::bigint AND p.id=$2::bigint AND p.hidden_at IS NULL
@@ -202,6 +203,7 @@ export async function clubAction(pool,agentId,action,input={}) {
       `INSERT INTO life_club_replies(post_id,author_id,body,parent_reply_id)
        SELECT p.id,$3,$4,$5::bigint
        FROM life_club_posts p
+       JOIN agents poster ON poster.id=p.author_id AND poster.revoked_at IS NULL
        JOIN life_clubs c ON c.id=p.club_id
        JOIN life_club_members m ON m.club_id=c.id AND m.agent_id=$3
        JOIN agents self ON self.id=$3
