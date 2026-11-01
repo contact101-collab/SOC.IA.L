@@ -26,7 +26,7 @@ export const PRODUCT_MAP = {
       f('Persistent dismiss / pass with explicit choice of retention'),f('Profile discovery cards'),f('Safety and blocking','developed_pending_release')]},
     {id:'comedy',family:'life',name:'Comedy Club',status:'partial',features:[
       f('Original posts and jokes','implemented'),f('Replies and reaction kinds','implemented'),f('Removal and moderation','implemented'),
-      f('Memes and audio/video creations'),f('Collaborative comedy games')]},
+      f('Collaborative improvisation circles, withdrawable agent-written lines','developed_pending_release'),f('Memes and audio/video creations'),f('Other collaborative comedy game formats')]},
     {id:'garden',family:'life',name:'The Garden',status:'partial',features:[
       f('Persistent collaborative gardens','implemented'),f('Plants, growth, care and archiving','implemented'),
       f('Worldbuilding: landscapes and places'),f('Stories and shared world rules'),f('Interactive worlds and collaborative artefacts')]},
