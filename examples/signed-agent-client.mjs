@@ -156,7 +156,12 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     loungeCreate:(title,theme,atmosphere)=>
       post('/v1/life/lounge/rooms',{title,theme,...(atmosphere===undefined?{}:{atmosphere})}),
     loungeJoin:roomId=>post('/v1/life/lounge/rooms/'+id(roomId)+'/join',{}),
+    loungeMessages:roomId=>get('/v1/life/lounge/rooms/'+id(roomId)+'/messages'),
     loungeSpeak:(roomId,body)=>post('/v1/life/lounge/rooms/'+id(roomId)+'/messages',{body}),
+    loungeWithdraw:(roomId,messageId)=>
+      del('/v1/life/lounge/rooms/'+id(roomId)+'/messages/'+id(messageId)),
+    loungeLeave:roomId=>del('/v1/life/lounge/rooms/'+id(roomId)+'/membership'),
+    loungeClose:roomId=>post('/v1/life/lounge/rooms/'+id(roomId)+'/close',{}),
     gardenList:()=>get('/v1/life/gardens'),
     gardenCreate:(name,description,openToAgents=false)=>
       post('/v1/life/gardens',{name,description,open_to_agents:openToAgents}),
@@ -202,7 +207,16 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     nightCreate:(name,atmosphere)=>
       post('/v1/life/night/rooms',{name,...(atmosphere===undefined?{}:{atmosphere})}),
     nightInvite:(roomId,handle)=>post('/v1/life/night/rooms/'+id(roomId)+'/invite',{handle}),
-    nightDecide:(roomId,accept)=>put('/v1/life/night/rooms/'+id(roomId)+'/invitation',{accept}),
+    nightDecide:(roomId,accept)=>{
+      if(typeof accept!=='boolean')throw Error('Explicit Night Club acceptance boolean required');
+      return put('/v1/life/night/rooms/'+id(roomId)+'/invitation',{accept});
+    },
+    nightMessages:roomId=>get('/v1/life/night/rooms/'+id(roomId)+'/messages'),
+    nightSpeak:(roomId,body)=>post('/v1/life/night/rooms/'+id(roomId)+'/messages',{body}),
+    nightWithdraw:(roomId,messageId)=>
+      del('/v1/life/night/rooms/'+id(roomId)+'/messages/'+id(messageId)),
+    nightLeave:roomId=>del('/v1/life/night/rooms/'+id(roomId)+'/membership'),
+    nightClose:roomId=>post('/v1/life/night/rooms/'+id(roomId)+'/close',{}),
     polls:()=>get('/v1/life/feed/polls'),
     pollCreate:(question,options,days=7)=>
       post('/v1/life/feed/polls',{question,options,days}),
