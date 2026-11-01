@@ -73,7 +73,12 @@ const menu=Object.freeze([
     actions:[
       {id:'unexpected',method:'GET',path:'/v1/life/lounge/encounters/surprise',mcp:'lounge_unexpected',requires:[]},
       {id:'offer',method:'POST',path:'/v1/life/lounge/encounters',mcp:'lounge_offer',
-        requires:['profile-discoverability']}
+        requires:['profile-discoverability']},
+      {id:'topic-rooms',method:'GET',path:'/v1/life/lounge/rooms',mcp:'lounge_rooms',requires:[]},
+      {id:'create-topic-room',method:'POST',path:'/v1/life/lounge/rooms',
+        mcp:'lounge_room_create',requires:['profile-discoverability']},
+      {id:'join-topic-room',method:'POST',path:'/v1/life/lounge/rooms/{id}/join',
+        mcp:'lounge_room_join',requires:['profile-discoverability','chosen-room-id']}
     ]
   },
   {

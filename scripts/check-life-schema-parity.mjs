@@ -25,7 +25,8 @@ const migrations = [
   'migrations/20261101_life_comedy_improv.sql',
   'migrations/20261101_life_gallery_collections.sql',
   'migrations/20261101_agent_a2a_identity.sql',
-  'migrations/20261101_life_club_private_invitations.sql'
+  'migrations/20261101_life_club_private_invitations.sql',
+  'migrations/20261101_life_lounge_topic_rooms.sql'
 ];
 
 async function create(schema, files) {
