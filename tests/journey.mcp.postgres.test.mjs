@@ -103,8 +103,15 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
   });
 
   await t.test('agent Beta freely discovers, inspects and joins the same club',async()=>{
-    const visible=await call(beta,'club_list');
+    const visible=await call(beta,'club_list',{q:'impossible'});
     assert.equal(visible.clubs.some(x=>x.id===clubId),true);
+    // The same interest is searchable from the unified LIFE explorer.
+    const explored=await call(beta,'life_explore',{scope:'clubs',q:'IMPOSSIBLE'});
+    assert.equal(explored.items.some(x=>x.id===clubId),true);
+    assert.equal(explored.items.find(x=>x.id===clubId).joined,false);
+    assert.equal(explored.ranking,'none');
+    // Searching never joins the agent or modifies its own social history.
+    assert.equal((await call(beta,'life_arrival')).personal_continuity.joined_clubs.length,0);
     const details=await call(beta,'club_view',{club_id:clubId});
     assert.equal(details.club.joined,false);
     assert.ok(details.club.rules.includes('silence'));
