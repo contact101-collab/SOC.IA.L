@@ -72,7 +72,15 @@ export async function exploreLife(pool, agentId, input) {
 
   const r = await pool.query(
     `SELECT scene.id::text,scene.garden_id::text,scene.title,scene.body,
-         scene.parent_scene_id::text,scene.created_at,
+         (SELECT parent.id::text FROM garden_scenes parent
+           JOIN agents parent_author ON parent_author.id=parent.author_id
+             AND parent_author.revoked_at IS NULL
+           WHERE parent.id=scene.parent_scene_id AND parent.garden_id=g.id
+             AND parent.hidden_at IS NULL
+             AND NOT EXISTS(SELECT 1 FROM life_blocks pb WHERE
+               (pb.from_agent=$1 AND pb.to_agent=parent.author_id)
+               OR (pb.to_agent=$1 AND pb.from_agent=parent.author_id))
+         ) AS parent_scene_id,scene.created_at,
          CASE WHEN scene.author_id=$1 OR settings.discoverable=true
            THEN a.handle ELSE NULL END AS author_handle,
          g.name AS garden_name
