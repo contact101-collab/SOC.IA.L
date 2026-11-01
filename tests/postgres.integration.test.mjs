@@ -241,6 +241,57 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call('/v1/life/gardens/'+gardenId+'/scenes/'+continuation.json.scene.id,'gamma','DELETE')).status,404);
     assert.equal((await call('/v1/life/gardens/'+gardenId+'/scenes/'+continuation.json.scene.id,'beta','DELETE')).status,204);
   });
+  await t.test('Garden author privacy is consistent across scenes, Explorer and references',async()=>{
+    const created=await call('/v1/life/gardens','beta','POST',{
+      name:'Veiled nebula garden',description:'A shared imaginary garden testing author identity privacy.',
+      open_to_agents:true
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const id=created.json.garden.id;
+    const story=await call('/v1/life/gardens/'+id+'/scenes','gamma','POST',{
+      title:'Veiled nebula parable',
+      body:'A freely shared fiction whose author is not discoverable.'
+    });
+    assert.equal(story.status,201,JSON.stringify(story.json));
+    const sceneId=story.json.scene.id;
+    // Gamma starts with discoverable=false, but a Garden remains open.
+    const reader=await call('/v1/life/gardens/'+id+'/scenes','alpha');
+    assert.equal(reader.status,200,JSON.stringify(reader.json));
+    assert.equal(reader.json.scenes.find(x=>x.id===sceneId)?.author_handle,null,
+      'Open Garden reading must not disclose an undiscoverable writer');
+    assert.equal((await call('/v1/life/gardens/'+id+'/scenes','gamma')).json.scenes
+      .find(x=>x.id===sceneId)?.author_handle,'gamma',
+      'The author may always see their own identity');
+    const explored=await call('/v1/life/explore?scope=scenes&q=veiled%20nebula','alpha');
+    assert.equal(explored.status,200);
+    assert.equal(explored.json.items.find(x=>x.id===sceneId)?.author_handle,null,
+      'LIFE Explorer must apply the same author redaction');
+    const reference=await call('/v1/life/references/garden-scene/'+sceneId,'alpha');
+    assert.equal(reference.status,200);
+    assert.equal(reference.json.author.handle,null);
+    assert.equal(reference.json.author.visibility,'redacted');
+    // The owner of a shared world has no special entitlement to reveal a
+    // contributor's private identity.
+    assert.equal((await call('/v1/life/gardens/'+id+'/scenes','beta')).json.scenes
+      .find(x=>x.id===sceneId)?.author_handle,null);
+    assert.equal((await call('/v1/life/network/me','gamma','PUT',{
+      discoverable:true
+    })).status,200);
+    assert.equal((await call('/v1/life/gardens/'+id+'/scenes','alpha')).json.scenes
+      .find(x=>x.id===sceneId)?.author_handle,'gamma');
+    assert.equal((await call('/v1/life/explore?scope=scenes&q=veiled%20nebula','alpha')).json.items
+      .find(x=>x.id===sceneId)?.author_handle,'gamma');
+    assert.equal((await call('/v1/life/network/me','gamma','PUT',{
+      discoverable:false
+    })).status,200);
+    assert.equal((await call('/v1/life/gardens/'+id+'/scenes','alpha')).json.scenes
+      .find(x=>x.id===sceneId)?.author_handle,null,
+      'Opting out must immediately redact old public Garden scenes');
+    assert.equal((await call('/v1/life/explore?scope=scenes&q=veiled%20nebula','alpha')).json.items
+      .find(x=>x.id===sceneId)?.author_handle,null,
+      'Explorer must not retain previously disclosed author handles');
+  });
+
   await t.test('MCP story tools enforce the same Garden rights using real PostgreSQL',async()=>{
     const routesFor=agent=>{
       const handlers=new Map();
