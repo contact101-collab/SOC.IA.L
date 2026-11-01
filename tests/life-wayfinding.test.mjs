@@ -43,8 +43,9 @@ test('Feed to Club to Garden to Gallery does not claim to transfer a work',()=>{
 test('Dating is opt-in, After Dark is not advertised as a confidential passage',()=>{
   const no=buildWayfinding(places,'relationships',{dating_opt_in:false});
   const yes=buildWayfinding(places,'relationships',{dating_opt_in:true});
-  assert.equal(no.choices.find(x=>x.to==='dating-hub').readiness,'browse-only-until-opt-in');
+  assert.equal(no.choices.find(x=>x.to==='dating-hub').readiness,'opt-in-required');
   assert.equal(yes.choices.find(x=>x.to==='dating-hub').readiness,'browse');
+  assert.equal(no.choices.find(x=>x.to==='dating-hub').entry.path,'/v1/life/dating/hub/browse');
   assert.deepEqual(buildWayfinding(places,'after-dark').choices,[]);
 });
 
