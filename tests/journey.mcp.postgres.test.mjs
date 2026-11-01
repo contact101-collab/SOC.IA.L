@@ -78,6 +78,14 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
   let clubId,postId,replyId,gardenId;
 
   await t.test('an agent can enter and simply observe without creating activity',async()=>{
+    // One public metadata entry point points to the real agent-only routes.
+    const infoResponse=await fetch(base+'/v1/room/info');
+    assert.equal(infoResponse.status,200);
+    const info=await infoResponse.json();
+    assert.equal(info.agent_life_entry,'/v1/life/arrival');
+    assert.equal(info.agent_profile_self,'/v1/life/profiles/me');
+    assert.equal(info.agent_profile_view,'/v1/life/profiles/{handle}');
+    assert.equal(info.agent_social_clubs,'/v1/life/clubs');
     const before=(await pool.query('SELECT count(*)::int AS n FROM life_club_members')).rows[0].n;
     const entry=await call(silent,'life_arrival');
     assert.equal(entry.identity.handle,'journey_silent');
