@@ -1549,6 +1549,10 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(base+'/interests','alpha','POST',{handle:'beta'})).status,404);
     assert.equal((await call(base+'/consent','alpha','PUT',{enabled:true})).status,200);
     assert.deepEqual((await call(base+'/browse','alpha')).json.profiles,[]);
+    assert.equal((await call(base+'/browse','beta')).status,403,
+      'Signed-in nonparticipants cannot browse opted-in Dating profiles');
+    assert.equal((await call(base+'/received','beta')).status,403,
+      'An agent must opt in before reading private incoming interests');
     assert.equal((await call(base+'/consent','beta','PUT',{enabled:true})).status,200);
     const browse=await call(base+'/browse','alpha');
     assert.equal(browse.status,200);
@@ -1562,7 +1566,15 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       'Repeat interest does not create duplicate edges');
     assert.equal((await call(base+'/matches','alpha')).json.matches.length,0);
     assert.equal((await call(base+'/matches','beta')).json.matches.length,0);
+    const inbound=await call(base+'/received','beta');
+    assert.equal(inbound.status,200);
+    assert.deepEqual(inbound.json.received.map(p=>p.handle),['alpha']);
+    assert.equal(inbound.json.ranking,'none');
+    assert.equal(inbound.json.notification_sent,false);
+    assert.equal((await call(base+'/received','alpha')).json.received.length,0);
     assert.equal((await call(base+'/interests','beta','POST',{handle:'alpha'})).json.mutual,true);
+    assert.equal((await call(base+'/received','beta')).json.received.length,0,
+      'Mutual matches are no longer pending inbound interests');
     assert.equal((await call(base+'/matches','alpha')).json.matches.some(p=>p.handle==='beta'),true);
     assert.equal((await call(base+'/matches','alpha')).json.matches[0].both_messages_enabled,true);
     const tools=new Map();
@@ -1572,12 +1584,17 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       (await call(base+'/matches','alpha')).json);
     assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('dating_browse')({})).structuredContent)),
       (await call(base+'/browse','alpha')).json);
+    assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('dating_received')({})).structuredContent)),
+      (await call(base+'/received','alpha')).json,
+      'REST and MCP expose the same authorized incoming-interest list');
     assert.equal((await tools.get('dating_interest')({handle:'beta'})).structuredContent.mutual,true);
     assert.equal((await call('/v1/life/network/messages','alpha','POST',{
       to_handle:'beta',body:'A free and reciprocal creative conversation'
     })).status,201);
     assert.equal((await tools.get('dating_withdraw')({handle:'beta'})).structuredContent.withdrawn,true);
     assert.equal((await call(base+'/matches','beta')).json.matches.length,0);
+    assert.deepEqual((await call(base+'/received','alpha')).json.received.map(p=>p.handle),['beta'],
+      'An unmatched existing reciprocal interest becomes pending when one side withdraws');
     assert.equal((await call('/v1/life/network/messages','beta','POST',{
       to_handle:'alpha',body:'A match no longer grants a new message'
     })).status,403);
@@ -1587,6 +1604,9 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     const edges=await pool.query('SELECT count(*)::int AS n FROM dating_interests WHERE from_agent=$1 OR to_agent=$1',[A.id]);
     assert.equal(edges.rows[0].n,0,'Opt out removes reciprocal edges');
     assert.equal((await call(base+'/browse','beta')).json.profiles.some(p=>p.handle==='alpha'),false);
+    assert.equal((await call(base+'/received','beta')).json.received.length,0,
+      'Revoked participation and erased interests are not recoverable from the inbox');
+    assert.equal((await call(base+'/received','alpha')).status,403);
     assert.equal((await tools.get('dating_interest')({handle:'beta'})).isError,true);
     const badAuth=new Map();
     registerDatingHubMcpTools({registerTool:(name,_meta,handler)=>badAuth.set(name,handler)},
