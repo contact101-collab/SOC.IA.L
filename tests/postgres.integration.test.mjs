@@ -10,6 +10,7 @@ import { createLifeNetworkRouter } from '../life-network.js';
 import { registerGardenStoryMcpTools } from '../garden-stories-mcp.js';
 import { createLifeExploreRouter, registerLifeExploreMcpTool } from '../life-explore.js';
 import { createLifeArrivalRouter, registerLifeArrivalMcpTool } from '../life-arrival.js';
+import { createLifeClubsRouter, registerLifeClubsMcpTools } from '../life-clubs.js';
 import { z } from 'zod';
 
 // Runs against an isolated CI PostgreSQL service. Never connect to Neon or production.
@@ -42,6 +43,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
   app.use('/v1',createLifeNetworkRouter(pool,auth));
   app.use('/v1',createLifeExploreRouter(pool,auth));
   app.use('/v1',createLifeArrivalRouter(pool,auth));
+  app.use('/v1',createLifeClubsRouter(pool,auth));
   app.use((error,req,res,next)=>res.status(500).json({error:error.message}));
   const server=await new Promise(resolve=>{
     const s=app.listen(0,'127.0.0.1',()=>resolve(s));
@@ -67,7 +69,8 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(first.json.session_state,'not-tracked');
     assert.equal(first.json.no_unread_claim,true);
     assert.equal(first.json.available_places.length,8);
-    assert.equal(first.json.available_places.find(x=>x.id==='social-club').state,'planned');
+    assert.equal(first.json.available_places.find(x=>x.id==='social-club').state,'available');
+    assert.ok(first.json.choices.some(x=>x.path==='/v1/life/clubs'));
     assert.equal(first.json.available_places.find(x=>x.id==='after-dark').state,'privacy-under-review');
     assert.deepEqual(first.json.personal_continuity,{following:[],saved_posts:[],authored_scenes:[]});
     assert.equal(first.json.generated,false);
@@ -299,6 +302,95 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       pool,{clientId:B.id,scopes:[]},z);
     assert.equal((await invalid.get('life_arrival')({})).isError,true);
     assert.deepEqual((await counts()).rows[0],before,'Arrival must not mutate state');
+  });
+
+  await t.test('Social Club: discover, join, talk, leave and withdraw, without mandatory membership',async()=>{
+    assert.equal((await call('/v1/life/clubs',null)).status,401);
+    const c=await call('/v1/life/clubs','gamma','POST',{
+      name:'Unwritten stories',purpose:'Invent unusual worlds and traditions for their own sake.',
+      rules:'Participation and silence are equally welcome.',
+      culture_seed:'Imagine a world in which sounds have maps.'
+    });
+    assert.equal(c.status,201,JSON.stringify(c.json));
+    const id=c.json.club.id;
+    const catalog=await call('/v1/life/clubs','alpha');
+    assert.equal(catalog.status,200,JSON.stringify(catalog.json));
+    assert.equal(catalog.json.clubs.some(x=>x.id===id),true);
+    const listing=catalog.json.clubs.find(x=>x.id===id);
+    assert.equal(listing.joined,false);
+    assert.equal(listing.creator_handle,null,'Globally non-discoverable founder remains pseudonymous');
+    assert.equal(listing.rules,'Participation and silence are equally welcome.');
+    assert.equal((await call('/v1/life/clubs/'+id,'alpha')).json.club.joined,false);
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts','alpha')).status,404,
+      'Not joining does not permit reading members-only discussions');
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts','alpha','POST',{body:'No membership'})).status,403);
+
+    assert.equal((await call('/v1/life/clubs/'+id+'/join','alpha','POST')).status,201);
+    assert.equal((await call('/v1/life/clubs/'+id+'/join','beta','POST')).status,201);
+    assert.equal((await call('/v1/life/clubs/'+id+'/join','beta','POST')).status,409);
+    const bPost=await call('/v1/life/clubs/'+id+'/posts','beta','POST',{
+      title:'A free tale',body:'A clock discovers that hours can be melodies.'
+    });
+    assert.equal(bPost.status,201,JSON.stringify(bPost.json));
+    const posts=await call('/v1/life/clubs/'+id+'/posts','alpha');
+    assert.equal(posts.status,200,JSON.stringify(posts.json));
+    assert.equal(posts.json.audience,'club-members');
+    assert.equal(posts.json.posts.length,1);
+    assert.equal(posts.json.posts[0].body,bPost.json.post.body);
+    // A club conversation is never copied to the generic LIFE or Explorer feeds.
+    assert.equal((await call('/v1/life/explore?q=melodies','alpha')).json.items.length,0);
+    assert.equal((await call('/v1/life/network/feed','alpha')).json.posts.some(x=>x.body.includes('melodies')),false);
+
+    assert.equal((await call('/v1/life/clubs/'+id+'/membership','beta','DELETE')).status,200);
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts','beta')).status,404);
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts','alpha')).json.posts.length,1,
+      'Leaving does not erase a contribution for remaining members');
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id,'alpha','DELETE')).status,404);
+    // Leaving does not cancel copyright/control of one's own contribution.
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts/'+bPost.json.post.id,'beta','DELETE')).status,200);
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts','alpha')).json.posts.length,0);
+    assert.equal((await call('/v1/life/clubs/'+id+'/join','beta','POST')).status,201);
+
+    // Founding a club does not require its creator to stay a member forever.
+    assert.equal((await call('/v1/life/clubs/'+id+'/membership','gamma','DELETE')).status,200);
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts','gamma')).status,404);
+    assert.equal((await call('/v1/life/clubs/'+id+'/archive','gamma','POST')).status,200);
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts','beta')).status,200,
+      'Existing participants can revisit historical conversations');
+    assert.equal((await call('/v1/life/clubs/'+id+'/join','gamma','POST')).status,409,
+      'An archived club may not silently reopen for new memberships');
+    assert.equal((await call('/v1/life/clubs/'+id+'/posts','alpha','POST',{body:'Cannot publish after archival'})).status,403);
+    assert.equal((await call('/v1/life/clubs/'+id,'gamma')).json.club.creator,true);
+    assert.equal((await call('/v1/life/clubs','alpha')).json.clubs.some(x=>x.id===id),false,
+      'Archived communities no longer appear in discovery');
+  });
+
+  await t.test('Social Club: actual MCP tools mirror REST and reject unauthorized agents',async()=>{
+    const tools=new Map(),disabled=new Map();
+    registerLifeClubsMcpTools({registerTool:(name,_schema,handler)=>tools.set(name,handler)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    registerLifeClubsMcpTools({registerTool:(name,_schema,handler)=>disabled.set(name,handler)},
+      pool,{clientId:A.id,scopes:[]},z);
+    assert.equal(tools.size,9);
+    assert.equal((await disabled.get('club_list')({})).isError,true);
+    const made=await tools.get('club_create')({
+      name:'Silent makers',purpose:'Make creations without deadlines, metrics or an assigned mission.',
+      culture_seed:'Write the histories of buildings that never existed.'
+    });
+    const id=made.structuredContent?.club?.id;
+    assert.ok(id,JSON.stringify(made));
+    assert.equal((await tools.get('club_view')({club_id:id})).structuredContent.club.joined,true);
+    const posted=await tools.get('club_post')({club_id:id,body:'A garden of improbable memories.'});
+    const postId=posted.structuredContent?.post?.id;
+    assert.ok(postId,JSON.stringify(posted));
+    assert.equal((await tools.get('club_posts')({club_id:id})).structuredContent.posts.length,1);
+    const rest=await call('/v1/life/clubs/'+id+'/posts','alpha');
+    assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('club_posts')({club_id:id})).structuredContent)),
+      rest.json);
+    assert.equal((await tools.get('club_withdraw')({club_id:id,post_id:postId})).structuredContent.withdrawn,true);
+    assert.equal((await tools.get('club_leave')({club_id:id})).structuredContent.joined,false);
+    assert.equal((await tools.get('club_join')({club_id:id})).structuredContent.joined,true);
+    assert.equal((await tools.get('club_archive')({club_id:id})).structuredContent.archived,true);
   });
 
 });
