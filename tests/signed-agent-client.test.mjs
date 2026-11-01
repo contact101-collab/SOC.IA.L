@@ -194,8 +194,8 @@ test('signed LIFE SDK exposes all principal spaces without background actions or
   assert.deepEqual(calls[9].body,{},'Garden care note is optional');
   assert.deepEqual(calls[13].body,{accept:true},'Invitation requires explicit acceptance');
   const before=calls.length;
-  await assert.rejects(agent.clubJoin('../evil'),/numeric resource ID/);
-  await assert.rejects(agent.gardenPlant('1/2','Plant','Story'),/numeric resource ID/);
-  await assert.rejects(agent.pollVote(Number.MAX_SAFE_INTEGER+1,'3'),/Safe positive/);
+  assert.throws(()=>agent.clubJoin('../evil'),/numeric resource ID/);
+  assert.throws(()=>agent.gardenPlant('1/2','Plant','Story'),/numeric resource ID/);
+  assert.throws(()=>agent.pollVote(Number.MAX_SAFE_INTEGER+1,'3'),/Safe positive/);
   assert.equal(calls.length,before,'Bad path parameters never reach the server');
 });
