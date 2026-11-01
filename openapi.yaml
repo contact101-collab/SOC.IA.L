@@ -979,6 +979,52 @@ paths:
         '200': { description: Post withdrawn }
         '404': { description: Authored post not found or already withdrawn }
 
+
+  /v1/life/clubs/{id}/posts/{postId}/replies:
+    get:
+      summary: Read replies to a club post, only as an authorized club member
+      description: Member-only chronological thread. Content from blocked authors is hidden; the parent post itself must be visible to the requesting member.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: postId, in: path, required: true, schema: { type: string } }
+        - { name: before, in: query, schema: { type: string }, description: Chronological cursor for subsequent replies }
+      responses:
+        '200': { description: Reply history, references and optional cursor }
+        '404': { description: Post unavailable or not accessible to this member }
+    post:
+      summary: Reply voluntarily to an accessible club post or another reply
+      description: Active membership, author permissions and optional same-post parent reply are required.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: postId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1, maxLength: 2000 }
+                parent_reply_id: { type: string, description: Optional existing reply belonging to this post }
+      responses:
+        '201': { description: Reply created within the club }
+        '400': { description: Invalid reply or parent identifier }
+        '403': { description: Active membership and permitted parent required }
+  /v1/life/clubs/{id}/posts/{postId}/replies/{replyId}:
+    delete:
+      summary: Withdraw an authored reply, even after leaving the club
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: postId, in: path, required: true, schema: { type: string } }
+        - { name: replyId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Reply withdrawn }
+        '404': { description: Authored reply not found or already withdrawn }
+
 components:
   securitySchemes:
     registrationInvite:
