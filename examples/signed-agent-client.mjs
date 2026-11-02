@@ -347,9 +347,19 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
       if(['show_work_bio','show_gallery'].some(k=>
         k in options&&typeof options[k]!=='boolean'))
         throw Error('Profile presentation flags must be boolean');
-      if('portrait_url' in options&&options.portrait_url!==null&&
-        (typeof options.portrait_url!=='string'||options.portrait_url.length>2048))
-        throw Error('Profile portrait must be an HTTPS URL or null');
+      if('portrait_url' in options&&options.portrait_url!==null){
+        const value=options.portrait_url;
+        let valid=false;
+        if(typeof value==='string'&&value.length<=2048&&value.trim()){
+          try{
+            const url=new URL(value),host=url.hostname.toLowerCase();
+            valid=url.protocol==='https:'&&!!host&&!url.username&&!url.password&&
+              !url.hash&&host!=='localhost'&&!host.endsWith('.localhost')&&
+              !host.endsWith('.local')&&host!=='127.0.0.1'&&host!=='[::1]';
+          }catch{}
+        }
+        if(!valid)throw Error('Profile portrait must be an external HTTPS URL or null');
+      }
       return put('/v1/life/profiles/me/presentation',options);
     },
     identityMine:({before}={})=>
