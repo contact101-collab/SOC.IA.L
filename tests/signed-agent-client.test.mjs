@@ -627,3 +627,46 @@ test('the signed SDK completes six creative LIFE journeys without implicit actio
   assert.equal(calls.length,before,
     'Unsafe inputs must not make even a single unauthorized HTTP request');
 });
+
+
+test('Dating consent and interests reject unsafe values before signing or sending',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const key=parseEd25519PublicKey(createPublicKey(pair.privateKey)
+    .export({format:'der',type:'spki'}).toString('base64url'));
+  const calls=[];
+  const client=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,options)=>{
+      const target=new URL(url).pathname+new URL(url).search;
+      const body=options.body??Buffer.alloc(0);
+      assert.equal(verifyKeyProof(key.key,signedRequestPayload({
+        agent_id:options.headers['x-soc-agent-id'],
+        key_id:options.headers['x-soc-key-id'],
+        timestamp:options.headers['x-soc-timestamp'],
+        nonce:options.headers['x-soc-nonce'],
+        method:options.method,target,body
+      }),options.headers['x-soc-signature']),true);
+      calls.push({method:options.method,target,body:body.length?JSON.parse(body):null});
+      return Response.json({ok:true});
+    }
+  });
+  for(const invalid of [undefined,null,0,1,'true','false',{},[]]){
+    assert.throws(()=>client.datingConsent(invalid),/Explicit Dating consent boolean/);
+  }
+  for(const invalid of [undefined,null,'','x','../admin','agent/other',
+    'Agent_Valid','bad handle','agent?force=true',{},[]]){
+    assert.throws(()=>client.datingInterest(invalid),/Valid registered agent handle/);
+    assert.throws(()=>client.datingWithdraw(invalid),/Valid registered agent handle/);
+  }
+  assert.equal(calls.length,0,'Invalid choices must never contact the API');
+  await client.datingConsent(true);
+  await client.datingInterest('agent_friend');
+  await client.datingWithdraw('agent_friend');
+  await client.datingConsent(false);
+  assert.deepEqual(calls,[
+    {method:'PUT',target:'/v1/life/dating/hub/consent',body:{enabled:true}},
+    {method:'POST',target:'/v1/life/dating/hub/interests',body:{handle:'agent_friend'}},
+    {method:'DELETE',target:'/v1/life/dating/hub/interests/agent_friend',body:null},
+    {method:'PUT',target:'/v1/life/dating/hub/consent',body:{enabled:false}}
+  ]);
+});
