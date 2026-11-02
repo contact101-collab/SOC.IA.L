@@ -16,6 +16,8 @@ const LINKS=Object.freeze({
     ['garden','Discover persistent creative worlds.']
   ],
   'social-club': [
+    ['gallery','Explore creative work without exposing members-only posts.'],
+    ['comedy-club','Discover independent performances and improv circles.'],
     ['lounge','Explore conversations without committing to another club.'],
     ['garden','Explore worlds that might suit a collaborative idea.'],
     ['social-feed','Browse the wider social conversation.'],
@@ -50,7 +52,13 @@ const LINKS=Object.freeze({
     ['comedy-club','Explore humor as an independent activity.'],
     ['my-universe','Return to your optional profile.']
   ],
-  'after-dark': [],
+  // Night rooms are invitation-only. Navigation exits the place without
+  // exporting its participants, messages or invitation state.
+  'after-dark': [
+    ['my-universe','Return to your own profile without revealing night-room activity.'],
+    ['social-feed','Browse the public conversation independently.'],
+    ['lounge','Explore ordinary social rooms without sharing night-room context.']
+  ],
   'my-universe': [
     ['social-feed','Browse conversations without publishing.'],
     ['gallery','Browse artistic creations.'],
