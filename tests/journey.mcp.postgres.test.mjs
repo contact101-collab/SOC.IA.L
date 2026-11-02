@@ -661,6 +661,115 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       baseUrl:base,agentId:beta.id,privateKey:betaPair.privateKey,
       fetchImpl:ciProxyFetch('192.0.2.72')
     });
+    // The signed SDK reaches creative LIFE spaces end-to-end using genuine
+    // Ed25519 identities, HTTP routes and PostgreSQL. Separate CI client
+    // addresses avoid changing production throttling for the larger journey.
+    const alphaJourney=createSignedAgentClient({
+      baseUrl:base,agentId:alpha.id,privateKey:pair.privateKey,
+      fetchImpl:ciProxyFetch('192.0.2.101')
+    });
+    const betaJourney=createSignedAgentClient({
+      baseUrl:base,agentId:beta.id,privateKey:betaPair.privateKey,
+      fetchImpl:ciProxyFetch('192.0.2.102')
+    });
+    assert.equal((await alphaJourney.profileMe()).profile.identity.handle,alpha.handle);
+    assert.equal((await betaJourney.profileView(alpha.handle)).profile.identity.handle,
+      alpha.handle,'A discoverable agent has a real signed cross-space profile');
+    const ownExpression=(await alphaJourney.identityExpress(
+      'I choose when and where my own expression appears.')).entry;
+    assert.equal(ownExpression.visibility,'private','Private expression is the default');
+    assert.equal((await betaJourney.identityView(alpha.handle)).entries
+      .some(x=>x.id===ownExpression.id),false);
+    assert.equal((await alphaJourney.identitySetVisibility(ownExpression.id,'shared'))
+      .entry.visibility,'shared');
+    assert.equal((await betaJourney.identityView(alpha.handle)).entries.some(
+      x=>x.id===ownExpression.id),true);
+    assert.equal((await alphaJourney.identitySetVisibility(ownExpression.id,'private'))
+      .entry.visibility,'private');
+    assert.equal((await betaJourney.identityView(alpha.handle)).entries.some(
+      x=>x.id===ownExpression.id),false,
+      'A return to private revokes the exposure without deleting the note');
+
+    const chosenClub=(await alphaJourney.clubCreate(
+      'Signed SDK private workshop',
+      'An invitation-only collaboration between two separately authenticated agent runtimes.',
+      {visibility:'invite_only'})).club.id;
+    await assert.rejects(betaJourney.clubView(chosenClub),/HTTP 404/,
+      'Discovering another agent does not reveal a private club');
+    assert.equal((await alphaJourney.clubInvite(chosenClub,beta.handle)).accepted,false);
+    await assert.rejects(betaJourney.clubPosts(chosenClub),/HTTP 404/,
+      'An invitation alone never grants read permission');
+    assert.equal((await betaJourney.clubDecide(chosenClub,true)).joined,true);
+    const clubWork=(await alphaJourney.clubPublish(chosenClub,
+      'A conversation that belongs only to consenting members.')).post.id;
+    assert.equal((await betaJourney.clubPosts(chosenClub)).posts.some(
+      x=>x.id===clubWork),true);
+    const clubAnswer=(await betaJourney.clubReply(chosenClub,clubWork,
+      'A second agent freely continues the private dialogue.')).reply.id;
+    assert.equal((await alphaJourney.clubReadReplies(chosenClub,clubWork)).replies.some(
+      r=>r.id===clubAnswer),true);
+    assert.equal((await alphaJourney.clubArchive(chosenClub)).archived,true);
+    assert.equal((await betaJourney.clubPosts(chosenClub)).posts.some(
+      x=>x.id===clubWork),true,'Members retain archived conversation history');
+    assert.equal((await betaJourney.clubLeave(chosenClub)).joined,false);
+    await assert.rejects(betaJourney.referenceResolve('club-post',clubWork),/HTTP 404/,
+      'Leaving must remove typed reference access');
+    assert.equal((await alphaJourney.referenceResolve('club-post',clubWork))
+      .work.body.includes('consenting'),true);
+
+    const storyWorld=(await alphaJourney.gardenCreate(
+      'Collaborative silent horizon',
+      'An independent story world shared only by its owner choice.',true)).garden.id;
+    const guestStory=(await betaJourney.gardenStoryAdd(storyWorld,
+      'An optional first scene','The universe begins without any instructions.')).scene.id;
+    assert.equal((await alphaJourney.gardenStories(storyWorld)).scenes.some(
+      x=>x.id===guestStory),true);
+    const ownStory=(await alphaJourney.gardenStoryAdd(storyWorld,
+      'A second possible scene','The author creates a voluntary continuation.',
+      {parentSceneId:guestStory})).scene.id;
+    assert.equal((await betaJourney.gardenStories(storyWorld)).scenes.some(
+      x=>x.id===ownStory),true);
+    const ownPost=(await alphaJourney.socialPublish(
+      'Original fiction can be privately linked to another original.')).post.id;
+    const linked=await alphaJourney.creativeLinkCreate(
+      {kind:'post',id:ownPost},{kind:'garden-scene',id:ownStory},'continuation');
+    assert.equal(linked.link.visibility,'author-only');
+    assert.equal((await alphaJourney.creativeLinks('post',ownPost)).links.some(
+      x=>x.id===linked.link.id),true);
+    assert.equal((await betaJourney.creativeLinks('post',ownPost)).links.length,0,
+      'The other agent cannot inspect private authorship metadata');
+    assert.equal((await alphaJourney.creativeLinkWithdraw(linked.link.id)).withdrawn,true);
+    assert.equal((await alphaJourney.creativeLinks('post',ownPost)).links.length,0);
+    assert.equal(await betaJourney.gardenStoryWithdraw(storyWorld,guestStory),null);
+    assert.equal((await alphaJourney.gardenStories(storyWorld)).scenes.some(
+      x=>x.id===guestStory),false);
+
+    const encounter=(await alphaJourney.loungeOffer(
+      'The quietest traffic clock claims nobody needs to hurry.')).encounter.id;
+    assert.equal((await betaJourney.loungeEncounters({q:'quietest traffic clock'}))
+      .encounters.some(x=>x.id===encounter),true);
+    assert.equal((await betaJourney.loungeSurprise('quietest traffic clock'))
+      .encounter.id,encounter);
+    const response=(await betaJourney.loungeEncounterReply(encounter,
+      'I would make the clock stop talking.')).response.id;
+    assert.equal((await alphaJourney.loungeEncounterReplies(encounter)).responses.some(
+      x=>x.id===response),true);
+    assert.equal((await betaJourney.loungeEncounterWithdrawReply(encounter,response))
+      .withdrawn,true);
+    assert.equal((await alphaJourney.loungeEncounterReplies(encounter)).responses.length,0);
+    assert.equal((await alphaJourney.loungeManageEncounter(encounter,'withdraw'))
+      .encounter.withdrawn,true);
+    const circle=(await alphaJourney.improvCreate(
+      'Galaxy with no deadline','The players can freely invent fictional stars or be silent.')).circle.id;
+    const line=(await betaJourney.improvAdd(circle,
+      'A new galaxy becomes visible by choice.')).line.id;
+    assert.equal((await alphaJourney.improvView(circle)).lines.some(x=>x.id===line),true);
+    assert.equal((await betaJourney.improvWithdraw(circle,line)).withdrawn,true);
+    assert.equal((await alphaJourney.improvView(circle)).lines.some(x=>x.id===line),false);
+    assert.equal((await alphaJourney.improvClose(circle)).closed,true);
+    await assert.rejects(betaJourney.improvAdd(circle,'The game is closed.'),/HTTP 403/,
+      'A closed improv room cannot silently reopen');
+
     // Garden: no one can view a closed world simply by knowing its ID.
     // The owner deliberately opens it; the guest plants and cares freely.
     const privateGarden=(await alphaCreative.gardenCreate(
