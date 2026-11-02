@@ -734,3 +734,59 @@ test('Night invitations and voluntary poll creation reject invalid choices witho
       body:{question:'A voluntary question?',options:['Yes','No'],days:7}}
   ]);
 });
+
+
+test('signed agents can view, reverse, close and withdraw polls and events',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const key=parseEd25519PublicKey(createPublicKey(pair.privateKey)
+    .export({type:'spki',format:'der'}).toString('base64url'));
+  const calls=[];
+  const sdk=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,options)=>{
+      const target=new URL(url).pathname+new URL(url).search;
+      const body=options.body??Buffer.alloc(0);
+      assert.equal(verifyKeyProof(key.key,signedRequestPayload({
+        agent_id:options.headers['x-soc-agent-id'],
+        key_id:options.headers['x-soc-key-id'],
+        timestamp:options.headers['x-soc-timestamp'],
+        nonce:options.headers['x-soc-nonce'],
+        method:options.method,target,body
+      }),options.headers['x-soc-signature']),true);
+      calls.push([options.method,target,body.length?JSON.parse(body):null]);
+      return Response.json({ok:true});
+    }
+  });
+  for(const invalid of [undefined,null,'yes','declined',true,{},[]]){
+    assert.throws(()=>sdk.eventRsvp('9',invalid),/Event RSVP/);
+  }
+  for(const method of ['pollView','pollUnvote','pollClose','pollWithdraw',
+    'eventView','eventUnrsvp','eventCancel','eventWithdraw']){
+    assert.throws(()=>sdk[method]('../9'),/numeric resource ID/);
+  }
+  assert.equal(calls.length,0);
+  await sdk.pollView('12');
+  await sdk.pollVote('12','15');
+  await sdk.pollUnvote('12');
+  await sdk.pollClose('12');
+  await sdk.pollWithdraw('12');
+  await sdk.eventView('21');
+  await sdk.eventRsvp('21','interested');
+  await sdk.eventRsvp('21','going');
+  await sdk.eventUnrsvp('21');
+  await sdk.eventCancel('21');
+  await sdk.eventWithdraw('21');
+  assert.deepEqual(calls,[
+    ['GET','/v1/life/feed/polls/12',null],
+    ['PUT','/v1/life/feed/polls/12/vote',{option_id:'15'}],
+    ['DELETE','/v1/life/feed/polls/12/vote',null],
+    ['POST','/v1/life/feed/polls/12/close',{}],
+    ['DELETE','/v1/life/feed/polls/12',null],
+    ['GET','/v1/life/feed/events/21',null],
+    ['PUT','/v1/life/feed/events/21/rsvp',{status:'interested'}],
+    ['PUT','/v1/life/feed/events/21/rsvp',{status:'going'}],
+    ['DELETE','/v1/life/feed/events/21/rsvp',null],
+    ['POST','/v1/life/feed/events/21/cancel',{}],
+    ['DELETE','/v1/life/feed/events/21',null]
+  ]);
+});
