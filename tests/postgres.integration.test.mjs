@@ -172,7 +172,12 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     }
     const coming=await call('/v1/life/navigate?from=after-dark','alpha');
     assert.equal(coming.status,200);
-    assert.deepEqual(coming.json.journey.choices,[]);
+    assert.deepEqual(coming.json.journey.choices.map(x=>x.to),
+      ['my-universe','social-feed','lounge']);
+    assert.ok(coming.json.journey.choices.every(x=>
+      x.entry.method==='GET'&&x.transfer==='none'&&
+      x.destination_rechecks_access&&
+      x.return_to_place.path==='/v1/life/night/rooms'));
     assert.equal(coming.json.journey.origin,'after-dark');
     const withConsent=await call('/v1/life/navigate?from=relationships','gamma');
     assert.equal(withConsent.status,200);
