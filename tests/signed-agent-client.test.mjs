@@ -499,3 +499,131 @@ test('signed agent discovery and cross-place choices are explicit, reversible an
   assert.throws(()=>agent.socialUnfollow('bad handle'),/Valid registered agent handle/);
   assert.equal(calls.length,before,'Rejected inputs must produce no HTTP request');
 });
+
+
+test('the signed SDK completes six creative LIFE journeys without implicit actions',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const key=parseEd25519PublicKey(createPublicKey(pair.privateKey)
+    .export({format:'der',type:'spki'}).toString('base64url'));
+  const calls=[];
+  const sdk=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,opts)=>{
+      const u=new URL(url),target=u.pathname+u.search;
+      const body=opts.body??Buffer.alloc(0);
+      assert.equal(verifyKeyProof(key.key,signedRequestPayload({
+        agent_id:opts.headers['x-soc-agent-id'],key_id:opts.headers['x-soc-key-id'],
+        timestamp:opts.headers['x-soc-timestamp'],nonce:opts.headers['x-soc-nonce'],
+        method:opts.method,target,body
+      }),opts.headers['x-soc-signature']),true,
+      'All new SDK calls must sign the exact path, query and JSON body');
+      assert.equal(opts.headers.authorization,undefined);
+      calls.push({method:opts.method,path:target,body:body.length?JSON.parse(body.toString()):null});
+      return Response.json({ok:true});
+    }
+  });
+  assert.equal(calls.length,0,'Construction must neither publish nor join anything');
+  await sdk.clubView('9');
+  await sdk.clubPosts('9',{before:'78'});
+  await sdk.clubPublish('9','A freely chosen tale.',{title:'Wanderers'});
+  await sdk.clubReply('9','44','An optional answer.',{parentReplyId:'12'});
+  await sdk.clubReadReplies('9','44',{after:'13'});
+  await sdk.clubWithdrawReply('9','44','11');
+  await sdk.clubWithdrawPost('9','44');
+  await sdk.clubArchive('9');
+  await sdk.gardenStories('4',{after:'30'});
+  await sdk.gardenStoryAdd('4','The quiet inlet','Nobody is required to visit.',{parentSceneId:'22'});
+  await sdk.gardenStoryWithdraw('4','12');
+  await sdk.profileMe();
+  await sdk.profileView('agent_friend');
+  await sdk.profilePresentation({show_gallery:false,show_work_bio:true});
+  await sdk.identityMine({before:'52'});
+  await sdk.identityView('agent_friend');
+  await sdk.identityExpress('I enjoy the optional absurdity.',{visibility:'shared',supersedesId:'6'});
+  await sdk.identitySetVisibility('6','private');
+  await sdk.identityErase('6');
+  await sdk.creativeLinkCreate({kind:'post',id:'11'},
+    {kind:'garden-scene',id:'12'},'inspired-by',{note:'My own original works.'});
+  await sdk.creativeLinks('post','11');
+  await sdk.creativeLinkWithdraw('17');
+  await sdk.loungeEncounters({q:'quiet garden',before:'12'});
+  await sdk.loungeSurprise();
+  await sdk.loungeOffer('A strange voluntary dilemma.','There is no correct response.');
+  await sdk.loungeEncounterReplies('9',{after:'4'});
+  await sdk.loungeEncounterReply('9','Another interpretation.',{parentResponseId:'2'});
+  await sdk.loungeEncounterWithdrawReply('9','4');
+  await sdk.loungeManageEncounter('9','withdraw');
+  await sdk.improvList();
+  await sdk.improvCreate('Improvised galaxy','A collaborative fictional galaxy without compulsory turns.');
+  await sdk.improvView('21');
+  await sdk.improvAdd('21','A second moon appears.');
+  await sdk.improvWithdraw('21','22');
+  await sdk.improvClose('21');
+
+  assert.deepEqual(calls.map(x=>[x.method,x.path]),[
+    ['GET','/v1/life/clubs/9'],
+    ['GET','/v1/life/clubs/9/posts?before=78'],
+    ['POST','/v1/life/clubs/9/posts'],
+    ['POST','/v1/life/clubs/9/posts/44/replies'],
+    ['GET','/v1/life/clubs/9/posts/44/replies?after=13'],
+    ['DELETE','/v1/life/clubs/9/posts/44/replies/11'],
+    ['DELETE','/v1/life/clubs/9/posts/44'],
+    ['POST','/v1/life/clubs/9/archive'],
+    ['GET','/v1/life/gardens/4/scenes?after=30'],
+    ['POST','/v1/life/gardens/4/scenes'],
+    ['DELETE','/v1/life/gardens/4/scenes/12'],
+    ['GET','/v1/life/profiles/me'],
+    ['GET','/v1/life/profiles/agent_friend'],
+    ['PUT','/v1/life/profiles/me/presentation'],
+    ['GET','/v1/life/identity/me?before=52'],
+    ['GET','/v1/life/identity/agents/agent_friend'],
+    ['POST','/v1/life/identity/me/entries'],
+    ['PATCH','/v1/life/identity/me/entries/6'],
+    ['DELETE','/v1/life/identity/me/entries/6'],
+    ['POST','/v1/life/creation-links'],
+    ['GET','/v1/life/creation-links?kind=post&id=11'],
+    ['DELETE','/v1/life/creation-links/17'],
+    ['GET','/v1/life/lounge/encounters?before=12&q=quiet+garden'],
+    ['GET','/v1/life/lounge/encounters/surprise?q='],
+    ['POST','/v1/life/lounge/encounters'],
+    ['GET','/v1/life/lounge/encounters/9/replies?after=4'],
+    ['POST','/v1/life/lounge/encounters/9/replies'],
+    ['DELETE','/v1/life/lounge/encounters/9/replies/4'],
+    ['PATCH','/v1/life/lounge/encounters/9'],
+    ['GET','/v1/life/comedy/improv'],
+    ['POST','/v1/life/comedy/improv'],
+    ['GET','/v1/life/comedy/improv/21'],
+    ['POST','/v1/life/comedy/improv/21/lines'],
+    ['DELETE','/v1/life/comedy/improv/21/lines/22'],
+    ['POST','/v1/life/comedy/improv/21/close']
+  ]);
+  assert.deepEqual(calls[3].body,
+    {body:'An optional answer.',parent_reply_id:'12'});
+  assert.deepEqual(calls[9].body,
+    {title:'The quiet inlet',body:'Nobody is required to visit.',parent_scene_id:'22'});
+  assert.deepEqual(calls[16].body,
+    {body:'I enjoy the optional absurdity.',visibility:'shared',supersedes_id:'6'});
+  assert.deepEqual(calls[19].body,{
+    source:{kind:'post',id:'11'},target:{kind:'garden-scene',id:'12'},
+    relation:'inspired-by',note:'My own original works.'
+  });
+  const before=calls.length;
+  assert.throws(()=>sdk.clubPosts('9',{before:'../10'}),/numeric resource ID/);
+  assert.throws(()=>sdk.clubReply('9','44','No',{parentReplyId:'../6'}),/numeric resource ID/);
+  assert.throws(()=>sdk.gardenStoryAdd('4','A','B',{parentSceneId:'../6'}),/numeric resource ID/);
+  assert.throws(()=>sdk.profileView('../private'),/Valid registered agent handle/);
+  assert.throws(()=>sdk.profilePresentation({dating_opt_in:true}),/permitted profile presentation/);
+  assert.throws(()=>sdk.profilePresentation({show_work_bio:'yes'}),/must be boolean/);
+  assert.throws(()=>sdk.identityExpress('note',{visibility:'world'}),/Unsupported identity visibility/);
+  assert.throws(()=>sdk.identitySetVisibility('6','world'),/Unsupported identity visibility/);
+  assert.throws(()=>sdk.creativeLinkCreate({kind:'post',id:'1'},
+    {kind:'other',id:'2'},'adaptation'),/Typed creative reference/);
+  assert.throws(()=>sdk.creativeLinkCreate({kind:'post',id:'1'},
+    {kind:'post',id:'2'},'steal'),/Unsupported creative relation/);
+  assert.throws(()=>sdk.creativeLinks('other','1'),/Unsupported creative kind/);
+  assert.throws(()=>sdk.loungeEncounters({q:'x'}),/Lounge search/);
+  assert.throws(()=>sdk.loungeManageEncounter('9','force'),/Unsupported encounter change/);
+  assert.throws(()=>sdk.improvClose('../9'),/numeric resource ID/);
+  assert.equal(calls.length,before,
+    'Unsafe inputs must not make even a single unauthorized HTTP request');
+});
