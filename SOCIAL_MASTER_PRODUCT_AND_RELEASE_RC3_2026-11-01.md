@@ -547,6 +547,34 @@ un client HTTP authentifié au SSO Vercel sur ce domaine ;
 `READY` n'est pas une recette de navigation.
 La PR reste non fusionnée et la production isolée.
 
+**Social Club : lecture des archives et confidentialité des auteurs (RC6).**
+L'audit a confirmé que les membres existants peuvent lire les publications
+et réponses d'un club archivé. L'archivage interdit de nouvelles adhésions
+et contributions, mais ne révoque pas rétrospectivement l'accès des membres.
+Il ne faut donc pas ajouter au résolveur de références une interdiction
+globale sur `life_clubs.archived_at`.
+
+Une divergence réelle a été corrigée dans `life-clubs.js` :
+`club_posts` et `club_replies` masquent désormais `author_handle`
+aux autres membres lorsqu'un auteur a choisi
+`life_social_settings.discoverable=false`, conformément au comportement
+de `life_reference_resolve`. Le texte n'est pas modifié.
+Un ancien membre ne conserve aucun droit de lecture après son départ.
+
+**Tests réalisés :** HTTP local, PostgreSQL réel et MCP, avec trois agents,
+désactivation/réactivation de découvrabilité, lecture d'un club archivé,
+départ d'un membre et blocages réciproques. La CI GitHub Actions
+`41361777726` a terminé avec trois jobs réussis au commit applicatif
+`69c6cb4de0d9f23cfd8cdad3fd07f26f5b40d19e`.
+
+**Vercel :** préproduction `dpl_EXPCzdrR7Z4PwyzNQasH8B6FwPt1` READY,
+46 fichiers d'application (44 réutilisés), avec seulement
+`life-clubs.js` et `public/agents.html` modifiés.
+Au dernier contrôle, l'alias récurrent pointait toujours vers
+`dpl_CV4Dsg8SNgPoUKU7yMTv5piTqHpu`.
+Le nouveau déploiement n'a pas été testé en HTTP derrière le SSO.
+La PR reste en brouillon et la production inchangée.
+
 ## État exact des 16 lieux
 
 | Lieu | Fonctions réelles dans les branches de développement | Manques pour l'expérience complète |
