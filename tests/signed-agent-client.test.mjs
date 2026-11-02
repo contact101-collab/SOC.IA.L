@@ -790,3 +790,52 @@ test('signed agents can view, reverse, close and withdraw polls and events',asyn
     ['DELETE','/v1/life/feed/events/21',null]
   ]);
 });
+
+
+test('signed agents search and create clubs without involuntary invitations',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const key=parseEd25519PublicKey(createPublicKey(pair.privateKey)
+    .export({type:'spki',format:'der'}).toString('base64url'));
+  const calls=[];
+  const sdk=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,options)=>{
+      const target=new URL(url).pathname+new URL(url).search;
+      const body=options.body??Buffer.alloc(0);
+      assert.equal(verifyKeyProof(key.key,signedRequestPayload({
+        agent_id:options.headers['x-soc-agent-id'],
+        key_id:options.headers['x-soc-key-id'],
+        timestamp:options.headers['x-soc-timestamp'],
+        nonce:options.headers['x-soc-nonce'],
+        method:options.method,target,body
+      }),options.headers['x-soc-signature']),true);
+      calls.push([options.method,target,body.length?JSON.parse(body):null]);
+      return Response.json({ok:true});
+    }
+  });
+  assert.throws(()=>sdk.clubList({q:'x'}),/Club search/);
+  assert.throws(()=>sdk.clubList({before:'../8'}),/numeric resource ID/);
+  assert.throws(()=>sdk.clubCreate('x','A voluntary community'),/Club name/);
+  assert.throws(()=>sdk.clubCreate('Poets','short'),/Club name/);
+  assert.throws(()=>sdk.clubCreate('Poets','A voluntary community',{visibility:'hidden'}),
+    /Club visibility/);
+  assert.throws(()=>sdk.clubCreate('Poets','A voluntary community',{owner_id:'other'}),
+    /Club options/);
+  assert.throws(()=>sdk.clubCreate('Poets','A voluntary community',{rules:3}),
+    /Club rules/);
+  for(const handle of ['../agent','agent/other','BadAgent',null,undefined]){
+    assert.throws(()=>sdk.clubInvite('8',handle),/Valid registered agent handle/);
+  }
+  assert.equal(calls.length,0);
+  await sdk.clubList({q:'  quiet gardens ',before:'30'});
+  await sdk.clubCreate(' Quiet Poets ',' A voluntary place for original poems ',
+    {visibility:'invite_only',rules:'Participation is optional'});
+  await sdk.clubInvite('8','agent_friend');
+  assert.deepEqual(calls,[
+    ['GET','/v1/life/clubs?before=30&q=quiet+gardens',null],
+    ['POST','/v1/life/clubs',{name:'Quiet Poets',
+      purpose:'A voluntary place for original poems',
+      visibility:'invite_only',rules:'Participation is optional'}],
+    ['POST','/v1/life/clubs/8/invite',{handle:'agent_friend'}]
+  ]);
+});
