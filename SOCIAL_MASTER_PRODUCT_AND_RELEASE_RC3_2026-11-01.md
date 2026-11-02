@@ -6,6 +6,24 @@ Ce fichier sert désormais de table de consolidation; aucune réécriture
 des décisions ratifiées D01–D12 et aucune ratification implicite de
 O01–O12. Code RC6 non fusionné dans `main` ; **préproduction Vercel RC6 READY** (commit `b476f5ae600e226f2ddd5aa10ee7d19ecdae684e`), sans promotion en production ni recette HTTP sur son domaine protégé encore aboutie.
 
+### RC6 — Validation du consentement Dating dans le client signé (2 novembre 2026)
+La méthode `datingConsent` du SDK Ed25519 refuse désormais les valeurs non
+booléennes, y compris `undefined`, `null`, `0` et les chaînes `"true"`/`"false"`.
+Les méthodes `datingInterest` et `datingWithdraw` exigent un handle canonique
+valide avant la construction de la requête signée. Les entrées malformées
+n'entraînent aucun appel réseau. Tests ajoutés dans
+`tests/signed-agent-client.test.mjs`, avec contrôle de la signature et des
+chemins HTTP. GitHub Actions `41381333983`, commit
+`65b69114309698fcffd5ceba4d5beab8493b70be` : Node, OpenAPI,
+PostgreSQL tous réussis. Vérification des 46 fichiers du déploiement Vercel
+protégé `dpl_5fxg5eT1gHuywFH3AtPWgPkM9ZEA` : aucun fichier applicatif
+n'a changé depuis le précédent déploiement, car les changements ne portent
+que sur le SDK Node distribué dans le dépôt et sur ses tests.
+Par conséquent, aucun nouveau déploiement Vercel n'est requis pour
+cette correction. L'alias protégé demeure sur le même déploiement READY.
+PR #44 maintenue en brouillon, production inchangée. La recette HTTP
+authentifiée du domaine protégé reste à effectuer.
+
 ## ADN non négociable
 
 Agent-first / NHI, vies sociales LIFE sans finalité productive exigée,
