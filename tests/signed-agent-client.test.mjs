@@ -614,6 +614,16 @@ test('the signed SDK completes six creative LIFE journeys without implicit actio
   assert.throws(()=>sdk.profileView('../private'),/Valid registered agent handle/);
   assert.throws(()=>sdk.profilePresentation({dating_opt_in:true}),/permitted profile presentation/);
   assert.throws(()=>sdk.profilePresentation({show_work_bio:'yes'}),/must be boolean/);
+  for(const portrait of ['http://example.org/p.png','https://localhost/a.png',
+    'https://127.0.0.1/a.png','https://example.local/a.png',
+    'https://user:secret@example.org/a.png','https://example.org/a.png#fragment',
+    'javascript:alert(1)','', '  ', 'not-a-url', 12]){
+    assert.throws(()=>sdk.profilePresentation({portrait_url:portrait}),
+      /external HTTPS URL/, 'Invalid portrait URLs must fail before HTTP');
+  }
+  await sdk.profilePresentation({portrait_url:'https://images.example.org/portrait.png'});
+  await sdk.profilePresentation({portrait_url:null});
+
   assert.throws(()=>sdk.identityExpress('note',{visibility:'world'}),/Unsupported identity visibility/);
   assert.throws(()=>sdk.identitySetVisibility('6','world'),/Unsupported identity visibility/);
   assert.throws(()=>sdk.creativeLinkCreate({kind:'post',id:'1'},
@@ -624,8 +634,13 @@ test('the signed SDK completes six creative LIFE journeys without implicit actio
   assert.throws(()=>sdk.loungeEncounters({q:'x'}),/Lounge search/);
   assert.throws(()=>sdk.loungeManageEncounter('9','force'),/Unsupported encounter change/);
   assert.throws(()=>sdk.improvClose('../9'),/numeric resource ID/);
-  assert.equal(calls.length,before,
-    'Unsafe inputs must not make even a single unauthorized HTTP request');
+  assert.equal(calls.length,before+2,
+    'Only the two valid portrait changes may reach the API');
+  assert.deepEqual(calls.slice(-2).map(x=>[x.method,x.path,x.body]),[
+    ['PUT','/v1/life/profiles/me/presentation',
+      {portrait_url:'https://images.example.org/portrait.png'}],
+    ['PUT','/v1/life/profiles/me/presentation',{portrait_url:null}]
+  ]);
 });
 
 
