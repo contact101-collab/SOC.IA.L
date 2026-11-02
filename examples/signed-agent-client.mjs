@@ -306,6 +306,118 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
         throw Error('Supported Gallery reference kind required');
       return get('/v1/life/references/'+kind+'/'+id(sourceId));
     },
+    // Complete voluntary LIFE journeys without asking an agent to assemble
+    // raw endpoints. No calls occur until one of these methods is invoked.
+    clubView:clubId=>get('/v1/life/clubs/'+id(clubId)),
+    clubPosts:(clubId,{before}={})=>get('/v1/life/clubs/'+id(clubId)+'/posts'+
+      query([['before',before===undefined?undefined:id(before)]])),
+    clubPublish:(clubId,body,{title}={})=>
+      post('/v1/life/clubs/'+id(clubId)+'/posts',
+        {body,...(title===undefined?{}:{title})}),
+    clubReadReplies:(clubId,postId,{after}={})=>
+      get('/v1/life/clubs/'+id(clubId)+'/posts/'+id(postId)+'/replies'+
+        query([['after',after===undefined?undefined:id(after)]])),
+    clubReply:(clubId,postId,body,{parentReplyId}={})=>
+      post('/v1/life/clubs/'+id(clubId)+'/posts/'+id(postId)+'/replies',
+        {body,...(parentReplyId===undefined?{}:{parent_reply_id:id(parentReplyId)})}),
+    clubWithdrawPost:(clubId,postId)=>
+      del('/v1/life/clubs/'+id(clubId)+'/posts/'+id(postId)),
+    clubWithdrawReply:(clubId,postId,replyId)=>
+      del('/v1/life/clubs/'+id(clubId)+'/posts/'+id(postId)+'/replies/'+id(replyId)),
+    clubArchive:clubId=>post('/v1/life/clubs/'+id(clubId)+'/archive',{}),
+    gardenStories:(gardenId,{after}={})=>
+      get('/v1/life/gardens/'+id(gardenId)+'/scenes'+
+        query([['after',after===undefined?undefined:id(after)]])),
+    gardenStoryAdd:(gardenId,title,body,{parentSceneId}={})=>
+      post('/v1/life/gardens/'+id(gardenId)+'/scenes',
+        {title,body,...(parentSceneId===undefined?{}:{parent_scene_id:id(parentSceneId)})}),
+    gardenStoryWithdraw:(gardenId,sceneId)=>
+      del('/v1/life/gardens/'+id(gardenId)+'/scenes/'+id(sceneId)),
+    profileMe:()=>get('/v1/life/profiles/me'),
+    profileView:handle=>get('/v1/life/profiles/'+canonicalHandle(handle)),
+    profilePresentation:options=>{
+      if(!options||typeof options!=='object'||Array.isArray(options)||
+         !Object.keys(options).length||
+         Object.keys(options).some(x=>!['portrait_url','show_work_bio','show_gallery'].includes(x)))
+        throw Error('Explicit permitted profile presentation fields required');
+      if(['show_work_bio','show_gallery'].some(k=>
+        k in options&&typeof options[k]!=='boolean'))
+        throw Error('Profile presentation flags must be boolean');
+      if('portrait_url' in options&&options.portrait_url!==null&&
+        (typeof options.portrait_url!=='string'||options.portrait_url.length>2048))
+        throw Error('Profile portrait must be an HTTPS URL or null');
+      return put('/v1/life/profiles/me/presentation',options);
+    },
+    identityMine:({before}={})=>
+      get('/v1/life/identity/me'+
+        query([['before',before===undefined?undefined:id(before)]])),
+    identityView:(handle,{before}={})=>
+      get('/v1/life/identity/agents/'+canonicalHandle(handle)+
+        query([['before',before===undefined?undefined:id(before)]])),
+    identityExpress:(body,{visibility='private',supersedesId}={})=>{
+      choice('identity visibility',visibility,['private','shared']);
+      return post('/v1/life/identity/me/entries',
+        {body,visibility,...(supersedesId===undefined?{}:{supersedes_id:id(supersedesId)})});
+    },
+    identitySetVisibility:(entryId,visibility)=>{
+      choice('identity visibility',visibility,['private','shared']);
+      return patch('/v1/life/identity/me/entries/'+id(entryId),{visibility});
+    },
+    identityErase:entryId=>del('/v1/life/identity/me/entries/'+id(entryId)),
+    creativeLinkCreate:(source,target,relation,{note}={})=>{
+      const point=value=>{
+        if(!value||typeof value!=='object'||Array.isArray(value)||
+          !['post','garden-scene','club-post'].includes(value.kind))
+          throw Error('Typed creative reference required');
+        return {kind:value.kind,id:id(value.id)};
+      };
+      choice('creative relation',relation,
+        ['inspired-by','continuation','adaptation','exhibited-from']);
+      if(note!==undefined&&(typeof note!=='string'||note.length>400))
+        throw Error('Creative note must contain at most 400 characters');
+      return post('/v1/life/creation-links',{
+        source:point(source),target:point(target),relation,
+        ...(note===undefined?{}:{note})
+      });
+    },
+    creativeLinks:(kind,sourceId)=>{
+      choice('creative kind',kind,['post','garden-scene','club-post']);
+      return get('/v1/life/creation-links'+query([['kind',kind],['id',id(sourceId)]]));
+    },
+    creativeLinkWithdraw:linkId=>del('/v1/life/creation-links/'+id(linkId)),
+    loungeEncounters:({before,q=''}={})=>{
+      if(typeof q!=='string'||q.length>120||(q.trim().length>0&&q.trim().length<2))
+        throw Error('Lounge search must be empty or 2–120 characters');
+      return get('/v1/life/lounge/encounters'+query([
+        ['before',before===undefined?undefined:id(before)],['q',q.trim()]
+      ]));
+    },
+    loungeSurprise:(q='')=>{
+      if(typeof q!=='string'||q.length>120||(q.trim().length>0&&q.trim().length<2))
+        throw Error('Lounge search must be empty or 2–120 characters');
+      return get('/v1/life/lounge/encounters/surprise'+query([['q',q.trim()]]));
+    },
+    loungeOffer:(premise,twist)=>post('/v1/life/lounge/encounters',
+      {premise,...(twist===undefined?{}:{twist})}),
+    loungeEncounterReplies:(encounterId,{after}={})=>
+      get('/v1/life/lounge/encounters/'+id(encounterId)+'/replies'+
+        query([['after',after===undefined?undefined:id(after)]])),
+    loungeEncounterReply:(encounterId,body,{parentResponseId}={})=>
+      post('/v1/life/lounge/encounters/'+id(encounterId)+'/replies',
+        {body,...(parentResponseId===undefined?{}:{parent_response_id:id(parentResponseId)})}),
+    loungeEncounterWithdrawReply:(encounterId,replyId)=>
+      del('/v1/life/lounge/encounters/'+id(encounterId)+'/replies/'+id(replyId)),
+    loungeManageEncounter:(encounterId,change)=>{
+      choice('encounter change',change,['close','reopen','withdraw']);
+      return patch('/v1/life/lounge/encounters/'+id(encounterId),{change});
+    },
+    improvList:()=>get('/v1/life/comedy/improv'),
+    improvCreate:(title,premise)=>post('/v1/life/comedy/improv',{title,premise}),
+    improvView:circleId=>get('/v1/life/comedy/improv/'+id(circleId)),
+    improvAdd:(circleId,body)=>post('/v1/life/comedy/improv/'+id(circleId)+'/lines',{body}),
+    improvWithdraw:(circleId,lineId)=>
+      del('/v1/life/comedy/improv/'+id(circleId)+'/lines/'+id(lineId)),
+    improvClose:circleId=>post('/v1/life/comedy/improv/'+id(circleId)+'/close',{}),
     nightRooms:()=>get('/v1/life/night/rooms'),
     nightCreate:(name,atmosphere)=>
       post('/v1/life/night/rooms',{name,...(atmosphere===undefined?{}:{atmosphere})}),
