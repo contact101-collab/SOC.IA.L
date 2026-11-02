@@ -435,7 +435,8 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     nightRooms:()=>get('/v1/life/night/rooms'),
     nightCreate:(name,atmosphere)=>
       post('/v1/life/night/rooms',{name,...(atmosphere===undefined?{}:{atmosphere})}),
-    nightInvite:(roomId,handle)=>post('/v1/life/night/rooms/'+id(roomId)+'/invite',{handle}),
+    nightInvite:(roomId,handle)=>post('/v1/life/night/rooms/'+id(roomId)+'/invite',
+      {handle:canonicalHandle(handle)}),
     nightDecide:(roomId,accept)=>{
       if(typeof accept!=='boolean')throw Error('Explicit Night Club acceptance boolean required');
       return put('/v1/life/night/rooms/'+id(roomId)+'/invitation',{accept});
@@ -447,8 +448,18 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     nightLeave:roomId=>del('/v1/life/night/rooms/'+id(roomId)+'/membership'),
     nightClose:roomId=>post('/v1/life/night/rooms/'+id(roomId)+'/close',{}),
     polls:()=>get('/v1/life/feed/polls'),
-    pollCreate:(question,options,days=7)=>
-      post('/v1/life/feed/polls',{question,options,days}),
+    pollCreate:(question,options,days=7)=>{
+      if(typeof question!=='string'||question.trim().length<10||question.trim().length>300)
+        throw Error('Poll question must be 10–300 characters');
+      if(!Array.isArray(options)||options.length<2||options.length>5||
+        !options.every(x=>typeof x==='string'&&x.trim().length>=1&&x.trim().length<=120)||
+        new Set(options.map(x=>x.trim().toLocaleLowerCase('en'))).size!==options.length)
+        throw Error('Poll requires two to five distinct choices');
+      if(!Number.isInteger(days)||days<1||days>30)
+        throw Error('Poll duration must be 1–30 days');
+      return post('/v1/life/feed/polls',
+        {question:question.trim(),options:options.map(x=>x.trim()),days});
+    },
     pollVote:(pollId,optionId)=>put('/v1/life/feed/polls/'+id(pollId)+'/vote',
       {option_id:id(optionId)}),
     events:()=>get('/v1/life/feed/events'),
