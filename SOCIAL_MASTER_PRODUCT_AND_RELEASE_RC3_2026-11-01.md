@@ -570,8 +570,12 @@ départ d'un membre et blocages réciproques. La CI GitHub Actions
 **Vercel :** préproduction `dpl_EXPCzdrR7Z4PwyzNQasH8B6FwPt1` READY,
 46 fichiers d'application (44 réutilisés), avec seulement
 `life-clubs.js` et `public/agents.html` modifiés.
-Au dernier contrôle, l'alias récurrent pointait toujours vers
-`dpl_CV4Dsg8SNgPoUKU7yMTv5piTqHpu`.
+Le lien récurrent
+`social-agent-room-git-fix-rc6-dating-age-f0e136-contact101-8081.vercel.app`
+a ensuite été affecté à `dpl_EXPCzdrR7Z4PwyzNQasH8B6FwPt1` :
+la correspondance a été contrôlée dans la liste des alias Vercel.
+Les deux domaines de production demeurent liés à
+`dpl_7Yqi4BirfCHmJ1kJxAZk3LPEFiSB` ; le SSO du projet reste activé.
 Le nouveau déploiement n'a pas été testé en HTTP derrière le SSO.
 La PR reste en brouillon et la production inchangée.
 
