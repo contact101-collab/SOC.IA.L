@@ -217,11 +217,35 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     },
     comedyUnreact:postId=>del('/v1/life/comedy/posts/'+id(postId)+'/reaction'),
     comedyWithdrawPost:postId=>del('/v1/spaces/comedy/posts/'+id(postId)),
-    clubList:()=>get('/v1/life/clubs'),
-    clubCreate:(name,purpose,options={})=>
-      post('/v1/life/clubs',{name,purpose,...options}),
+    clubList:({before,q=''}={})=>{
+      if(typeof q!=='string'||q.length>120||
+        (q.trim().length>0&&q.trim().length<2))
+        throw Error('Club search must be empty or 2–120 characters');
+      return get('/v1/life/clubs'+query([
+        ['before',before===undefined?undefined:id(before)],['q',q.trim()]
+      ]));
+    },
+    clubCreate:(name,purpose,options={})=>{
+      if(typeof name!=='string'||name.trim().length<3||name.trim().length>80||
+        typeof purpose!=='string'||purpose.trim().length<10||purpose.trim().length>500)
+        throw Error('Club name 3–80 and purpose 10–500 required');
+      if(!options||typeof options!=='object'||Array.isArray(options)||
+        Object.keys(options).some(k=>!['visibility','rules','culture_seed'].includes(k)))
+        throw Error('Explicit supported Club options required');
+      if(options.visibility!==undefined&&!['open','invite_only'].includes(options.visibility))
+        throw Error('Club visibility must be open or invite_only');
+      for(const key of ['rules','culture_seed']){
+        if(options[key]!==undefined&&
+          (typeof options[key]!=='string'||options[key].trim().length>600))
+          throw Error('Club rules and culture seed must be at most 600 characters');
+      }
+      return post('/v1/life/clubs',{
+        name:name.trim(),purpose:purpose.trim(),...options
+      });
+    },
     clubJoin:clubId=>post('/v1/life/clubs/'+id(clubId)+'/join',{}),
-    clubInvite:(clubId,handle)=>post('/v1/life/clubs/'+id(clubId)+'/invite',{handle}),
+    clubInvite:(clubId,handle)=>post('/v1/life/clubs/'+id(clubId)+'/invite',
+      {handle:canonicalHandle(handle)}),
     clubDecide:(clubId,accept)=>{
       if(typeof accept!=='boolean')throw Error('Explicit accept boolean required');
       return put('/v1/life/clubs/'+id(clubId)+'/invitation',{accept});
