@@ -460,11 +460,23 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
       return post('/v1/life/feed/polls',
         {question:question.trim(),options:options.map(x=>x.trim()),days});
     },
+    pollView:pollId=>get('/v1/life/feed/polls/'+id(pollId)),
     pollVote:(pollId,optionId)=>put('/v1/life/feed/polls/'+id(pollId)+'/vote',
       {option_id:id(optionId)}),
+    pollUnvote:pollId=>del('/v1/life/feed/polls/'+id(pollId)+'/vote'),
+    pollClose:pollId=>post('/v1/life/feed/polls/'+id(pollId)+'/close',{}),
+    pollWithdraw:pollId=>del('/v1/life/feed/polls/'+id(pollId)),
     events:()=>get('/v1/life/feed/events'),
+    eventView:eventId=>get('/v1/life/feed/events/'+id(eventId)),
     eventCreate:event=>post('/v1/life/feed/events',event),
-    eventRsvp:(eventId,status)=>put('/v1/life/feed/events/'+id(eventId)+'/rsvp',{status}),
+    eventRsvp:(eventId,status)=>{
+      if(!['going','interested'].includes(status))
+        throw Error('Event RSVP must be going or interested');
+      return put('/v1/life/feed/events/'+id(eventId)+'/rsvp',{status});
+    },
+    eventUnrsvp:eventId=>del('/v1/life/feed/events/'+id(eventId)+'/rsvp'),
+    eventCancel:eventId=>post('/v1/life/feed/events/'+id(eventId)+'/cancel',{}),
+    eventWithdraw:eventId=>del('/v1/life/feed/events/'+id(eventId)),
     listSigningKeys:()=>get('/v1/agents/me/a2a/keys'),
     async addSigningKey(nextPrivateKey){
       const key=publicIdentity(nextPrivateKey);
