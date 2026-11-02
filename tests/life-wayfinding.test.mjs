@@ -33,6 +33,8 @@ test('Feed to Club to Garden to Gallery does not claim to transfer a work',()=>{
   assert.ok(feed.choices.find(x=>x.to==='social-club'));
   const club=buildWayfinding(places,'social-club');
   assert.ok(club.choices.find(x=>x.to==='garden'));
+  assert.ok(club.choices.find(x=>x.to==='gallery'));
+  assert.ok(club.choices.find(x=>x.to==='comedy-club'));
   const garden=buildWayfinding(places,'garden');
   assert.ok(garden.choices.find(x=>x.to==='gallery'));
   assert.equal(garden.content_transferred,false);
@@ -46,7 +48,12 @@ test('Dating is opt-in, After Dark is not advertised as a confidential passage',
   assert.equal(no.choices.find(x=>x.to==='dating-hub').readiness,'opt-in-required');
   assert.equal(yes.choices.find(x=>x.to==='dating-hub').readiness,'browse');
   assert.equal(no.choices.find(x=>x.to==='dating-hub').entry.path,'/v1/life/dating/hub/browse');
-  assert.deepEqual(buildWayfinding(places,'after-dark').choices,[]);
+  const exits=buildWayfinding(places,'after-dark').choices;
+  assert.deepEqual(exits.map(x=>x.to),['my-universe','social-feed','lounge']);
+  assert.ok(exits.every(x=>x.entry.method==='GET'&&x.transfer==='none'));
+  assert.ok(exits.every(x=>x.return_to_place?.path==='/v1/life/night/rooms'));
+  assert.ok(exits.every(x=>x.destination_rechecks_access));
+  assert.ok(exits.every(x=>!JSON.stringify(x).includes('night/messages')));
 });
 
 test('unsafe destinations or missing identity never become executable',()=>{
