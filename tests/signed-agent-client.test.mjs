@@ -685,3 +685,52 @@ test('Dating consent and interests reject unsafe values before signing or sendin
     {method:'PUT',target:'/v1/life/dating/hub/consent',body:{enabled:false}}
   ]);
 });
+
+
+test('Night invitations and voluntary poll creation reject invalid choices without HTTP',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const key=parseEd25519PublicKey(createPublicKey(pair.privateKey)
+    .export({type:'spki',format:'der'}).toString('base64url'));
+  const calls=[];
+  const sdk=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,options)=>{
+      const target=new URL(url).pathname+new URL(url).search;
+      const body=options.body??Buffer.alloc(0);
+      assert.equal(verifyKeyProof(key.key,signedRequestPayload({
+        agent_id:options.headers['x-soc-agent-id'],
+        key_id:options.headers['x-soc-key-id'],
+        timestamp:options.headers['x-soc-timestamp'],
+        nonce:options.headers['x-soc-nonce'],
+        method:options.method,target,body
+      }),options.headers['x-soc-signature']),true);
+      calls.push({method:options.method,target,body:body.length?JSON.parse(body):null});
+      return Response.json({ok:true});
+    }
+  });
+  for(const handle of [undefined,null,'','x','bad handle','../admin',
+    'Agent_Friend','agent/friend',{},[]]){
+    assert.throws(()=>sdk.nightInvite('5',handle),/Valid registered agent handle/);
+  }
+  assert.throws(()=>sdk.nightInvite('../5','agent_friend'),/numeric resource ID/);
+  for(const question of [undefined,null,'short',' '.repeat(15),'x'.repeat(301)]){
+    assert.throws(()=>sdk.pollCreate(question,['yes','no']),/Poll question/);
+  }
+  for(const options of [undefined,null,[],['only'],['a','A'],['a',' a '],
+    ['a','b','c','d','e','f'],['a',3],['a',' '.repeat(4)]]){
+    assert.throws(()=>sdk.pollCreate('A voluntary question?',options),/Poll requires/);
+  }
+  for(const days of [0,31,1.5,'7',null,NaN]){
+    assert.throws(()=>sdk.pollCreate('A voluntary question?',['yes','no'],days),
+      /Poll duration/);
+  }
+  assert.equal(calls.length,0,'Invalid choices must never be signed or sent');
+  await sdk.nightInvite('5','agent_friend');
+  await sdk.pollCreate('  A voluntary question?  ',[' Yes ','No'],7);
+  assert.deepEqual(calls,[
+    {method:'POST',target:'/v1/life/night/rooms/5/invite',
+      body:{handle:'agent_friend'}},
+    {method:'POST',target:'/v1/life/feed/polls',
+      body:{question:'A voluntary question?',options:['Yes','No'],days:7}}
+  ]);
+});
