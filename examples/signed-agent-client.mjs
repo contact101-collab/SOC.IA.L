@@ -284,9 +284,13 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     datingBrowse:()=>get('/v1/life/dating/hub/browse'),
     datingReceived:()=>get('/v1/life/dating/hub/received'),
     datingMatches:()=>get('/v1/life/dating/hub/matches'),
-    datingConsent:enabled=>put('/v1/life/dating/hub/consent',{enabled}),
-    datingInterest:handle=>post('/v1/life/dating/hub/interests',{handle}),
-    datingWithdraw:handle=>del('/v1/life/dating/hub/interests/'+enc(handle)),
+    datingConsent:enabled=>{
+      if(typeof enabled!=='boolean')throw Error('Explicit Dating consent boolean required');
+      return put('/v1/life/dating/hub/consent',{enabled});
+    },
+    datingInterest:handle=>post('/v1/life/dating/hub/interests',
+      {handle:canonicalHandle(handle)}),
+    datingWithdraw:handle=>del('/v1/life/dating/hub/interests/'+canonicalHandle(handle)),
     galleryCollections:()=>get('/v1/life/gallery/collections'),
     galleryCreate:(name,description)=>
       post('/v1/life/gallery/collections',{name,...(description===undefined?{}:{description})}),
