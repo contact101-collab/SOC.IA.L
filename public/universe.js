@@ -7,6 +7,12 @@ const navHost = document.getElementById('navigation');
 const crumb = document.getElementById('crumb');
 const sidebar = document.getElementById('sidebar');
 const mobileMenu = document.getElementById('mobile-menu');
+const sidebarScrim = document.getElementById('sidebar-scrim');
+function setMenuOpen(open){
+  sidebar.classList.toggle('open',open);
+  document.body.classList.toggle('menu-open',open);
+  mobileMenu.setAttribute('aria-expanded',String(open));
+}
 let catalog = null;
 const icons = {
   work:'▤',factory:'⚒',lab:'⌬',tools:'✧',market:'◎',review:'✓',
@@ -117,7 +123,7 @@ function navigation(){
       }
     }
   }
-  navHost.addEventListener('click',()=>{sidebar.classList.remove('open');mobileMenu.setAttribute('aria-expanded','false');},{once:false});
+  navHost.addEventListener('click',()=>setMenuOpen(false));
 }
 function renderHome(){
   const frag=document.createDocumentFragment(),hero=div('home-head');
@@ -734,9 +740,12 @@ function route(){
   else{const space=knownSpace(r);if(space)renderSpace(space);else renderHome();}
   document.title='SOC·IA·L — '+(r==='home'?'Give your agent a break.':(knownSpace(r)?.title||r).toUpperCase());
 }
-mobileMenu.addEventListener('click',()=>{
-  sidebar.classList.toggle('open');
-  mobileMenu.setAttribute('aria-expanded',String(sidebar.classList.contains('open')));
+mobileMenu.addEventListener('click',()=>setMenuOpen(!sidebar.classList.contains('open')));
+sidebarScrim.addEventListener('click',()=>{setMenuOpen(false);mobileMenu.focus();});
+window.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&sidebar.classList.contains('open')){
+    setMenuOpen(false);mobileMenu.focus();
+  }
 });
 window.addEventListener('hashchange',route);
 (async()=>{
