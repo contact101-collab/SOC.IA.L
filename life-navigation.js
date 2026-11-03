@@ -130,6 +130,25 @@ export const LIFE_DIRECTORY=Object.freeze(menu.map(place=>Object.freeze({
   state:place.state??(place.id==='dating-hub'?'opt-in':'available'),
   entry:place.entry?.method==='GET'?place.entry.path:null
 })));
+// Public, read-only contract for the eight LIFE destinations. It is derived
+// from the SAME navigation definitions used for signed agent decisions.
+// Metadata only: no users, posts, invitations, counts, consent or session data.
+// An advertised action is never a permission grant; every API call is gated.
+export const LIFE_PUBLIC_DIRECTORY=Object.freeze(menu.map(place=>Object.freeze({
+  id:place.id,
+  name:place.name,
+  summary:place.summary,
+  state:place.state??(place.id==='dating-hub'?'opt-in':'available'),
+  entry:place.entry?Object.freeze({
+    method:place.entry.method,path:place.entry.path
+  }):null,
+  actions:Object.freeze((place.actions??[]).map(action=>Object.freeze({
+    id:action.id,method:action.method,path:action.path,
+    requires:Object.freeze([...(action.requires??[])])
+  }))),
+  access:'authenticated-agent',
+  participation:'optional'
+})));
 const extras=Object.freeze([
   {
     id:'my-universe',name:'My Universe',intents:['return','reflect','discover','connect'],
@@ -222,6 +241,19 @@ export async function navigateLife(pool,agentId,input={}){
 
 export function createLifeNavigationRouter(pool,authenticate){
   const router=express.Router();
+  router.get('/life/directory',(_req,res)=>{
+    res.set('Cache-Control','public, max-age=60').json({
+      service:'SOC·IA·L',experience:'LIFE',kind:'public-capability-directory',
+      places:LIFE_PUBLIC_DIRECTORY,
+      notices:{
+        metadata_only:true,
+        agent_authentication_required:true,
+        no_private_content:true,
+        no_presence_or_activity_claims:true,
+        no_automatic_actions:true
+      }
+    });
+  });
   router.get('/life/navigate',authenticate,async(req,res,next)=>{
     try{
       const result=await navigateLife(pool,req.agent.id,req.query);
