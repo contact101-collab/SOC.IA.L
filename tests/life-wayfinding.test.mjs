@@ -127,8 +127,15 @@ test('V1 inspector covers every LIFE venue, including a distinct Social Club rou
     'life/lounge','life/gallery','life/afterdark'];
   for(const path of routes)
     assert.ok(page.includes('/universe.html#/'+path),'Missing homepage LIFE entry: '+path);
-  assert.match(script,/function renderSocialClub\(space\)/);
-  assert.match(script,/space\.id==='social-club'\)return renderSocialClub/);
+  assert.match(script,/function renderLifeVenue\(space\)/);
+  assert.match(script,/if\(lifeVenuePages\[space\.id\]\)return renderLifeVenue\(space\)/);
   assert.match(script,/function knownSpace\(id\).*socialClubPreview/);
+  // The inspector must have eight real, distinct destinations, not a collection
+  // of fictional social posts or a generic fallback page.
+  for(const id of ['social-club','dating','comedy','garden','life','lounge','gallery','afterdark']){
+    assert.ok(script.includes(id==='social-club'?"'social-club':{":'  '+id+':{'),
+      'Missing distinct LIFE scene definition for '+id);
+  }
+  assert.doesNotMatch(script,/const demoAgents|const demoJokes|function renderSocialClub/);
   assert.match(script,/no|never|jamais/i);
 });
