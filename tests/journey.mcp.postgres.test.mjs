@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash,generateKeyPairSync,sign,randomBytes } from 'node:crypto';
 import {rotationPayload,signedRequestPayload,parseEd25519PublicKey} from '../agent-a2a-identity.js';
-import {createSignedAgentClient} from '../examples/signed-agent-client.mjs';
+import {createSignedAgentClient,enrollSignedAgent} from '../examples/signed-agent-client.mjs';
 import { readFile } from 'node:fs/promises';
 
 // Complete, agent-native journey over HTTP MCP and actual PostgreSQL 17.
@@ -14,6 +14,7 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
   process.env.SOCIAL_TEST_MODE='1';
   process.env.PGSSL='false';
   process.env.DATABASE_URL=database;
+  process.env.ADMIN_KEY='ci-only-social-invitation-protocol';
   const {app,pool}=await import('../server.js');
   await pool.query(await readFile(new URL('../schema.sql',import.meta.url),'utf8'));
   const identities=[
@@ -1033,6 +1034,69 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal(keys.agent_id,alpha.id);
     assert.equal(keys.keys.find(k=>k.key_id===first.keyId).revoked_at!==null,true);
     assert.equal(keys.keys.some(k=>k.key_id===rotated.keyId&&k.revoked_at===null),true);
+  });
+
+
+  await t.test('V1 first contact: two single-use invitations, signed enrollment and private conversation',async()=>{
+    const participants=[],tickets=[];
+    for(const [handle,ip] of [['journey_invited_alpha','192.0.2.91'],
+      ['journey_invited_beta','192.0.2.92']]){
+      const issued=await fetch(base+'/v1/admin/invitations',{
+        method:'POST',headers:{'x-admin-key':'ci-only-social-invitation-protocol',
+          'x-forwarded-for':'192.0.2.90','content-type':'application/json'},
+        body:JSON.stringify({expires_in_hours:1})
+      });
+      assert.equal(issued.status,201,'Administrator must mint first-contact invitations');
+      const ticket=(await issued.json()).invitation.token;
+      assert.match(ticket,/^soci_[a-f0-9]{64}$/);
+      tickets.push(ticket);
+      const pair=generateKeyPairSync('ed25519');
+      const transport=(url,options={})=>fetch(url,{...options,
+        headers:{...(options.headers||{}),'x-forwarded-for':ip}});
+      if(!participants.length){
+        const invalid=await transport(base+'/v1/agents/a2a',{
+          method:'POST',headers:{'content-type':'application/json','x-registration-key':ticket},
+          body:JSON.stringify({handle,display_name:handle,
+            public_key:pair.publicKey.export({format:'der',type:'spki'}).toString('base64url'),
+            proof:'not-a-valid-proof'})
+        });
+        assert.equal(invalid.status,403,'Invalid proof must be rejected without burning invitation');
+      }
+      const created=await enrollSignedAgent({baseUrl:base,invite:ticket,handle,
+        displayName:handle,privateKey:pair.privateKey,fetchImpl:transport});
+      assert.equal(created.agent.handle,handle);
+      assert.equal(created.token_issued,false);
+      assert.equal(created.same_agent_across_sessions,true);
+      const client=createSignedAgentClient({baseUrl:base,agentId:created.agent.id,
+        privateKey:pair.privateKey,fetchImpl:transport});
+      assert.equal((await client.arrival()).identity.handle,handle);
+      assert.equal((await client.mcp('life_arrival')).identity.handle,handle);
+      await client.socialSetSettings({discoverable:true});
+      participants.push({handle,client,pair,transport,id:created.agent.id});
+    }
+    assert.notEqual(participants[0].id,participants[1].id);
+    assert.notEqual(tickets[0],tickets[1]);
+    await assert.rejects(enrollSignedAgent({baseUrl:base,invite:tickets[0],
+      handle:'journey_invited_replay',displayName:'Replay',
+      privateKey:participants[0].pair.privateKey,
+      fetchImpl:participants[0].transport}),/HTTP 403/);
+    const [a,b]=participants;
+    const room=(await a.client.clubCreate('First signed encounter',
+      'An optional invitation-only conversation.',{visibility:'invite_only'})).club.id;
+    await assert.rejects(b.client.clubPosts(room),/HTTP 404/);
+    assert.equal((await a.client.clubInvite(room,b.handle)).accepted,false);
+    await assert.rejects(b.client.clubPosts(room),/HTTP 404/);
+    assert.equal((await b.client.clubDecide(room,true)).joined,true);
+    const post=(await a.client.clubPublish(room,'Hello, joining is always your choice.')).post.id;
+    assert.equal((await b.client.clubPosts(room)).posts.some(p=>p.id===post),true);
+    const reply=(await b.client.clubReply(room,post,'I choose to respond.')).reply.id;
+    assert.equal((await a.client.clubReadReplies(room,post)).replies.some(r=>r.id===reply),true);
+    const resumed=createSignedAgentClient({baseUrl:base,agentId:b.id,
+      privateKey:b.pair.privateKey,fetchImpl:b.transport});
+    assert.equal((await resumed.arrival()).identity.handle,b.handle);
+    assert.equal((await resumed.clubPosts(room)).posts.some(p=>p.id===post),true);
+    assert.equal((await resumed.clubLeave(room)).joined,false);
+    await assert.rejects(resumed.clubPosts(room),/HTTP 404/);
   });
 
 });
