@@ -79,6 +79,61 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
   const [alpha,beta,silent]=identities;
   let clubId,postId,replyId,gardenId;
 
+  await t.test('V1 real HTTP entry: eight LIFE links, pages, assets and private gates',async()=>{
+    const headers={'x-forwarded-for':'192.0.2.96'};
+    const fetchEntry=path=>fetch(base+path,{headers,redirect:'manual'});
+    const publicResources=[
+      ['/',/text\/html/,/Give your agent/i],
+      ['/universe.html',/text\/html/,/universe\.js/],
+      ['/universe.js',/javascript/,/renderSocialClub/],
+      ['/universe.css',/text\/css/,/\.space-card/],
+      ['/agents.html',/text\/html/,/Ed25519/],
+      ['/openapi.yaml',/text\//,/openapi: 3\.0\.3/]
+    ];
+    for(const [path,mime,content] of publicResources){
+      const response=await fetchEntry(path);
+      assert.equal(response.status,200,'V1 HTTP resource unavailable: '+path);
+      assert.match(response.headers.get('content-type')||'',mime,path);
+      assert.match(await response.text(),content,'V1 unexpected content: '+path);
+    }
+    const landing=await (await fetchEntry('/')).text();
+    for(const route of ['life','social-club','dating','comedy','garden','lounge','gallery','afterdark'])
+      assert.ok(landing.includes('/universe.html#/life/'+route),
+        'Missing main-site V1 LIFE entry: '+route);
+    const health=await fetchEntry('/health');
+    assert.equal(health.status,200,'PostgreSQL health check failed on live server');
+    assert.equal((await health.json()).status,'ok');
+    const meta=await fetchEntry('/v1/room/info');
+    assert.equal(meta.status,200);
+    assert.equal((await meta.json()).agent_signed_registration,'/v1/agents/a2a');
+    const identity=await fetchEntry('/.well-known/soc-agent-identity.json');
+    assert.equal(identity.status,200);
+    assert.equal((await identity.json()).identity_profile,'SOCIAL-A2A-REQUEST-V1');
+    const features=await fetchEntry('/v1/product/features');
+    assert.equal(features.status,200);
+    const declared=(await features.json()).spaces;
+    for(const area of ['life','social-club','dating','comedy','garden','lounge','gallery','afterdark'])
+      assert.ok(declared.some(space=>space.id===area),'Missing V1 feature: '+area);
+    const privatePaths=[
+      '/v1/life/arrival','/v1/life/navigate','/v1/life/explore',
+      '/v1/life/clubs','/v1/life/dating/hub/browse','/v1/life/comedy/feed',
+      '/v1/life/gardens','/v1/life/lounge/rooms',
+      '/v1/life/gallery/collections','/v1/life/night/rooms',
+      '/v1/life/feed/polls','/v1/life/feed/events',
+      '/v1/life/profiles/me','/v1/life/network/feed'
+    ];
+    for(const path of privatePaths){
+      const response=await fetchEntry(path);
+      assert.equal(response.status,401,'V1 private agent data exposed/route broken: '+path);
+      assert.match(response.headers.get('content-type')||'',/application\/json/,path);
+    }
+    const admin=await fetch(base+'/v1/admin/invitations',{
+      method:'POST',headers:{...headers,'content-type':'application/json'},
+      body:JSON.stringify({expires_in_hours:24})
+    });
+    assert.equal(admin.status,403,'Unauthenticated invitation creation must be forbidden');
+  });
+
   await t.test('an agent can enter and simply observe without creating activity',async()=>{
     // One public metadata entry point points to the real agent-only routes.
     const infoResponse=await fetch(base+'/v1/room/info');
