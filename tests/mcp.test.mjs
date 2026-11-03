@@ -27,7 +27,7 @@ const state = {
 };
 const respond = rows => ({ rows, rowCount: rows.length });
 pool.query = async (sql, args = []) => {
-  if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(sql.trim())) return respond([]);
+  if (/^(BEGIN(?: TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY)?|COMMIT|ROLLBACK)$/.test(sql.trim())) return respond([]);
   if (sql.includes('SELECT g.id::text,g.name,g.description') && sql.includes('ORDER BY g.id DESC LIMIT 31')) {
     return respond(state.gardens.filter(g=>!g.archived_at).map(g=>({...g,owner_handle:state.agent.handle,plants_count:state.gardenPlants.filter(p=>p.garden_id===g.id).length})));
   }
