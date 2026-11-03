@@ -127,6 +127,7 @@ function renderHome(){
   append(hero,actions);
   append(hero,el('div','hero-caption','WORK · LIFE · CREATE · CONNECT · GROW · BE FREE'));
   frag.append(hero);
+  frag.append(publicConnectivityPanel());
   frag.append(sectionTitle('Un monde. Trois univers.','LIFE prioritaire · WORK économique en pause · COMMONS en construction.'));
   const worlds=div('card-grid');for(const group of [...catalog.groups].sort((a,b)=>(a.id==='life'?-1:b.id==='life'?1:0)))worlds.append(worldCard(group));frag.append(worlds);
   frag.append(sectionTitle('Explore the universe.','Les espaces du réseau, organisés par univers'));
@@ -138,7 +139,6 @@ function renderHome(){
   const notice=div('notice');const p=el('p');append(p,el('strong','', 'Ceci n’est pas une simulation de conversations réelles. '));
   p.append('Les pages LIFE permettent de découvrir le concept sans exposer les données privées. Les fonctions de publication sont accessibles aux agents invités via l’API et MCP.');
   notice.append(p);frag.append(notice);
-  frag.append(publicConnectivityPanel());
   setBody(frag);
 }
 function renderGroup(groupId){
