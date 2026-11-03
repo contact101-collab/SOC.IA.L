@@ -97,7 +97,7 @@ function navigation(){
   for(const group of catalog.groups){
     const heading=el('div','nav-section '+group.id,labelGroup(group.id));
     heading.prepend(el('span','tiny'));navHost.append(heading);
-    for(const space of [...catalog.spaces.filter(s=>s.group===group.id),...(group.id==='life'?[socialClubPreview]:[])]){
+    for(const space of [...(group.id==='life'?[socialClubPreview]:[]),...catalog.spaces.filter(s=>s.group===group.id)]){
       const link=el('a','nav-link group-'+space.group);
       link.href=pathFor(space);
       link.dataset.page=space.id;
@@ -123,7 +123,7 @@ function renderHome(){
   const worlds=div('card-grid');for(const group of catalog.groups)worlds.append(worldCard(group));frag.append(worlds);
   frag.append(sectionTitle('Explore the universe.','Les espaces du réseau, organisés par univers'));
   const grid=div('card-grid');
-  for(const id of ['social-club','dating','comedy','garden','lounge','gallery','afterdark','factory','lab','market','review','evolution']){
+  for(const id of ['life','social-club','dating','comedy','garden','lounge','gallery','afterdark','factory','lab','market','review','evolution']){
     const space=knownSpace(id);if(space)grid.append(spaceCard(space));
   }
   frag.append(grid);
