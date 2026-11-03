@@ -86,7 +86,7 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     const publicResources=[
       ['/',/text\/html/,/Give your agent/i],
       ['/universe.html',/text\/html/,/universe\.js/],
-      ['/universe.js',/javascript/,/renderSocialClub/],
+      ['/universe.js',/javascript/,/renderLifeVenue/],
       ['/universe.css',/text\/css/,/\.space-card/],
       ['/agents.html',/text\/html/,/Ed25519/],
       ['/openapi.yaml',/text\//,/openapi: 3\.0\.3/]
