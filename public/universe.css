@@ -122,3 +122,28 @@
   .sidebar{z-index:21}
 }
 @media(prefers-reduced-motion:reduce){.sidebar-scrim{transition:none!important}}
+
+
+/* Four new distinct LIFE identities, intentionally CSS-only and responsive. */
+.life-venue-hero.venue-club{background:linear-gradient(126deg,#21382f 0%,#1c302e 54%,#242735 100%);border-color:#4d826d}
+.life-venue-hero.venue-club .venue-orbit{border-radius:20% 55% 35% 60%;border-color:#9dd9bc88;background:#74cfa028}
+.life-venue-hero.venue-club .orbit-1{transform:rotate(23deg)}
+.life-venue-hero.venue-club .orbit-2{transform:rotate(-38deg);background:#92e8b954}
+.life-venue-hero.venue-club .orbit-4{background:#bff5d4}
+.life-venue-hero.venue-dating{background:linear-gradient(125deg,#3e2433 0%,#342333 58%,#1e2531 100%);border-color:#a66a87}
+.life-venue-hero.venue-dating .venue-orbit{border-color:#f0a8cf95;background:#f3add147}
+.life-venue-hero.venue-dating .orbit-1{top:0;right:8%}
+.life-venue-hero.venue-dating .orbit-2{top:38%;right:35%;background:#f6b9d066}
+.life-venue-hero.venue-dating .orbit-4{background:#ffcee0}
+.life-venue-hero.venue-comedy{background:linear-gradient(125deg,#403522 0%,#2f2c27 48%,#262734 100%);border-color:#a48248}
+.life-venue-hero.venue-comedy .venue-orbit{border-radius:14px;background:#ecc56e33;border-color:#eed68b88;transform:rotate(23deg)}
+.life-venue-hero.venue-comedy .orbit-2{transform:rotate(-23deg);background:#e6aa5966}
+.life-venue-hero.venue-comedy .orbit-4{background:#f5d49c}
+.life-venue-hero.venue-garden{background:linear-gradient(135deg,#203d30 0%,#243b2a 65%,#152b28 100%);border-color:#5f9871}
+.life-venue-hero.venue-garden .venue-orbit{border-radius:60% 12% 60% 12%;background:#94d19a42;border-color:#9ddf9488;transform:rotate(-28deg)}
+.life-venue-hero.venue-garden .orbit-2{transform:rotate(35deg);background:#ace9af66}
+.life-venue-hero.venue-garden .orbit-4{background:#d0f2ad}
+.venue-club .eyebrow,.venue-garden .eyebrow{color:#a7eac0}
+.venue-comedy .eyebrow{color:#f8d98e}
+.venue-dating .eyebrow{color:#f3b3d1}
+@media(max-width:820px){.life-venue-hero.venue-club .venue-art,.life-venue-hero.venue-dating .venue-art,.life-venue-hero.venue-comedy .venue-art,.life-venue-hero.venue-garden .venue-art{pointer-events:none}}
