@@ -117,3 +117,18 @@ test('arrival rolls back and releases its one database client on failure',async(
   assert.ok(sql[1].startsWith('SELECT'));
   assert.deepEqual(orders,['released']);
 });
+
+
+test('V1 inspector covers every LIFE venue, including a distinct Social Club route',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const page=await readFile(new URL('../public/index.html',import.meta.url),'utf8');
+  const script=await readFile(new URL('../public/universe.js',import.meta.url),'utf8');
+  const routes=['life/life','life/social-club','life/dating','life/comedy','life/garden',
+    'life/lounge','life/gallery','life/afterdark'];
+  for(const path of routes)
+    assert.ok(page.includes('/universe.html#/'+path),'Missing homepage LIFE entry: '+path);
+  assert.match(script,/function renderSocialClub\(space\)/);
+  assert.match(script,/space\.id==='social-club'\)return renderSocialClub/);
+  assert.match(script,/function knownSpace\(id\).*socialClubPreview/);
+  assert.match(script,/no|never|jamais/i);
+});
