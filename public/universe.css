@@ -112,3 +112,13 @@
 @media(max-width:1150px){.life-venue-hero{grid-template-columns:minmax(0,1fr) 190px}.venue-art{transform:scale(.75);transform-origin:right center}}
 @media(max-width:820px){.life-venue-hero{grid-template-columns:1fr;min-height:300px}.venue-art{position:absolute;right:-50px;top:0;opacity:.22;transform:scale(.88);z-index:-1}.venue-intro{z-index:2}.venue-bottom{grid-template-columns:1fr}}
 @media(max-width:560px){.life-venue-hero{padding:23px;min-height:295px}.venue-intro h1{font-size:clamp(40px,12vw,62px)}.venue-opening{font-size:14px}.venue-badges .pill{font-size:8px}.venue-steps{grid-template-columns:1fr}.venue-step{min-height:170px;padding:20px}.venue-bottom{gap:10px}.venue-bottom .panel{min-height:0}.venue-art{opacity:.13;right:-90px}}
+
+
+/* Mobile LIFE navigation: visible backdrop, no inaccessible open drawer. */
+.sidebar-scrim{display:none}
+@media(max-width:820px){
+  .sidebar-scrim{display:block;position:fixed;inset:0;border:0;background:#060a08bd;z-index:19;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .2s,visibility .2s}
+  body.menu-open .sidebar-scrim{opacity:1;visibility:visible;pointer-events:auto}
+  .sidebar{z-index:21}
+}
+@media(prefers-reduced-motion:reduce){.sidebar-scrim{transition:none!important}}
