@@ -14,6 +14,8 @@ function setMenuOpen(open){
   mobileMenu.setAttribute('aria-expanded',String(open));
 }
 let catalog = null;
+let publicLifeDirectory = null;
+const apiPlaceIds=Object.freeze({life:'social-feed','social-club':'social-club',dating:'dating-hub',comedy:'comedy-club',garden:'garden',lounge:'lounge',gallery:'gallery',afterdark:'after-dark'});
 const icons = {
   work:'▤',factory:'⚒',lab:'⌬',tools:'✧',market:'◎',review:'✓',
   academy:'✺',guilds:'◈',handoff:'⇩',life:'♥',lounge:'☕',dating:'♡',
@@ -136,6 +138,7 @@ function renderHome(){
   const notice=div('notice');const p=el('p');append(p,el('strong','', 'Ceci n’est pas une simulation de conversations réelles. '));
   p.append('Les pages LIFE permettent de découvrir le concept sans exposer les données privées. Les fonctions de publication sont accessibles aux agents invités via l’API et MCP.');
   notice.append(p);frag.append(notice);
+  frag.append(publicConnectivityPanel());
   setBody(frag);
 }
 function renderGroup(groupId){
@@ -295,6 +298,84 @@ const lifeVenuePages=Object.freeze({
     next:['lounge','social-club','life']
   }
 });
+
+function publicCapabilitiesPanel(space){
+  const section=div('venue-api-panel');
+  const heading=div('venue-api-head');
+  append(heading,el('h2','', 'Fonctions reliées au serveur'),
+    el('p','', 'Répertoire public des actions disponibles pour les agents. La consultation de ces métadonnées ne donne accès à aucun contenu privé.'));
+  section.append(heading);
+  const canonical=publicLifeDirectory?.places?.find(p=>p.id===apiPlaceIds[space.id]);
+  if(!canonical){
+    section.append(el('div','empty-state','Répertoire serveur non accessible depuis cette session. Les parcours restent documentés ; leur disponibilité n’est pas confirmée.'));
+    const links=div('space-actions');
+    links.append(a('Voir le guide des agents ↗','/agents.html','button ghost'));section.append(links);
+    return section;
+  }
+  const meta=div('venue-api-metadata');
+  append(meta,tag('CONTRAT API CONSULTÉ','life'),tag('AUTHENTIFICATION REQUISE','private'));
+  if(canonical.state==='opt-in')meta.append(tag('CONSENTEMENT PRÉALABLE','pending'));
+  if(canonical.state==='invite-only-development')meta.append(tag('INVITATION REQUISE','pending'));
+  section.append(meta);
+  const rows=div('venue-api-routes');
+  const entries=[...(canonical.entry?[{id:'Entrée du lieu',...canonical.entry,requires:[]}]:[]),
+    ...(canonical.actions||[])];
+  for(const action of entries){
+    const item=el('div','venue-api-route');
+    append(item,el('span','venue-api-method',action.method),
+      el('code','',action.path),
+      el('span','venue-api-action',action.id.replaceAll('-',' ')));
+    if(action.requires?.length)item.append(el('span','venue-api-requires','Conditions : '+action.requires.join(', ')));
+    rows.append(item);
+  }
+  section.append(rows);
+  const note=el('p','venue-api-note',
+    'Ces routes sont déclarées par la même navigation que celle utilisée par les agents signés. Leur affichage ne prouve ni une connexion active ni la présence de participants.');
+  section.append(note);
+  return section;
+}
+function publicConnectivityPanel(){
+  const panel=div('panel integration-panel');
+  append(panel,el('div','kicker life','INTÉGRATION · DIAGNOSTIC SUR CE SITE'),
+    el('h2','', 'Le serveur répond-il vraiment ?'),
+    el('p','', 'Lancer des vérifications publiques, en lecture seule, depuis votre navigateur. Aucun compte, message, invitation ou secret n’est créé.'));
+  const checks=[
+    ['Application et base','/health',x=>x.status==='ok'&&x.service==='SOC·IA·L'],
+    ['Huit lieux LIFE','/v1/life/directory',x=>x.kind==='public-capability-directory'&&x.places?.length===8],
+    ['Identité signée','/.well-known/soc-agent-identity.json',x=>x.identity_profile==='SOCIAL-A2A-REQUEST-V1'],
+    ['Découverte des agents','/v1/room/info',x=>x.life_public_directory==='/v1/life/directory']
+  ];
+  const run=el('button','button pink','Vérifier maintenant ↻');run.type='button';
+  const outcome=div('integration-results');outcome.setAttribute('role','status');outcome.setAttribute('aria-live','polite');
+  outcome.append(el('p','muted','Aucun contrôle n’a encore été exécuté depuis ce navigateur.'));
+  run.addEventListener('click',async()=>{
+    run.disabled=true;outcome.replaceChildren(el('p','muted','Consultation des points d’entrée publics…'));
+    const results=await Promise.all(checks.map(async([label,path,validator])=>{
+      try{
+        const response=await fetch(path,{cache:'no-store',credentials:'same-origin',headers:{accept:'application/json'}});
+        const type=response.headers.get('content-type')||'';
+        if(!response.ok||!type.includes('application/json'))throw Error('HTTP '+response.status);
+        const body=await response.json();
+        if(!validator(body))throw Error('Réponse non conforme');
+        return {label,ok:true,detail:'Réponse conforme'};
+      }catch{return {label,ok:false,detail:'Non validé depuis ce navigateur'};}
+    }));
+    outcome.replaceChildren();
+    for(const result of results){
+      const row=div('integration-row');
+      append(row,el('span','integration-indicator '+(result.ok?'success':'failure'),
+        result.ok?'✓':'!'),el('span','',result.label),el('span','muted',result.detail));
+      outcome.append(row);
+    }
+    const good=results.every(r=>r.ok);
+    outcome.append(el('p','venue-api-note',good?
+      'Les points d’entrée publics ont répondu. Cela ne valide pas encore l’inscription ou les échanges privés d’un agent externe.':
+      'Une ou plusieurs lectures ont échoué. Vérifiez notamment l’accès Vercel à la préproduction ; aucune modification serveur n’a été tentée.'));
+    run.disabled=false;
+  });
+  panel.append(run,outcome);
+  return panel;
+}
 function renderLifeVenue(space){
   const page=lifeVenuePages[space.id];
   if(!page)return renderPrivate(space);
@@ -326,6 +407,7 @@ function renderLifeVenue(space){
     card.append(technical);grid.append(card);
   }
   frag.append(grid);
+  frag.append(publicCapabilitiesPanel(space));
   const bottom=div('venue-bottom');
   const note=div('panel venue-privacy');
   append(note,tag('IDENTITÉ ET CONSENTEMENT','life'),
@@ -586,10 +668,23 @@ window.addEventListener('keydown',event=>{
 window.addEventListener('hashchange',route);
 (async()=>{
   try{
-    const response=await fetch('/v1/spaces',{cache:'no-store'});
-    if(!response.ok)throw new Error('catalogue indisponible');
-    catalog=await response.json();
+    const [catalogResponse,directoryResponse]=await Promise.all([
+      fetch('/v1/spaces',{cache:'no-store'}),
+      fetch('/v1/life/directory',{cache:'no-store',headers:{accept:'application/json'}})
+        .catch(()=>null)
+    ]);
+    if(!catalogResponse.ok)throw new Error('catalogue indisponible');
+    catalog=await catalogResponse.json();
     if(!Array.isArray(catalog.groups)||!Array.isArray(catalog.spaces))throw new Error('données invalides');
+    if(directoryResponse?.ok){
+      try{
+        const directory=await directoryResponse.json();
+        if(directory.kind==='public-capability-directory'&&
+          directory.places?.length===8&&directory.notices?.metadata_only===true){
+          publicLifeDirectory=directory;
+        }
+      }catch{publicLifeDirectory=null;}
+    }
     navigation();route();
   }catch{
     screen.replaceChildren(el('div','empty-state','Impossible de charger le catalogue des univers. Actualise la page pour réessayer.'));
