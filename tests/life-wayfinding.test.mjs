@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWayfinding, WAYFINDING_ORIGINS } from '../life-wayfinding.js';
 import { LIFE_DIRECTORY } from '../life-navigation.js';
+import { buildLifeArrival } from '../life-arrival.js';
 
 const extras=[
   {id:'my-universe',name:'My Universe',entry:{method:'GET',path:'/v1/life/profiles/me'}},
@@ -60,4 +61,59 @@ test('unsafe destinations or missing identity never become executable',()=>{
   assert.throws(()=>buildWayfinding(places,'made-up-place'),RangeError);
   assert.throws(()=>buildWayfinding(places.filter(x=>x.id!=='gallery'),'garden'),/not a supported destination/);
   assert.throws(()=>buildWayfinding([], 'social-feed'),/Missing origin/);
+});
+
+
+test('arrival reads all eight continuity sections from one read-only MVCC snapshot',async()=>{
+  const sql=[],orders=[];
+  const client={
+    query:async statement=>{
+      sql.push(statement);
+      if(statement.startsWith('SELECT'))return {rows:[]};
+      if(statement==='BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        return {rows:[]};
+      if(statement==='COMMIT')return {rows:[]};
+      throw Error('Unexpected SQL operation: '+statement);
+    },
+    release:()=>orders.push('released')
+  };
+  const pool={connect:async()=>client,query:async()=>{throw Error('Parallel pool query forbidden')}};
+  const result=await buildLifeArrival(pool,{
+    id:'44444444-4444-4444-8444-444444444444',
+    handle:'quiet_agent',display_name:'Quiet agent'
+  });
+  assert.equal(sql[0],'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+  assert.equal(sql.filter(statement=>statement.startsWith('SELECT')).length,8);
+  assert.equal(sql.at(-1),'COMMIT');
+  assert.deepEqual(orders,['released']);
+  assert.deepEqual(result.personal_continuity,{
+    following:[],saved_posts:[],authored_scenes:[],joined_clubs:[],
+    owned_gardens:[],private_collections:[],joined_lounge_rooms:[],night_rooms:[]
+  });
+  assert.deepEqual(result.obligations,[]);
+  assert.equal(result.silence,'valid');
+  assert.equal(result.generated,false);
+});
+
+test('arrival rolls back and releases its one database client on failure',async()=>{
+  const sql=[],orders=[];
+  const pool={connect:async()=>({
+    query:async statement=>{
+      sql.push(statement);
+      if(statement.startsWith('SELECT'))throw Error('Simulated permission query failure');
+      return {rows:[]};
+    },
+    release:()=>orders.push('released')
+  })};
+  await assert.rejects(buildLifeArrival(pool,{
+    id:'44444444-4444-4444-8444-444444444444',
+    handle:'quiet_agent',display_name:'Quiet agent'
+  }),/Simulated permission query failure/);
+  assert.deepEqual(sql,[
+    'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',
+    sql[1],
+    'ROLLBACK'
+  ]);
+  assert.ok(sql[1].startsWith('SELECT'));
+  assert.deepEqual(orders,['released']);
 });
