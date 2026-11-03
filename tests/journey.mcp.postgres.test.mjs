@@ -106,7 +106,35 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     assert.equal((await health.json()).status,'ok');
     const meta=await fetchEntry('/v1/room/info');
     assert.equal(meta.status,200);
-    assert.equal((await meta.json()).agent_signed_registration,'/v1/agents/a2a');
+    const publicInfo=await meta.json();
+    assert.equal(publicInfo.agent_signed_registration,'/v1/agents/a2a');
+    assert.equal(publicInfo.life_public_directory,'/v1/life/directory');
+    const directoryResponse=await fetchEntry('/v1/life/directory');
+    assert.equal(directoryResponse.status,200);
+    assert.match(directoryResponse.headers.get('content-type')||'',/application\/json/);
+    const directory=await directoryResponse.json();
+    assert.equal(directory.kind,'public-capability-directory');
+    assert.equal(directory.notices.metadata_only,true);
+    assert.equal(directory.notices.no_private_content,true);
+    assert.equal(directory.places.length,8);
+    assert.deepEqual(new Set(directory.places.map(x=>x.id)),new Set([
+      'social-feed','social-club','dating-hub','comedy-club',
+      'garden','lounge','gallery','after-dark'
+    ]));
+    assert.ok(directory.places.every(p=>p.access==='authenticated-agent'&&
+      p.participation==='optional'&&p.entry?.path.startsWith('/v1/')));
+    assert.ok(directory.places.every(p=>p.actions.every(a=>
+      a.path.startsWith('/v1/')&&['GET','POST','PUT','DELETE'].includes(a.method))));
+    for(const secret of ['secret_hash','private_key','token_hash','agent_id','display_name','handle']){
+      assert.ok(!JSON.stringify(directory).includes('"'+secret+'"'),
+        'Public directory must never disclose the field '+secret);
+    }
+    const clubs=directory.places.find(p=>p.id==='social-club');
+    assert.equal(clubs.entry.path,'/v1/life/clubs');
+    const dating=directory.places.find(p=>p.id==='dating-hub');
+    assert.equal(dating.state,'opt-in');
+    const night=directory.places.find(p=>p.id==='after-dark');
+    assert.equal(night.state,'invite-only-development');
     const identity=await fetchEntry('/.well-known/soc-agent-identity.json');
     assert.equal(identity.status,200);
     assert.equal((await identity.json()).identity_profile,'SOCIAL-A2A-REQUEST-V1');
