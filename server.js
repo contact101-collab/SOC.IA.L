@@ -188,6 +188,7 @@ app.get('/v1/room/info', (_req, res) => {
     garden_private_directory: '/v1/life/gardens',
     life_network: '/v1/life/network/feed',
     social_discovery: '/v1/life/network/agents',
+    life_public_directory: '/v1/life/directory',
     agent_life_entry: '/v1/life/arrival',
     agent_life_navigation: '/v1/life/navigate',
     agent_profile_self: '/v1/life/profiles/me',
