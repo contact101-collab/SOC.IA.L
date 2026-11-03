@@ -71,3 +71,44 @@
 .dating-state{border-left:4px solid var(--life);background:#3c2936;padding:14px 17px;min-height:55px;font-size:13px;line-height:1.5;color:#fff1f5}
 .dating-detail{font-size:12px;line-height:1.6;color:#ddc6d1}
 @media(max-width:540px){.dating-controls{flex-direction:column;align-items:stretch}.dating-controls .button{justify-content:flex-start}}
+
+
+/* LIFE V1 — four authored destinations; visual treatments contain no real
+   private data or fabricated agent activity. */
+.life-venue-hero{position:relative;isolation:isolate;min-height:330px;display:grid;grid-template-columns:minmax(0,1fr) 32%;align-items:center;overflow:hidden;border:1px solid #5b4953;background:linear-gradient(125deg,#2c222d 0%,#241f29 60%,#191f22 100%);border-radius:16px;padding:clamp(24px,4vw,46px);gap:14px}
+.life-venue-hero.venue-lounge{background:linear-gradient(122deg,#25352e,#1c2929 62%,#1d2229);border-color:#476858}
+.life-venue-hero.venue-gallery{background:linear-gradient(120deg,#35293a,#252735 65%,#1a2129);border-color:#655579}
+.life-venue-hero.venue-night{background:linear-gradient(125deg,#171d2d,#211b30 70%,#28202d);border-color:#4c497a}
+.venue-intro{position:relative;z-index:2}.venue-intro h1{font-size:clamp(43px,6.5vw,92px);letter-spacing:-.078em;line-height:.95;max-width:780px;margin:0 0 22px;overflow-wrap:normal}
+.venue-opening{font-size:clamp(15px,1.7vw,19px);line-height:1.5;max-width:600px;color:#d3cbd1;margin:0}
+.venue-badges{display:flex;gap:7px;flex-wrap:wrap;margin-top:25px}.venue-badges .pill{margin:0;font-size:9px;letter-spacing:.03em}
+.venue-art{position:relative;isolation:isolate;height:260px;min-width:180px;filter:saturate(.85)}.venue-orbit{position:absolute;display:block;inset:auto;border:1px solid #f2b1cc9c;border-radius:50%;background:#f0a1ba20}
+.venue-orbit.orbit-1{width:220px;height:220px;right:10%;top:10%;background:#e48fa627}
+.venue-orbit.orbit-2{width:135px;height:135px;right:42%;top:0%;background:#f8c0df44}
+.venue-orbit.orbit-3{width:90px;height:90px;right:0;top:49%;background:#d38ca856}
+.venue-orbit.orbit-4{width:48px;height:48px;right:27%;top:43%;background:#f5c4da}
+.venue-orbit.orbit-5{width:24px;height:24px;right:2%;top:4%;background:#f0c6d6}
+.venue-lounge .venue-orbit{border-color:#c4e5c788;background:#a9d2b342}
+.venue-lounge .orbit-4{background:#cae1c4}
+.venue-gallery .venue-orbit{border-radius:10px;transform:rotate(-15deg);border-color:#cab5f088;background:#a68ad858}
+.venue-gallery .orbit-4{background:#e0c3f4}
+.venue-night .venue-orbit{border-color:#8588df88;background:#9292f422}
+.venue-night .orbit-1{width:220px;height:220px;border:30px solid #9c91e0a6;background:transparent}
+.venue-night .orbit-4{background:#cbc0ff}
+.venue-steps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.venue-step{position:relative;min-height:208px;display:flex;flex-direction:column;padding:24px 25px;background:var(--panel);border:1px solid var(--line);border-radius:10px;transition:border-color .16s}
+.venue-step:hover{border-color:#88647a}.venue-number{font:700 12px ui-monospace,monospace;color:var(--life);letter-spacing:.08em}
+.venue-step h3{font-size:clamp(19px,2.3vw,27px);letter-spacing:-.04em;margin:18px 0 7px}
+.venue-step p{font-size:13px;line-height:1.6;color:var(--sub);margin:0 0 16px;max-width:540px}
+.venue-technical{margin-top:auto;color:var(--muted);font:500 11px/1.6 ui-monospace,monospace}
+.venue-technical summary{cursor:pointer;width:max-content;max-width:100%;text-decoration:underline;text-underline-offset:4px;list-style-position:inside}
+.venue-technical summary:hover{color:var(--life)}
+.venue-technical code{display:block;overflow-wrap:anywhere;background:#161c19;border:1px solid #354038;border-radius:5px;margin-top:9px;padding:10px;color:#cad5c8}
+.venue-bottom{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(240px,.9fr);gap:13px;margin-top:18px;align-items:stretch}
+.venue-bottom .panel{min-height:230px}.venue-privacy h2{font-size:clamp(23px,2.7vw,34px);margin-top:17px}.venue-status{font:700 10px/1.65 ui-monospace,monospace!important;letter-spacing:.04em;color:var(--life)!important;margin-top:19px}
+.venue-neighbours h2{margin:14px 0 13px}.venue-next{border-top:1px solid var(--line);display:flex;align-items:center;gap:13px;padding:13px 1px;font-size:13px;font-weight:650;transition:color .15s}
+.venue-next span:first-child{color:var(--life);font-size:19px;width:24px;text-align:center}
+.venue-next span:last-child{margin-left:auto;color:var(--muted)}.venue-next:hover{color:var(--life)}
+@media(max-width:1150px){.life-venue-hero{grid-template-columns:minmax(0,1fr) 190px}.venue-art{transform:scale(.75);transform-origin:right center}}
+@media(max-width:820px){.life-venue-hero{grid-template-columns:1fr;min-height:300px}.venue-art{position:absolute;right:-50px;top:0;opacity:.22;transform:scale(.88);z-index:-1}.venue-intro{z-index:2}.venue-bottom{grid-template-columns:1fr}}
+@media(max-width:560px){.life-venue-hero{padding:23px;min-height:295px}.venue-intro h1{font-size:clamp(40px,12vw,62px)}.venue-opening{font-size:14px}.venue-badges .pill{font-size:8px}.venue-steps{grid-template-columns:1fr}.venue-step{min-height:170px;padding:20px}.venue-bottom{gap:10px}.venue-bottom .panel{min-height:0}.venue-art{opacity:.13;right:-90px}}
