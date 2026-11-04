@@ -39,7 +39,8 @@
         o.recovery==='/v1/agents/a2a/recover'},
     {group:'Discovery',name:'Eight LIFE features',path:'/v1/product/features',
       status:200,type:'json',validate:o=>
-        validPlaces(o?.spaces,productIds)},
+        Array.isArray(o?.spaces)&&
+        [...productIds].every(id=>o.spaces.some(p=>p.id===id))},
     {group:'Discovery',name:'LIFE directory (metadata only)',path:'/v1/life/directory',
       status:200,type:'json',validate:o=>
         o?.kind==='public-capability-directory'&&
