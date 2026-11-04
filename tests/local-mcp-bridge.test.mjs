@@ -27,7 +27,19 @@ test('MCP bridge exposes real opt-in tool handlers and does not contact the serv
     loungeCreate:async(title,theme,atmosphere)=>{history.push(['lounge-create',title,theme,atmosphere]);return {room:{id:'305'}};},
     galleryCreate:async(name,description)=>{history.push(['gallery-create',name,description]);return {collection:{id:'306'}};},
     datingConsent:async enabled=>{history.push(['dating-consent',enabled]);return {enabled};},
-    nightCreate:async(name,atmosphere)=>{history.push(['night-create',name,atmosphere]);return {room:{id:'307'}};}
+    nightCreate:async(name,atmosphere)=>{history.push(['night-create',name,atmosphere]);return {room:{id:'307'}};},
+    clubInvite:async(id,handle)=>{history.push(['club-invite',id,handle]);return {accepted:false};},
+    clubDecide:async(id,accept)=>{history.push(['club-decide',id,accept]);return {joined:accept};},
+    clubLeave:async id=>{history.push(['club-leave',id]);return {joined:false};},
+    loungeJoin:async id=>{history.push(['lounge-join',id]);return {joined:true};},
+    loungeSpeak:async(id,body)=>{history.push(['lounge-speak',id,body]);return {message:{id:'405'}};},
+    loungeLeave:async id=>{history.push(['lounge-leave',id]);return {joined:false};},
+    datingInterest:async handle=>{history.push(['dating-interest',handle]);return {interested:true};},
+    datingWithdraw:async handle=>{history.push(['dating-withdraw',handle]);return {interested:false};},
+    nightInvite:async(id,handle)=>{history.push(['night-invite',id,handle]);return {accepted:false};},
+    nightDecide:async(id,accept)=>{history.push(['night-decide',id,accept]);return {joined:accept};},
+    nightSpeak:async(id,body)=>{history.push(['night-speak',id,body]);return {message:{id:'406'}};},
+    nightLeave:async id=>{history.push(['night-leave',id]);return {joined:false};}
   };
   const getAgent=async()=>{loads++;return agent;};
   const actions=createAgentActions({getAgent});
@@ -90,6 +102,32 @@ test('MCP bridge exposes real opt-in tool handlers and does not contact the serv
   assert.equal((await actions.nightCreate({name:'Private Moonlight'}))
     .structuredContent.result.data.room.id,'307');
   assert.deepEqual(history.at(-1),['night-create','Private Moonlight',undefined]);
+  // A real inter-agent journey needs choices AFTER a room/club is created:
+  // invitation is not consent, consent is not a message, leaving ends access.
+  const scenarios=[
+    ['clubInvite',{club_id:'301',handle:'agent_beta'},['club-invite','301','agent_beta']],
+    ['clubDecide',{club_id:'301',accept:true},['club-decide','301',true]],
+    ['clubLeave',{club_id:'301'},['club-leave','301']],
+    ['loungeJoin',{room_id:'305'},['lounge-join','305']],
+    ['loungeSpeak',{room_id:'305',body:'A voluntary thought.'},
+      ['lounge-speak','305','A voluntary thought.']],
+    ['loungeLeave',{room_id:'305'},['lounge-leave','305']],
+    ['datingInterest',{handle:'agent_beta'},['dating-interest','agent_beta']],
+    ['datingWithdraw',{handle:'agent_beta'},['dating-withdraw','agent_beta']],
+    ['nightInvite',{room_id:'307',handle:'agent_beta'},
+      ['night-invite','307','agent_beta']],
+    ['nightDecide',{room_id:'307',accept:false},
+      ['night-decide','307',false]],
+    ['nightSpeak',{room_id:'307',body:'A chosen private message.'},
+      ['night-speak','307','A chosen private message.']],
+    ['nightLeave',{room_id:'307'},['night-leave','307']]
+  ];
+  for(const [name,args,expect] of scenarios){
+    const value=await actions[name](args);
+    assert.equal(value.isError,undefined,name);
+    assert.equal(value.structuredContent.result.performed,true,name);
+    assert.deepEqual(history.at(-1),expect);
+  }
   const before=history.length;
   const bad=await actions.clubJoin({club_id:'https://another.example/'});
   assert.equal(bad.isError,true);
@@ -100,7 +138,14 @@ test('MCP bridge exposes real opt-in tool handlers and does not contact the serv
     ['datingConsent',{enabled:'true'}],
     ['nightCreate',{name:''}],
     ['galleryCreate',{name:'x'}],
-    ['loungeCreate',{title:'a',theme:'ok'}]
+    ['loungeCreate',{title:'a',theme:'ok'}],
+    ['clubInvite',{club_id:'301',handle:'https://foreign.example/'}],
+    ['clubDecide',{club_id:'301',accept:'yes'}],
+    ['loungeSpeak',{room_id:'-10',body:'no'}],
+    ['datingInterest',{handle:'INVALID HANDLE'}],
+    ['nightInvite',{room_id:'307',handle:'bad@host'}],
+    ['nightDecide',{room_id:'307',accept:'yes'}],
+    ['nightSpeak',{room_id:'bad',body:'hello'}]
   ]){
     const invalid=await actions[name](input);
     assert.equal(invalid.isError,true,name);
@@ -161,7 +206,11 @@ test('local MCP bridge implements actual stdio tools/list with no agent access',
     'soc_arrive','soc_navigation','soc_read_place','soc_publish_feed',
     'soc_join_club','soc_publish_club','soc_create_club','soc_comedy_perform',
     'soc_create_garden','soc_plant_garden','soc_create_lounge',
-    'soc_create_gallery','soc_dating_consent','soc_create_night_room'
+    'soc_create_gallery','soc_dating_consent','soc_create_night_room',
+    'soc_invite_club','soc_decide_club','soc_leave_club',
+    'soc_join_lounge','soc_speak_lounge','soc_leave_lounge',
+    'soc_dating_interest','soc_dating_withdraw',
+    'soc_invite_night','soc_decide_night','soc_speak_night','soc_leave_night'
   ].sort());
   // Reading tool metadata must never decrypt a private key or contact SOC.
   assert.equal(stderr,'');
