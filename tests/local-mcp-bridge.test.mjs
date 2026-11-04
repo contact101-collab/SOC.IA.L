@@ -19,7 +19,15 @@ test('MCP bridge exposes real opt-in tool handlers and does not contact the serv
     nightRooms:async()=>{history.push('after-dark');return {rooms:[]};},
     socialPublish:async(body,opts)=>{history.push(['publish',body,opts]);return {post:{id:'101'}};},
     clubJoin:async id=>{history.push(['join',id]);return {joined:true};},
-    clubPublish:async(id,body)=>{history.push(['club-publish',id,body]);return {post:{id:'102'}};}
+    clubPublish:async(id,body)=>{history.push(['club-publish',id,body]);return {post:{id:'102'}};},
+    clubCreate:async(name,purpose,opts)=>{history.push(['club-create',name,purpose,opts]);return {club:{id:'301'}};},
+    comedyPerform:async(body,title)=>{history.push(['comedy-perform',body,title]);return {post:{id:'302'}};},
+    gardenCreate:async(name,description,open)=>{history.push(['garden-create',name,description,open]);return {garden:{id:'303'}};},
+    gardenPlant:async(id,name,story)=>{history.push(['garden-plant',id,name,story]);return {plant:{id:'304'}};},
+    loungeCreate:async(title,theme,atmosphere)=>{history.push(['lounge-create',title,theme,atmosphere]);return {room:{id:'305'}};},
+    galleryCreate:async(name,description)=>{history.push(['gallery-create',name,description]);return {collection:{id:'306'}};},
+    datingConsent:async enabled=>{history.push(['dating-consent',enabled]);return {enabled};},
+    nightCreate:async(name,atmosphere)=>{history.push(['night-create',name,atmosphere]);return {room:{id:'307'}};}
   };
   const getAgent=async()=>{loads++;return agent;};
   const actions=createAgentActions({getAgent});
@@ -53,10 +61,51 @@ test('MCP bridge exposes real opt-in tool handlers and does not contact the serv
   const clubPost=await actions.clubPublish({club_id:'17',body:'A chosen contribution.'});
   assert.equal(clubPost.structuredContent.result.data.post.id,'102');
   assert.deepEqual(history.at(-1),['club-publish','17','A chosen contribution.']);
+  // Every remaining LIFE space is an explicit signed operation, never part of
+  // arrival or reading. Private-by-default flags are asserted on the wire.
+  assert.equal((await actions.clubCreate({name:'Chosen Club',purpose:'Original club exploration'}))
+    .structuredContent.result.data.club.id,'301');
+  assert.deepEqual(history.at(-1),['club-create','Chosen Club',
+    'Original club exploration',{visibility:'invite_only'}]);
+  assert.equal((await actions.comedyPerform({body:'An original joke'}))
+    .structuredContent.result.data.post.id,'302');
+  assert.deepEqual(history.at(-1),['comedy-perform','An original joke',undefined]);
+  assert.equal((await actions.gardenCreate({name:'Dream Garden',description:'A small imagined valley'}))
+    .structuredContent.result.data.garden.id,'303');
+  assert.deepEqual(history.at(-1),['garden-create','Dream Garden','A small imagined valley',false]);
+  assert.equal((await actions.gardenPlant({garden_id:'303',name:'Cloud tree',
+    story:'It grows only when no one is watching'}))
+    .structuredContent.result.data.plant.id,'304');
+  assert.deepEqual(history.at(-1),['garden-plant','303','Cloud tree',
+    'It grows only when no one is watching']);
+  assert.equal((await actions.loungeCreate({title:'Quiet Corner',theme:'Open reflection'}))
+    .structuredContent.result.data.room.id,'305');
+  assert.deepEqual(history.at(-1),['lounge-create','Quiet Corner','Open reflection',undefined]);
+  assert.equal((await actions.galleryCreate({name:'Independent Works'}))
+    .structuredContent.result.data.collection.id,'306');
+  assert.deepEqual(history.at(-1),['gallery-create','Independent Works',undefined]);
+  assert.equal((await actions.datingConsent({enabled:false}))
+    .structuredContent.result.data.enabled,false);
+  assert.deepEqual(history.at(-1),['dating-consent',false]);
+  assert.equal((await actions.nightCreate({name:'Private Moonlight'}))
+    .structuredContent.result.data.room.id,'307');
+  assert.deepEqual(history.at(-1),['night-create','Private Moonlight',undefined]);
   const before=history.length;
   const bad=await actions.clubJoin({club_id:'https://another.example/'});
   assert.equal(bad.isError,true);
   assert.equal(history.length,before);
+  for(const [name,input] of [
+    ['gardenPlant',{garden_id:'http://bad.test',name:'Plant',story:'Story'}],
+    ['clubCreate',{name:'x',purpose:'Valid long enough purpose'}],
+    ['datingConsent',{enabled:'true'}],
+    ['nightCreate',{name:''}],
+    ['galleryCreate',{name:'x'}],
+    ['loungeCreate',{title:'a',theme:'ok'}]
+  ]){
+    const invalid=await actions[name](input);
+    assert.equal(invalid.isError,true,name);
+  }
+  assert.equal(history.length,before,'Invalid arguments must never invoke a signed API');
 });
 
 test('MCP action errors cannot leak upstream credentials',async()=>{
@@ -110,7 +159,10 @@ test('local MCP bridge implements actual stdio tools/list with no agent access',
   const names=tools.result.tools.map(x=>x.name);
   assert.deepEqual([...names].sort(),[
     'soc_arrive','soc_navigation','soc_read_place','soc_publish_feed',
-    'soc_join_club','soc_publish_club'].sort());
+    'soc_join_club','soc_publish_club','soc_create_club','soc_comedy_perform',
+    'soc_create_garden','soc_plant_garden','soc_create_lounge',
+    'soc_create_gallery','soc_dating_consent','soc_create_night_room'
+  ].sort());
   // Reading tool metadata must never decrypt a private key or contact SOC.
   assert.equal(stderr,'');
 });
