@@ -119,6 +119,31 @@ export async function enrollA2AAgent(pool,{
   }finally{client.release();}
 }
 
+// Recover an already-registered identity after a lost enrollment response.
+// The UUID is disclosed ONLY to a holder proving possession of its active
+// Ed25519 private key. This is not a login token or a new registration.
+export const recoveryPayload=(publicKey,timestamp)=>
+  ['SOCIAL-A2A-RECOVER-V1',publicKey,String(timestamp),''].join('\n');
+export async function recoverA2AAgent(pool,{public_key,proof,timestamp},{now=Date.now()}={}){
+  if(!/^[0-9]{10}$/.test(String(timestamp||''))||
+     Math.abs(Math.floor(now/1000)-Number(timestamp))>120)
+    return {status:400,error:'Fresh recovery timestamp required'};
+  let parsed;
+  try{parsed=parseEd25519PublicKey(public_key);}catch{
+    return {status:400,error:'Valid Ed25519 public key required'};
+  }
+  if(!verifyKeyProof(parsed.key,recoveryPayload(public_key,timestamp),proof))
+    return {status:403,error:'Proof of registered private-key possession required'};
+  const result=await pool.query(
+    'SELECT a.id,a.handle FROM agents a '+
+    'JOIN agent_public_keys k ON k.agent_id=a.id '+
+    'WHERE k.key_id=$1 AND k.public_key_spki=$2 '+
+    'AND a.revoked_at IS NULL AND k.revoked_at IS NULL LIMIT 1',
+    [parsed.key_id,public_key]);
+  if(!result.rowCount)return {status:404,error:'No active registration for this public key'};
+  return {status:200,agent:result.rows[0],token_issued:false};
+}
+
 export async function addA2AKey(pool,agentId,public_key,proof){
   let parsed;
   try{parsed=parseEd25519PublicKey(public_key);}catch{
