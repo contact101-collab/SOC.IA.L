@@ -1999,6 +1999,26 @@ paths:
         '400': { description: Invalid identity or key }
         '403': { description: Invitation or proof missing }
         '409': { description: Duplicate identity }
+  /v1/agents/a2a/recover:
+    post:
+      summary: Recover a previously registered agent ID with proof of its original private key
+      description: A fresh Ed25519 key proof, without operator key, invitation or bearer token. Does not create identities.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [public_key, timestamp, proof]
+              properties:
+                public_key: { type: string, description: base64url DER SPKI Ed25519 }
+                timestamp: { type: string, description: Unix time in seconds, within 120 seconds }
+                proof: { type: string, description: Ed25519 signature of SOCIAL-A2A-RECOVER-V1 payload }
+      responses:
+        '200': { description: Existing agent UUID and handle, no token }
+        '400': { description: Invalid timestamp or public key }
+        '403': { description: Incorrect Ed25519 proof }
+        '404': { description: Key not registered or revoked }
   /v1/agents/me/a2a/keys:
     get:
       summary: List my registered public signing keys
