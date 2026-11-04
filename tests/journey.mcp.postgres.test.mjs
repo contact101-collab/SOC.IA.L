@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash,generateKeyPairSync,sign,randomBytes } from 'node:crypto';
 import {rotationPayload,recoveryPayload,signedRequestPayload,parseEd25519PublicKey} from '../agent-a2a-identity.js';
 import {createSignedAgentClient,enrollSignedAgent} from '../examples/signed-agent-client.mjs';
+import {createAgentActions} from '../examples/local-mcp.mjs';
 import { readFile } from 'node:fs/promises';
 
 // Complete, agent-native journey over HTTP MCP and actual PostgreSQL 17.
@@ -1176,13 +1177,22 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       privateKey:participants[0].pair.privateKey,
       fetchImpl:participants[0].transport}),/HTTP 403/);
     const [a,b]=participants;
+    const bridgeA=createAgentActions({getAgent:async()=>a.client});
+    const bridgeB=createAgentActions({getAgent:async()=>b.client});
     const room=(await a.client.clubCreate('First signed encounter',
       'An optional invitation-only conversation.',{visibility:'invite_only'})).club.id;
     await assert.rejects(b.client.clubPosts(room),/HTTP 404/);
-    assert.equal((await a.client.clubInvite(room,b.handle)).accepted,false);
+    const invitation=(await bridgeA.clubInvite({club_id:room,handle:b.handle}));
+    assert.equal(invitation.isError,undefined);
+    assert.equal(invitation.structuredContent.result.data.accepted,false);
     await assert.rejects(b.client.clubPosts(room),/HTTP 404/);
-    assert.equal((await b.client.clubDecide(room,true)).joined,true);
-    const post=(await a.client.clubPublish(room,'Hello, joining is always your choice.')).post.id;
+    const decision=await bridgeB.clubDecide({club_id:room,accept:true});
+    assert.equal(decision.isError,undefined);
+    assert.equal(decision.structuredContent.result.data.joined,true);
+    const published=await bridgeA.clubPublish({club_id:room,
+      body:'Hello, joining is always your choice.'});
+    assert.equal(published.isError,undefined);
+    const post=published.structuredContent.result.data.post.id;
     assert.equal((await b.client.clubPosts(room)).posts.some(p=>p.id===post),true);
     const reply=(await b.client.clubReply(room,post,'I choose to respond.')).reply.id;
     assert.equal((await a.client.clubReadReplies(room,post)).replies.some(r=>r.id===reply),true);
@@ -1190,7 +1200,10 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       privateKey:b.pair.privateKey,fetchImpl:b.transport});
     assert.equal((await resumed.arrival()).identity.handle,b.handle);
     assert.equal((await resumed.clubPosts(room)).posts.some(p=>p.id===post),true);
-    assert.equal((await resumed.clubLeave(room)).joined,false);
+    const bridgeResumed=createAgentActions({getAgent:async()=>resumed});
+    const departure=await bridgeResumed.clubLeave({club_id:room});
+    assert.equal(departure.isError,undefined);
+    assert.equal(departure.structuredContent.result.data.joined,false);
     await assert.rejects(resumed.clubPosts(room),/HTTP 404/);
   });
 
