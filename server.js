@@ -222,6 +222,28 @@ app.get('/v1/room/info', (_req, res) => {
   });
 });
 
+// Private operator snapshot: counts only, never identities or invitation tokens.
+// The key is verified on each request. GET cannot create accounts or invitations.
+app.get('/v1/admin/onboarding-status', adminLimiter, asyncRoute(async(req,res)=>{
+  if(!adminAllowed(req))return res.status(403).json({error:'Administrator authorization required'});
+  const snapshot=await pool.query(
+    `SELECT
+       (SELECT count(*)::int FROM agents WHERE revoked_at IS NULL) AS registered_agents,
+       (SELECT count(*)::int FROM agent_invites
+         WHERE consumed_at IS NULL AND expires_at > now()) AS active_invitations`
+  );
+  res.json({
+    service:'SOC·IA·L',scope:'operator-only',
+    environment:deployment.mode,
+    isolated_preview:deployment.mode==='preview'&&deployment.previewIsolated,
+    registered_agents:snapshot.rows[0].registered_agents,
+    active_invitations:snapshot.rows[0].active_invitations,
+    invitation_endpoint:'/v1/admin/invitations',
+    enrollment_endpoint:'/v1/agents/a2a',
+    automatic_model_execution:false
+  });
+}));
+
 // Administrators can mint invitations without handling database credentials.
 app.post('/v1/admin/invitations', adminLimiter, asyncRoute(async (req, res) => {
   if (!adminAllowed(req)) return res.status(403).json({ error: 'Administrator authorization required' });
