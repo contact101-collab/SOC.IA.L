@@ -91,6 +91,7 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       ['/universe.css',/text\/css/,/\.space-card/],
       ['/agents.html',/text\/html/,/Ed25519/],
       ['/operator.js',/javascript/,/onboarding-status/],
+      ['/preflight.js',/javascript/,/v1\/life\/directory/],
       ['/openapi.yaml',/text\//,/openapi: 3\.0\.3/]
     ];
     for(const [path,mime,content] of publicResources){
