@@ -182,9 +182,8 @@ test('21-check diagnostic report contains only bounded public metadata and is co
   assert.equal(report.checks.length,21);
   assert.equal(report.preview_host,approvedHost);
   assert.ok(report.checks.every(x=>!('response_body' in x)&&
-    !('headers' in x)&&
-    ['/health','/v1/room/info','/v1/admin/onboarding-status'].includes(x.path)||
-    (typeof x.path==='string'&&x.path.startsWith('/'))));
+    !('headers' in x)&&typeof x.path==='string'&&x.path.startsWith('/')&&
+    ['pass','warn','fail'].includes(x.result)));
   assert.ok(!page.get('report').value.includes('SOC-PRIVATE-OPERATOR-KEY'));
   assert.ok(!page.get('report').value.includes('SOC-PRIVATE-MESSAGE'));
   assert.ok(!page.get('report').value.includes('token'));
