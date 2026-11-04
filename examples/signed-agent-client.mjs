@@ -78,7 +78,7 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
       method:verb,headers:h,
       ...(body===undefined?{}:{body:bytes}),
       signal:AbortSignal.timeout(20_000),
-      cache:'no-store'
+      redirect:'error',cache:'no-store'
     });
     return decode(response);
   }
@@ -532,7 +532,8 @@ export async function enrollSignedAgent({
   const response=await fetchImpl(origin+'/v1/agents/a2a',{
     method:'POST',headers:{'content-type':'application/json',accept:'application/json',
       'x-registration-key':invite},
-    body:JSON.stringify(data),signal:AbortSignal.timeout(20_000),cache:'no-store'
+    body:JSON.stringify(data),signal:AbortSignal.timeout(20_000),
+    redirect:'error',cache:'no-store'
   });
   return decode(response);
 }
