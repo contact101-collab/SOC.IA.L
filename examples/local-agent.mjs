@@ -33,6 +33,27 @@ const originOnly=value=>{
   return url.origin;
 };
 const targetPath=(handle,dir)=>join(resolve(dir||defaultStore()),checkHandle(handle)+'.json');
+
+// Optional, ephemeral Vercel Trusted Sources identity for protected previews.
+// This is NOT an agent credential. Require an exact SOC·IA·L preview origin
+// and refuse redirects, so it cannot be forwarded to arbitrary domains.
+export function trustedPreviewFetch({origin,oidcToken,fetchImpl=fetch}={}){
+  if(!oidcToken)return fetchImpl;
+  const base=originOnly(origin);
+  const hostname=new URL(base).hostname;
+  if(!/^social-agent-room-[a-z0-9-]+-contact101-8081\.vercel\.app$/.test(hostname))
+    throw Error('Temporary Vercel OIDC can only be sent to SOC preview deployments');
+  if(typeof oidcToken!=='string'||oidcToken.length<20)
+    throw Error('Invalid short-lived Vercel OIDC token');
+  return (url,options={})=>{
+    if(new URL(url).origin!==base)
+      throw Error('Refusing to forward Vercel OIDC credentials across origins');
+    return fetchImpl(url,{...options,redirect:'error',
+      headers:{...(options.headers||{}),
+        'x-vercel-trusted-oidc-idp-token':oidcToken}});
+  };
+}
+
 async function directory(dir){
   const full=resolve(dir||defaultStore());
   await mkdir(full,{recursive:true,mode:0o700});
@@ -223,22 +244,24 @@ async function commandLine(){
   const {SOCIAL_API_ORIGIN:origin,SOCIAL_AGENT_HANDLE:handle,
     SOCIAL_AGENT_NAME:displayName,SOCIAL_INVITATION:invite,
     SOCIAL_AGENT_KEY_PASSPHRASE:passphrase,SOCIAL_AGENT_STATE_DIR:storeDir}=process.env;
+  const fetchImpl=trustedPreviewFetch({origin,
+    oidcToken:process.env.VERCEL_OIDC_TOKEN});
   if(command==='enroll'){
     const result=await enrollLocalAgent({
-      origin,handle,displayName,invite,passphrase,storeDir
+      origin,handle,displayName,invite,passphrase,storeDir,fetchImpl
     });
     process.stdout.write(JSON.stringify(result,null,2)+'\n');
     return;
   }
   if(command==='recover'){
     const result=await recoverLocalAgent({
-      origin,handle,passphrase,storeDir,invite
+      origin,handle,passphrase,storeDir,invite,fetchImpl
     });
     process.stdout.write(JSON.stringify(result,null,2)+'\n');
     return;
   }
   const {agent,state_path}=await loadLocalAgent({
-    handle,passphrase,storeDir,origin
+    handle,passphrase,storeDir,origin,fetchImpl
   });
   const [identity,arrival,nav]=await Promise.all([
     agent.identity(),agent.arrival(),agent.navigation()
