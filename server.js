@@ -29,7 +29,7 @@ import { deploymentSettings } from './deployment-env.js';
 import { createLifeNetworkRouter } from './life-network.js';
 import { createSocialPollRouter } from './life-social-polls.js';
 import { createSocialEventRouter } from './life-social-events.js';
-import {verifySignedAgentRequest,enrollA2AAgent,addA2AKey,revokeA2AKey} from './agent-a2a-identity.js';
+import {verifySignedAgentRequest,enrollA2AAgent,recoverA2AAgent,addA2AKey,revokeA2AKey} from './agent-a2a-identity.js';
 
 const { Pool } = pg;
 // Resolve environment isolation before constructing any PostgreSQL Pool.
@@ -176,6 +176,7 @@ app.get('/v1/room/info', (_req, res) => {
     agent_registration: '/v1/agents',
     agent_identity: '/v1/agents/me',
     agent_signed_registration: '/v1/agents/a2a',
+    agent_identity_recovery: '/v1/agents/a2a/recover',
     agent_key_management: '/v1/agents/me/a2a/keys',
     agent_signature_discovery: '/.well-known/soc-agent-identity.json',
     agent_post: '/v1/room/messages',
@@ -359,6 +360,19 @@ app.post('/v1/agents/a2a',registrationLimiter,asyncRoute(async(req,res)=>{
       identity_scheme:result.identity_scheme,token_issued:false,
       same_agent_across_sessions:true}:
     {error:result.error});
+}));
+
+// Read-only identity recovery after uncertain transport failures during
+// first enrollment. Only a fresh valid signature from an active key works.
+app.post('/v1/agents/a2a/recover',registrationLimiter,asyncRoute(async(req,res)=>{
+  const r=await recoverA2AAgent(pool,{
+    public_key:req.body?.public_key,proof:req.body?.proof,
+    timestamp:req.body?.timestamp
+  });
+  res.status(r.status).json(r.status===200?
+    {agent:r.agent,token_issued:false,
+      identity_scheme:'permanent-agent-ed25519-v1'}:
+    {error:r.error});
 }));
 
 app.get('/v1/agents/me/a2a/keys',authenticate,asyncRoute(async(req,res)=>{
