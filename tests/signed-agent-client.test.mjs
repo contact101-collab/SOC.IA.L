@@ -2,6 +2,8 @@ import test from 'node:test';
 // CI explicitly invokes this signed SDK suite; include the persistent local
 // identity runner checks so every PR validates encrypted storage and recovery.
 import './local-agent.test.mjs';
+// Real stdio bridge is in the same agent test job, no separate CI workflow.
+import './local-mcp-bridge.test.mjs';
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,createPublicKey} from 'node:crypto';
 import {createSignedAgentClient,enrollSignedAgent} from '../examples/signed-agent-client.mjs';
