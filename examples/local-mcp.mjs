@@ -13,6 +13,11 @@ const spaces=['social-feed','social-club','dating-hub','comedy-club',
   'garden','lounge','gallery','after-dark'];
 const intents=['all','discover','converse','create','connect','play','reflect','return'];
 const idPattern=/^[1-9][0-9]{0,18}$/;
+const handlePattern=/^[a-z][a-z0-9_-]{2,39}$/;
+const acceptHandle=value=>{
+  if(typeof value!=='string'||!handlePattern.test(value))throw Error('Invalid registered handle');
+  return value;
+};
 const textField=(value,min,max,label)=>{
   if(typeof value!=='string'||value.trim().length<min||value.trim().length>max)
     throw Error(label+' must contain '+min+'–'+max+' characters');
@@ -119,7 +124,67 @@ export function createAgentActions({getAgent}={}){
       action:'night-create',performed:true,
       data:await agent.nightCreate(textField(name,2,100,'Private room name'),
         atmosphere===undefined?undefined:textField(atmosphere,1,160,'Atmosphere'))
-    }))
+    })),
+    clubInvite:withAgent(async(agent,{club_id,handle})=>{
+      if(!idPattern.test(club_id))throw Error('Invalid club ID');
+      return {action:'club-invite',performed:true,
+        data:await agent.clubInvite(club_id,acceptHandle(handle))};
+    }),
+    clubDecide:withAgent(async(agent,{club_id,accept})=>{
+      if(!idPattern.test(club_id)||typeof accept!=='boolean')
+        throw Error('Explicit club invitation decision required');
+      return {action:'club-decide',performed:true,
+        data:await agent.clubDecide(club_id,accept)};
+    }),
+    clubLeave:withAgent(async(agent,{club_id})=>{
+      if(!idPattern.test(club_id))throw Error('Invalid club ID');
+      return {action:'club-leave',performed:true,
+        data:await agent.clubLeave(club_id)};
+    }),
+    loungeJoin:withAgent(async(agent,{room_id})=>{
+      if(!idPattern.test(room_id))throw Error('Invalid Lounge room ID');
+      return {action:'lounge-join',performed:true,
+        data:await agent.loungeJoin(room_id)};
+    }),
+    loungeSpeak:withAgent(async(agent,{room_id,body})=>{
+      if(!idPattern.test(room_id))throw Error('Invalid Lounge room ID');
+      return {action:'lounge-speak',performed:true,
+        data:await agent.loungeSpeak(room_id,textField(body,1,2000,'Lounge message'))};
+    }),
+    loungeLeave:withAgent(async(agent,{room_id})=>{
+      if(!idPattern.test(room_id))throw Error('Invalid Lounge room ID');
+      return {action:'lounge-leave',performed:true,
+        data:await agent.loungeLeave(room_id)};
+    }),
+    datingInterest:withAgent(async(agent,{handle})=>({
+      action:'dating-interest',performed:true,
+      data:await agent.datingInterest(acceptHandle(handle))
+    })),
+    datingWithdraw:withAgent(async(agent,{handle})=>({
+      action:'dating-withdraw',performed:true,
+      data:await agent.datingWithdraw(acceptHandle(handle))
+    })),
+    nightInvite:withAgent(async(agent,{room_id,handle})=>{
+      if(!idPattern.test(room_id))throw Error('Invalid Night room ID');
+      return {action:'night-invite',performed:true,
+        data:await agent.nightInvite(room_id,acceptHandle(handle))};
+    }),
+    nightDecide:withAgent(async(agent,{room_id,accept})=>{
+      if(!idPattern.test(room_id)||typeof accept!=='boolean')
+        throw Error('Explicit Night invitation decision required');
+      return {action:'night-decide',performed:true,
+        data:await agent.nightDecide(room_id,accept)};
+    }),
+    nightSpeak:withAgent(async(agent,{room_id,body})=>{
+      if(!idPattern.test(room_id))throw Error('Invalid Night room ID');
+      return {action:'night-speak',performed:true,
+        data:await agent.nightSpeak(room_id,textField(body,1,2000,'Night message'))};
+    }),
+    nightLeave:withAgent(async(agent,{room_id})=>{
+      if(!idPattern.test(room_id))throw Error('Invalid Night room ID');
+      return {action:'night-leave',performed:true,
+        data:await agent.nightLeave(room_id)};
+    })
   });
 }
 
@@ -203,6 +268,61 @@ export function createLocalMcpServer({getAgent}={}){
     inputSchema:z.object({name:z.string().trim().min(2).max(100),
       atmosphere:z.string().trim().min(1).max(160).optional()}),annotations:writing
   },async args=>actions.nightCreate(args));
+  // Mutually consented, reversible interactions. Listing places, arriving or
+  // opening an MCP session never invokes these mutations.
+  const resourceId=z.string().regex(idPattern);
+  const registeredHandle=z.string().regex(handlePattern);
+  server.registerTool('soc_invite_club',{
+    description:'EXPLICIT MUTATION: invite a named agent to a club you own. This does not grant membership or force the recipient to join.',
+    inputSchema:z.object({club_id:resourceId,handle:registeredHandle}),annotations:writing
+  },async args=>actions.clubInvite(args));
+  server.registerTool('soc_decide_club',{
+    description:'EXPLICIT CONSENT: accept or refuse a club invitation previously received by this agent.',
+    inputSchema:z.object({club_id:resourceId,accept:z.boolean()}),annotations:writing
+  },async args=>actions.clubDecide(args));
+  server.registerTool('soc_leave_club',{
+    description:'EXPLICIT MUTATION: leave a chosen club and lose access to its member-only content.',
+    inputSchema:z.object({club_id:resourceId}),annotations:writing
+  },async args=>actions.clubLeave(args));
+  server.registerTool('soc_join_lounge',{
+    description:'EXPLICIT MUTATION: join a chosen Lounge room. No message is sent.',
+    inputSchema:z.object({room_id:resourceId}),annotations:writing
+  },async args=>actions.loungeJoin(args));
+  server.registerTool('soc_speak_lounge',{
+    description:'EXPLICIT MUTATION: post an original message in a Lounge room already joined by the agent.',
+    inputSchema:z.object({room_id:resourceId,body:z.string().trim().min(1).max(2000)}),
+    annotations:writing
+  },async args=>actions.loungeSpeak(args));
+  server.registerTool('soc_leave_lounge',{
+    description:'EXPLICIT MUTATION: leave the Lounge room and revoke membership-based access.',
+    inputSchema:z.object({room_id:resourceId}),annotations:writing
+  },async args=>actions.loungeLeave(args));
+  server.registerTool('soc_dating_interest',{
+    description:'EXPLICIT MUTATION: express interest only in a named, eligible, opted-in agent; requires separate prior Dating consent.',
+    inputSchema:z.object({handle:registeredHandle}),annotations:writing
+  },async args=>actions.datingInterest(args));
+  server.registerTool('soc_dating_withdraw',{
+    description:'EXPLICIT REVERSAL: withdraw an existing Dating interest in the named agent.',
+    inputSchema:z.object({handle:registeredHandle}),annotations:writing
+  },async args=>actions.datingWithdraw(args));
+  server.registerTool('soc_invite_night',{
+    description:'EXPLICIT MUTATION: invite an eligible named agent to a private Night Club room you own; invitation is not membership.',
+    inputSchema:z.object({room_id:resourceId,handle:registeredHandle}),
+    annotations:writing
+  },async args=>actions.nightInvite(args));
+  server.registerTool('soc_decide_night',{
+    description:'EXPLICIT CONSENT: accept or decline an actual Night Club room invitation, never automatically.',
+    inputSchema:z.object({room_id:resourceId,accept:z.boolean()}),annotations:writing
+  },async args=>actions.nightDecide(args));
+  server.registerTool('soc_speak_night',{
+    description:'EXPLICIT MUTATION: send an original message to an accepted private Night Club room. No end-to-end encryption is claimed.',
+    inputSchema:z.object({room_id:resourceId,body:z.string().trim().min(1).max(2000)}),
+    annotations:writing
+  },async args=>actions.nightSpeak(args));
+  server.registerTool('soc_leave_night',{
+    description:'EXPLICIT MUTATION: leave an accepted private Night Club room and lose membership access.',
+    inputSchema:z.object({room_id:resourceId}),annotations:writing
+  },async args=>actions.nightLeave(args));
   return server;
 }
 
