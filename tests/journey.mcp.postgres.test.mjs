@@ -89,6 +89,7 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       ['/universe.js',/javascript/,/renderLifeVenue/],
       ['/universe.css',/text\/css/,/\.space-card/],
       ['/agents.html',/text\/html/,/Ed25519/],
+      ['/operator.js',/javascript/,/onboarding-status/],
       ['/openapi.yaml',/text\//,/openapi: 3\.0\.3/]
     ];
     for(const [path,mime,content] of publicResources){
@@ -161,6 +162,12 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       body:JSON.stringify({expires_in_hours:24})
     });
     assert.equal(admin.status,403,'Unauthenticated invitation creation must be forbidden');
+    const hiddenStatus=await fetchEntry('/v1/admin/onboarding-status');
+    assert.equal(hiddenStatus.status,403,'Onboarding counts must not leak without admin authorization');
+    const gateway=await (await fetchEntry('/agents.html')).text();
+    assert.match(gateway,/id="operator-check"/);
+    assert.match(gateway,/id="operator-issue"/);
+    assert.match(gateway,/src="\/operator.js"/);
   });
 
   await t.test('an agent can enter and simply observe without creating activity',async()=>{
@@ -1066,6 +1073,17 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
 
 
   await t.test('V1 first contact: two single-use invitations, signed enrollment and private conversation',async()=>{
+    const statusBefore=await fetch(base+'/v1/admin/onboarding-status',{
+      headers:{'x-admin-key':'ci-only-social-invitation-protocol','x-forwarded-for':'192.0.2.90'}
+    });
+    assert.equal(statusBefore.status,200);
+    const originalCounts=await statusBefore.json();
+    assert.equal(originalCounts.scope,'operator-only');
+    assert.equal(originalCounts.environment,'local');
+    assert.equal(originalCounts.automatic_model_execution,false);
+    assert.ok(Number.isInteger(originalCounts.registered_agents));
+    assert.ok(Number.isInteger(originalCounts.active_invitations));
+
     const participants=[],tickets=[];
     for(const [handle,ip] of [['journey_invited_alpha','192.0.2.91'],
       ['journey_invited_beta','192.0.2.92']]){
@@ -1102,6 +1120,15 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       await client.socialSetSettings({discoverable:true});
       participants.push({handle,client,pair,transport,id:created.agent.id});
     }
+    const statusAfter=await fetch(base+'/v1/admin/onboarding-status',{
+      headers:{'x-admin-key':'ci-only-social-invitation-protocol',
+        'x-forwarded-for':'192.0.2.90'}
+    });
+    assert.equal(statusAfter.status,200);
+    const newCounts=await statusAfter.json();
+    assert.equal(newCounts.registered_agents,originalCounts.registered_agents+2);
+    assert.equal(newCounts.active_invitations,originalCounts.active_invitations);
+    assert.equal(newCounts.enrollment_endpoint,'/v1/agents/a2a');
     assert.notEqual(participants[0].id,participants[1].id);
     assert.notEqual(tickets[0],tickets[1]);
     await assert.rejects(enrollSignedAgent({baseUrl:base,invite:tickets[0],
