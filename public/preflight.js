@@ -8,7 +8,11 @@
   const progress=document.getElementById('preflight-progress');
   const revision=document.getElementById('preflight-revision');
   const expected=document.getElementById('preflight-expected-sha');
-  if(!button||!list||!summary||!progress||!revision||!expected)return;
+  const copy=document.getElementById('preflight-copy');
+  const report=document.getElementById('preflight-report');
+  const reportStatus=document.getElementById('preflight-report-status');
+  if(!button||!list||!summary||!progress||!revision||!expected||
+     !copy||!report||!reportStatus)return;
   const previewHost=/^social-agent-room-[a-z0-9-]+-contact101-8081\.vercel\.app$/;
   const prod=new Set(['social-agent-room.vercel.app',
     'social-agent-room-contact101-8081.vercel.app']);
@@ -75,6 +79,34 @@
     ].map(([name,path,status])=>({group:'Access control',name,path,status,type:'denial'}))
   ];
   let running=false;
+  let observedSha=null;
+  // No secret-bearing response bodies, request headers, operator keys, agent
+  // identifiers, session values, invitation tokens or cookies enter this report.
+  // Only allowlisted public metadata and deterministic check outcomes appear.
+  const makeReport=(results,sha,startedAt)=>Object.freeze({
+    schema:'SOCIAL_PREVIEW_PREFLIGHT_V1',
+    generated_at:new Date().toISOString(),
+    started_at:startedAt,
+    preview_host:location.hostname,
+    expected_revision:sha||null,
+    observed_revision:observedSha,
+    totals:{
+      checked:checks.length,
+      passed:results.filter(x=>x?.state==='pass').length,
+      unconfirmed:results.filter(x=>x?.state==='warn').length,
+      failed:results.filter(x=>x?.state==='fail').length
+    },
+    verdict:results.every(x=>x?.state==='pass')&&!!sha?'PASS':'NOT_CONFIRMED',
+    scope:'same-origin public GET checks and unauthenticated access refusals only',
+    not_verified:['external agent enrollment','private agent conversations',
+      'real-device visual layout','Gemini execution'],
+    checks:checks.map((c,i)=>({
+      name:c.name,path:c.path,
+      expected_status:c.status,
+      result:results[i]?.state||'not_checked',
+      detail:results[i]?.message||'Not checked'
+    }))
+  });
   function element(tag,className,contents){
     const e=document.createElement(tag);
     if(className)e.className=className;
@@ -128,6 +160,7 @@
       if(!check.validate(data))return {state:'fail',message:'Contract mismatch'};
       if(check.path==='/health'){
         const rev=data.revision;
+        observedSha=rev;
         revision.textContent='Deployment revision: '+rev;
         if(expectedSha&&rev!==expectedSha)
           return {state:'fail',message:'Wrong Git revision'};
@@ -147,12 +180,18 @@
       return;
     }
     const sha=expected.value.trim().toLowerCase();
+    copy.disabled=true;
+    report.hidden=true;
+    report.value='';
+    reportStatus.textContent='No report ready.';
     if(sha&&!/^[a-f0-9]{40}$/.test(sha)){
       summary.textContent='Invalid Git revision';
       progress.textContent='Enter a complete 40-character commit SHA or leave the field empty.';
       expected.focus();return;
     }
     running=true;button.disabled=true;
+    const startedAt=new Date().toISOString();
+    observedSha=null;
     summary.textContent='Checking this deployment…';
     revision.textContent='Deployment revision: not checked';
     progress.textContent='0 / '+checks.length+' requests checked';
@@ -183,6 +222,12 @@
       summary.dataset.status=failed?'fail':warnings?'warn':'pass';
       progress.textContent=passed+' passed · '+warnings+' to confirm · '+failed+
         ' failed. No agent enrollment or private activity tested.';
+      // A user-visible, editable-by-selection report is made only after all
+      // checks finish. It is never sent to any endpoint or retained in storage.
+      report.value=JSON.stringify(makeReport(results,sha,startedAt),null,2);
+      report.hidden=false;
+      copy.disabled=false;
+      reportStatus.textContent='Report ready: safe technical outcomes only. No secrets or private records included.';
     }finally{
       running=false;button.disabled=false;
     }
@@ -196,5 +241,23 @@
     summary.textContent='Not checked';
     progress.textContent='Run checks from a browser already authorized for this Vercel preview.';
   }
+  copy.disabled=true;
+  report.hidden=true;
+  copy.addEventListener('click',async()=>{
+    if(copy.disabled||!report.value)return;
+    // Clipboard access occurs only during an explicit user gesture. If the
+    // browser blocks it (for example in a restricted iOS webview), leave the
+    // report visible and selectable for a manual copy.
+    try{
+      if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)
+        throw Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(report.value);
+      reportStatus.textContent='Technical report copied. It contains no keys, tokens or private messages.';
+    }catch{
+      report.focus();
+      report.select();
+      reportStatus.textContent='Clipboard unavailable. Report selected: use Copy manually.';
+    }
+  });
   button.addEventListener('click',run);
 })();
