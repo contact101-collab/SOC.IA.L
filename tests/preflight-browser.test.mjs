@@ -49,7 +49,7 @@ const baseline=async path=>{
   if(privatePaths.has(path))return result({error:'Signed agent required'},401);
   throw Error('Unexpected unreviewed path '+path);
 };
-function createDOM({host=approvedHost,fetchImpl=baseline}={}){
+function createDOM({host=approvedHost,fetchImpl=baseline,clipboardImpl}={}){
   const controls=new Map();
   const makeElement=tag=>({
     tagName:tag.toUpperCase(),className:'',textContent:'',value:'',
@@ -58,10 +58,12 @@ function createDOM({host=approvedHost,fetchImpl=baseline}={}){
     append(...nodes){this.children.push(...nodes);},
     replaceChildren(...nodes){this.children=[...nodes];},
     addEventListener(name,fn){this.listeners[name]=fn;},
-    focus(){this.focused=true;}
+    focus(){this.focused=true;},
+    select(){this.selected=true;}
   });
   for(const id of ['preflight-run','preflight-results','preflight-summary',
-    'preflight-progress','preflight-revision','preflight-expected-sha']){
+    'preflight-progress','preflight-revision','preflight-expected-sha',
+    'preflight-copy','preflight-report','preflight-report-status']){
     controls.set(id,makeElement('div'));
   }
   const seen=[];
@@ -75,10 +77,12 @@ function createDOM({host=approvedHost,fetchImpl=baseline}={}){
       createElement:makeElement
     },
     location:{protocol:'https:',hostname:host},
+    navigator:{clipboard:{writeText:clipboardImpl||async()=>{throw Error('Clipboard blocked');}}},
     fetch,Response,AbortController,setTimeout,clearTimeout
   },{timeout:1500});
   const get=id=>controls.get('preflight-'+id);
-  return {get,seen,run:async()=>get('run').listeners.click()};
+  return {get,seen,run:async()=>get('run').listeners.click(),
+    copy:async()=>get('copy').listeners.click()};
 }
 test('browser inspector verifies all 21 preview checks via GET only with an exact SHA',async()=>{
   const page=createDOM();
@@ -143,4 +147,75 @@ test('browser inspector rejects malformed revision before issuing any requests',
   await page.run();
   assert.equal(page.seen.length,0);
   assert.match(page.get('summary').textContent,/Invalid Git revision/);
+});
+
+
+test('21-check diagnostic report contains only bounded public metadata and is copied on demand',async()=>{
+  const received=[];
+  const page=createDOM({clipboardImpl:async value=>received.push(value),
+    fetchImpl:async path=>{
+      if(path==='/v1/room/info'){
+        const body=await (await baseline(path)).json();
+        // Even if a public endpoint mistakenly adds dangerous extra fields,
+        // the export must never materialize or print them.
+        body.authorization='SOC-PRIVATE-OPERATOR-KEY';
+        body.private_agent_message='SOC-PRIVATE-MESSAGE';
+        return result(body);
+      }
+      return baseline(path);
+    }
+  });
+  assert.equal(page.get('copy').disabled,true);
+  assert.equal(page.get('report').hidden,true);
+  assert.equal(received.length,0);
+  page.get('expected-sha').value=sha;
+  await page.run();
+  assert.equal(page.get('copy').disabled,false);
+  assert.equal(page.get('report').hidden,false);
+  const report=JSON.parse(page.get('report').value);
+  assert.equal(report.schema,'SOCIAL_PREVIEW_PREFLIGHT_V1');
+  assert.equal(report.expected_revision,sha);
+  assert.equal(report.observed_revision,sha);
+  assert.equal(report.totals.checked,21);
+  assert.equal(report.totals.passed,21);
+  assert.equal(report.verdict,'PASS');
+  assert.equal(report.checks.length,21);
+  assert.equal(report.preview_host,approvedHost);
+  assert.ok(report.checks.every(x=>!('response_body' in x)&&
+    !('headers' in x)&&
+    ['/health','/v1/room/info','/v1/admin/onboarding-status'].includes(x.path)||
+    (typeof x.path==='string'&&x.path.startsWith('/'))));
+  assert.ok(!page.get('report').value.includes('SOC-PRIVATE-OPERATOR-KEY'));
+  assert.ok(!page.get('report').value.includes('SOC-PRIVATE-MESSAGE'));
+  assert.ok(!page.get('report').value.includes('token'));
+  // A user click is required before clipboard access.
+  assert.equal(received.length,0);
+  await page.copy();
+  assert.deepEqual(received,[page.get('report').value]);
+  assert.equal(page.seen.length,21,'Copying report must never trigger more API calls');
+});
+
+test('clipboard denial still exposes a selectable report for iPhone webviews',async()=>{
+  const page=createDOM({clipboardImpl:async()=>{throw Error('Permission denied');}});
+  page.get('expected-sha').value=sha;
+  await page.run();
+  await page.copy();
+  assert.equal(page.get('report').selected,true);
+  assert.equal(page.get('report').focused,true);
+  assert.match(page.get('report-status').textContent,/manual/);
+  assert.equal(page.seen.length,21);
+});
+
+test('re-running clears stale diagnostics, and a missing SHA can never claim PASS',async()=>{
+  const page=createDOM();
+  await page.run();
+  const report=JSON.parse(page.get('report').value);
+  assert.equal(report.verdict,'NOT_CONFIRMED');
+  assert.equal(report.totals.unconfirmed,1);
+  page.get('expected-sha').value='invalid';
+  await page.run();
+  assert.equal(page.get('copy').disabled,true);
+  assert.equal(page.get('report').hidden,true);
+  assert.equal(page.get('report').value,'');
+  assert.equal(page.seen.length,21,'Invalid SHA must block new requests');
 });
