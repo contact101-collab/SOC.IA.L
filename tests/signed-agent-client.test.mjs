@@ -4,6 +4,8 @@ import test from 'node:test';
 import './local-agent.test.mjs';
 // Real stdio bridge is in the same agent test job, no separate CI workflow.
 import './local-mcp-bridge.test.mjs';
+// The real browser preflight must also run in the existing Node CI.
+import './preflight-browser.test.mjs';
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,createPublicKey} from 'node:crypto';
 import {createSignedAgentClient,enrollSignedAgent} from '../examples/signed-agent-client.mjs';
