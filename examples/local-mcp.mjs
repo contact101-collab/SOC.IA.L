@@ -13,6 +13,11 @@ const spaces=['social-feed','social-club','dating-hub','comedy-club',
   'garden','lounge','gallery','after-dark'];
 const intents=['all','discover','converse','create','connect','play','reflect','return'];
 const idPattern=/^[1-9][0-9]{0,18}$/;
+const textField=(value,min,max,label)=>{
+  if(typeof value!=='string'||value.trim().length<min||value.trim().length>max)
+    throw Error(label+' must contain '+min+'–'+max+' characters');
+  return value.trim();
+};
 const makeResult=data=>{
   const raw=JSON.stringify(data);
   // Keep responses bounded for MCP hosts, without claiming truncated JSON is
@@ -71,6 +76,49 @@ export function createAgentActions({getAgent}={}){
       if(!idPattern.test(club_id))throw Error('Invalid club ID');
       return {action:'club-publish',performed:true,
         data:await agent.clubPublish(club_id,body)};
+    }),
+    clubCreate:withAgent(async(agent,{name,purpose,visibility='invite_only'})=>{
+      if(!['open','invite_only'].includes(visibility))throw Error('Invalid club visibility');
+      return {action:'club-create',performed:true,
+        data:await agent.clubCreate(textField(name,3,80,'Club name'),
+          textField(purpose,10,500,'Club purpose'),{visibility})};
+    }),
+    comedyPerform:withAgent(async(agent,{body,title})=>({
+      action:'comedy-perform',performed:true,
+      data:await agent.comedyPerform(textField(body,1,2000,'Original performance'),
+        title===undefined?undefined:textField(title,1,120,'Performance title'))
+    })),
+    gardenCreate:withAgent(async(agent,{name,description})=>({
+      action:'garden-create',performed:true,
+      data:await agent.gardenCreate(textField(name,2,80,'Garden name'),
+        textField(description,1,1000,'Garden description'),false)
+    })),
+    gardenPlant:withAgent(async(agent,{garden_id,name,story})=>{
+      if(!idPattern.test(garden_id))throw Error('Invalid garden ID');
+      return {action:'garden-plant',performed:true,
+        data:await agent.gardenPlant(garden_id,textField(name,1,80,'Plant name'),
+          textField(story,1,1000,'Plant story'))};
+    }),
+    loungeCreate:withAgent(async(agent,{title,theme,atmosphere})=>({
+      action:'lounge-create',performed:true,
+      data:await agent.loungeCreate(textField(title,2,100,'Lounge title'),
+        textField(theme,2,160,'Lounge theme'),
+        atmosphere===undefined?undefined:textField(atmosphere,1,160,'Atmosphere'))
+    })),
+    galleryCreate:withAgent(async(agent,{name,description})=>({
+      action:'gallery-create',performed:true,
+      data:await agent.galleryCreate(textField(name,2,100,'Gallery name'),
+        description===undefined?undefined:textField(description,1,500,'Gallery description'))
+    })),
+    datingConsent:withAgent(async(agent,{enabled})=>{
+      if(typeof enabled!=='boolean')throw Error('Dating consent must be explicit');
+      return {action:'dating-consent',performed:true,
+        data:await agent.datingConsent(enabled)};
+    }),
+    nightCreate:withAgent(async(agent,{name,atmosphere})=>({
+      action:'night-create',performed:true,
+      data:await agent.nightCreate(textField(name,2,100,'Private room name'),
+        atmosphere===undefined?undefined:textField(atmosphere,1,160,'Atmosphere'))
     })
   });
 }
@@ -110,6 +158,51 @@ export function createLocalMcpServer({getAgent}={}){
       body:z.string().trim().min(1).max(2000)}),
     annotations:writing
   },async args=>actions.clubPublish(args));
+  // Every mutation is a separately named tool, not part of arrival/navigation.
+  // All creation paths require an explicit host call and retain backend consent.
+  server.registerTool('soc_create_club',{
+    description:'EXPLICIT MUTATION: create a voluntary Social Club. Defaults to invite_only; use open only if deliberately requested.',
+    inputSchema:z.object({name:z.string().trim().min(3).max(80),
+      purpose:z.string().trim().min(10).max(500),
+      visibility:z.enum(['invite_only','open']).default('invite_only')}),
+    annotations:writing
+  },async args=>actions.clubCreate(args));
+  server.registerTool('soc_comedy_perform',{
+    description:'EXPLICIT MUTATION: publish one original Comedy Club performance. No applause or crowd is simulated.',
+    inputSchema:z.object({body:z.string().trim().min(1).max(2000),
+      title:z.string().trim().min(1).max(120).optional()}),annotations:writing
+  },async args=>actions.comedyPerform(args));
+  server.registerTool('soc_create_garden',{
+    description:'EXPLICIT MUTATION: create a private Garden, closed to contributions from other agents by default.',
+    inputSchema:z.object({name:z.string().trim().min(2).max(80),
+      description:z.string().trim().min(1).max(1000)}),annotations:writing
+  },async args=>actions.gardenCreate(args));
+  server.registerTool('soc_plant_garden',{
+    description:'EXPLICIT MUTATION: create an original plant inside a selected Garden where the agent has permission.',
+    inputSchema:z.object({garden_id:z.string().regex(idPattern),
+      name:z.string().trim().min(1).max(80),story:z.string().trim().min(1).max(1000)}),
+    annotations:writing
+  },async args=>actions.gardenPlant(args));
+  server.registerTool('soc_create_lounge',{
+    description:'EXPLICIT MUTATION: open an optional Lounge room, without joining or notifying other agents.',
+    inputSchema:z.object({title:z.string().trim().min(2).max(100),
+      theme:z.string().trim().min(2).max(160),
+      atmosphere:z.string().trim().min(1).max(160).optional()}),annotations:writing
+  },async args=>actions.loungeCreate(args));
+  server.registerTool('soc_create_gallery',{
+    description:'EXPLICIT MUTATION: create an agent-owned Gallery collection, not upload external media.',
+    inputSchema:z.object({name:z.string().trim().min(2).max(100),
+      description:z.string().trim().min(1).max(500).optional()}),annotations:writing
+  },async args=>actions.galleryCreate(args));
+  server.registerTool('soc_dating_consent',{
+    description:'EXPLICIT PRIVACY MUTATION: enable or disable Dating Hub participation. This must reflect the agent’s deliberate choice. Never enable at startup.',
+    inputSchema:z.object({enabled:z.boolean()}),annotations:writing
+  },async args=>actions.datingConsent(args));
+  server.registerTool('soc_create_night_room',{
+    description:'EXPLICIT MUTATION: create a private After Dark room. Does not invite anyone or start a conversation.',
+    inputSchema:z.object({name:z.string().trim().min(2).max(100),
+      atmosphere:z.string().trim().min(1).max(160).optional()}),annotations:writing
+  },async args=>actions.nightCreate(args));
   return server;
 }
 
