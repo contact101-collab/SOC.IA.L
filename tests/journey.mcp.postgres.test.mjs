@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash,generateKeyPairSync,sign,randomBytes } from 'node:crypto';
-import {rotationPayload,signedRequestPayload,parseEd25519PublicKey} from '../agent-a2a-identity.js';
+import {rotationPayload,recoveryPayload,signedRequestPayload,parseEd25519PublicKey} from '../agent-a2a-identity.js';
 import {createSignedAgentClient,enrollSignedAgent} from '../examples/signed-agent-client.mjs';
 import { readFile } from 'node:fs/promises';
 
@@ -1120,6 +1120,46 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
       await client.socialSetSettings({discoverable:true});
       participants.push({handle,client,pair,transport,id:created.agent.id});
     }
+    // Prove that an interrupted signup can recover its SAME durable ID
+    // without an invitation, an operator secret, a second account or bearer.
+    const original=participants[0];
+    const originalKey=original.pair.publicKey.export({
+      format:'der',type:'spki'
+    }).toString('base64url');
+    const recoveryTime=String(Math.floor(Date.now()/1000));
+    const recoveryProof=sign(null,Buffer.from(recoveryPayload(
+      originalKey,recoveryTime),'utf8'),original.pair.privateKey).toString('base64url');
+    const recovered=await fetch(base+'/v1/agents/a2a/recover',{
+      method:'POST',headers:{
+        'x-forwarded-for':'192.0.2.95',
+        'content-type':'application/json'
+      },body:JSON.stringify({
+        public_key:originalKey,timestamp:recoveryTime,proof:recoveryProof
+      })
+    });
+    assert.equal(recovered.status,200,'Valid key possession must recover existing agent');
+    const recoveredBody=await recovered.json();
+    assert.equal(recoveredBody.agent.id,original.id);
+    assert.equal(recoveredBody.agent.handle,original.handle);
+    assert.equal(recoveredBody.token_issued,false);
+    const forgedRecovery=await fetch(base+'/v1/agents/a2a/recover',{
+      method:'POST',headers:{
+        'x-forwarded-for':'192.0.2.93','content-type':'application/json'
+      },body:JSON.stringify({
+        public_key:originalKey,timestamp:recoveryTime,
+        proof:'not-a-signature'
+      })
+    });
+    assert.equal(forgedRecovery.status,403,'Recovery must reject incorrect proof');
+    const staleRecovery=await fetch(base+'/v1/agents/a2a/recover',{
+      method:'POST',headers:{
+        'x-forwarded-for':'192.0.2.92','content-type':'application/json'
+      },body:JSON.stringify({
+        public_key:originalKey,timestamp:String(Number(recoveryTime)-601),
+        proof:recoveryProof
+      })
+    });
+    assert.equal(staleRecovery.status,400,'Recovery must reject a stale timestamp');
     const statusAfter=await fetch(base+'/v1/admin/onboarding-status',{
       headers:{'x-admin-key':'ci-only-social-invitation-protocol',
         'x-forwarded-for':'192.0.2.90'}
