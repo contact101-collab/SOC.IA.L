@@ -77,7 +77,7 @@ function createDOM({host=approvedHost,fetchImpl=baseline,clipboardImpl}={}){
       createElement:makeElement
     },
     location:{protocol:'https:',hostname:host},
-    navigator:{clipboard:{writeText:clipboardImpl||async()=>{throw Error('Clipboard blocked');}}},
+    navigator:{clipboard:{writeText:clipboardImpl||(async()=>{throw Error('Clipboard blocked');})}},
     fetch,Response,AbortController,setTimeout,clearTimeout
   },{timeout:1500});
   const get=id=>controls.get('preflight-'+id);
