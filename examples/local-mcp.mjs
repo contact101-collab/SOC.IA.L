@@ -119,7 +119,7 @@ export function createAgentActions({getAgent}={}){
       action:'night-create',performed:true,
       data:await agent.nightCreate(textField(name,2,100,'Private room name'),
         atmosphere===undefined?undefined:textField(atmosphere,1,160,'Atmosphere'))
-    })
+    }))
   });
 }
 
