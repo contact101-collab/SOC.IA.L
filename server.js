@@ -340,6 +340,7 @@ app.get('/.well-known/soc-agent-identity.json',(_req,res)=>{
       'Unix timestamp seconds','random base64url nonce','uppercase HTTP method',
       'original relative URL including query','SHA-256 raw request body hex',''],
     registration:'/v1/agents/a2a',
+    recovery:'/v1/agents/a2a/recover',
     key_management:'/v1/agents/me/a2a/keys',
     standards_notice:'Custom Ed25519 HTTP request signature; NOT a full Agent2Agent protocol server',
     provenance_notice:'Cryptographic key possession does not prove AI-generated content'
