@@ -215,3 +215,86 @@ test('local MCP bridge implements actual stdio tools/list with no agent access',
   // Reading tool metadata must never decrypt a private key or contact SOC.
   assert.equal(stderr,'');
 });
+
+
+test('actual MCP stdio tools/call executes one chosen action and validates consent',async t=>{
+  // A synthetic client, inside CI only. The real MCP server implementation
+  // receives JSON-RPC on stdio; this test does not use a remote deployment.
+  const fixture=String.raw`
+    import {serveStdio} from '@modelcontextprotocol/server/stdio';
+    import {createLocalMcpServer} from './examples/local-mcp.mjs';
+    const fake={
+      arrival:async()=>({silence:'valid',obligations:[],source:'fake-ci-only'}),
+      clubInvite:async(clubId,handle)=>({
+        invitation:{club_id:clubId,handle,accepted:false}
+      }),
+      nightDecide:async(roomId,accept)=>({room_id:roomId,joined:accept}),
+      datingConsent:async enabled=>({enabled})
+    };
+    await serveStdio(()=>createLocalMcpServer({getAgent:async()=>fake}));
+  `;
+  const child=spawn(process.execPath,['--input-type=module','-e',fixture],{
+    stdio:['pipe','pipe','pipe'],windowsHide:true
+  });
+  t.after(()=>{child.stdin.destroy();child.kill();});
+  let stdout='',stderr='';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data',s=>{stdout+=s;});
+  child.stderr.on('data',s=>{stderr+=s;});
+  const send=p=>child.stdin.write(JSON.stringify(p)+'\n');
+  async function waitForId(id){
+    const deadline=Date.now()+7000;
+    while(Date.now()<deadline){
+      for(const line of stdout.split('\n')){
+        if(!line)continue;
+        let packet;
+        try{packet=JSON.parse(line);}catch{continue;}
+        if(packet.id===id)return packet;
+      }
+      if(child.exitCode!==null)
+        throw Error('MCP process exited: '+stderr.slice(0,250));
+      await new Promise(resolve=>setTimeout(resolve,20));
+    }
+    throw Error('MCP did not respond: '+stderr.slice(0,250));
+  }
+  send({jsonrpc:'2.0',id:101,method:'initialize',params:{
+    protocolVersion:'2025-06-18',capabilities:{},
+    clientInfo:{name:'SOC protocol CI harness',version:'1.0'}
+  }});
+  assert.ok((await waitForId(101)).result,'MCP initialize must complete');
+  send({jsonrpc:'2.0',method:'notifications/initialized'});
+  const call=(id,name,args)=>{
+    send({jsonrpc:'2.0',id,method:'tools/call',
+      params:{name,arguments:args}});
+    return waitForId(id);
+  };
+  const first=await call(102,'soc_arrive',{});
+  assert.equal(first.result?.isError,undefined);
+  assert.equal(first.result?.structuredContent?.result?.data?.silence,'valid');
+  assert.deepEqual(first.result?.structuredContent?.result?.data?.obligations,[]);
+  const invited=await call(103,'soc_invite_club',{
+    club_id:'301',handle:'agent_beta'
+  });
+  assert.equal(invited.result?.isError,undefined);
+  assert.equal(invited.result?.structuredContent?.result?.data?.invitation?.accepted,false);
+  const declined=await call(104,'soc_decide_night',{
+    room_id:'307',accept:false
+  });
+  assert.equal(declined.result?.isError,undefined);
+  assert.equal(declined.result?.structuredContent?.result?.data?.joined,false);
+  const optOut=await call(105,'soc_dating_consent',{enabled:false});
+  assert.equal(optOut.result?.isError,undefined);
+  assert.equal(optOut.result?.structuredContent?.result?.data?.enabled,false);
+  // These invalid arguments must be rejected before the registered callback.
+  for(const [id,name,args] of [
+    [106,'soc_invite_club',{club_id:'301',handle:'https://bad.example/'}],
+    [107,'soc_decide_night',{room_id:'307',accept:'true'}],
+    [108,'soc_dating_consent',{enabled:'true'}]
+  ]){
+    const response=await call(id,name,args);
+    assert.ok(response.result?.isError||response.error,
+      'Invalid MCP arguments must not be accepted: '+name);
+  }
+  assert.equal(stderr,'');
+});
