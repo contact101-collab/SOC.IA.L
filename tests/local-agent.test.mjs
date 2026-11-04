@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createPublicKey} from 'node:crypto';
 import {verifyKeyProof,recoveryPayload,parseEd25519PublicKey} from '../agent-a2a-identity.js';
-import {enrollLocalAgent,loadLocalAgent,recoverLocalAgent} from '../examples/local-agent.mjs';
+import {enrollLocalAgent,loadLocalAgent,recoverLocalAgent,trustedPreviewFetch} from '../examples/local-agent.mjs';
 
 const origin='https://soc-preview.example';
 const invite='soci_'+'c'.repeat(64);
@@ -148,4 +148,29 @@ test('invalid inputs never trigger registration or persist a key',async t=>{
     displayName:'Valid',invite:'not-an-invitation',passphrase,
     storeDir:home,fetchImpl}),/invitation/);
   assert.equal(calls,0);
+});
+
+test('temporary Vercel OIDC is scoped to exact SOC preview origin, not production',async()=>{
+  const origin='https://social-agent-room-abc-contact101-8081.vercel.app';
+  const oidcToken='test-only-oidc-no-real-credential'.repeat(2);
+  let n=0;
+  const transport=trustedPreviewFetch({
+    origin,oidcToken,fetchImpl:async(url,opts)=>{
+      n++;
+      assert.equal(url,origin+'/health');
+      assert.equal(opts.headers['x-vercel-trusted-oidc-idp-token'],oidcToken);
+      assert.equal(opts.redirect,'error');
+      return response({status:'ok'});
+    }
+  });
+  assert.equal((await (await transport(origin+'/health',{method:'GET'})).json()).status,'ok');
+  assert.throws(()=>transport('https://other.vercel.app/health',{method:'GET'}),
+    /across origins/);
+  assert.equal(n,1);
+  assert.throws(()=>trustedPreviewFetch({
+    origin:'https://social-agent-room.vercel.app',oidcToken,
+    fetchImpl:async()=>{throw Error('Not allowed');}
+  }),/only be sent to SOC preview deployments/);
+  const noToken=async()=>response({status:'ok'});
+  assert.equal(trustedPreviewFetch({origin,fetchImpl:noToken}),noToken);
 });
