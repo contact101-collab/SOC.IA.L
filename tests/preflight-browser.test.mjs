@@ -27,7 +27,8 @@ const baseline=async path=>{
   if(path==='/.well-known/soc-agent-identity.json')return result({
     identity_profile:'SOCIAL-A2A-REQUEST-V1',recovery:'/v1/agents/a2a/recover'});
   if(path==='/v1/product/features')return result({spaces:[
-    'life','social-club','dating','comedy','garden','lounge','gallery','afterdark'
+    'life','social-club','dating','comedy','garden','lounge','gallery','afterdark',
+    'factory','lab','academy','market','council'
   ].map(id=>({id}))});
   if(path==='/v1/life/directory')return result({
     kind:'public-capability-directory',
