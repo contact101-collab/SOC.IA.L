@@ -1,9 +1,10 @@
-import {generateKeyPairSync,createPrivateKey} from 'node:crypto';
-import {mkdir,open,readFile,lstat} from 'node:fs/promises';
+import {generateKeyPairSync,createPrivateKey,createPublicKey,sign} from 'node:crypto';
+import {mkdir,open,readFile,lstat,unlink} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createSignedAgentClient,enrollSignedAgent} from './signed-agent-client.mjs';
+import {recoveryPayload} from '../agent-a2a-identity.js';
 
 // A deliberately manual, non-autonomous bridge for an actual independent AI
 // runtime. No model provider, scheduler, automatic replies, or browser keys.
@@ -109,7 +110,83 @@ export async function enrollLocalAgent({
     }
   }finally{
     await lock.close();
-    const {unlink}=await import('node:fs/promises');
+    await unlink(path+'.lock').catch(()=>{});
+  }
+}
+
+// Explicit operator-driven recovery, not scheduled polling. Safe for a lost
+// response: first look up the saved registered key by proof, then optionally
+// retry enrollment with the SAME encrypted key if the server confirms 404.
+// Never generate a replacement identity for an interrupted registration.
+export async function recoverLocalAgent({
+  handle,passphrase,storeDir,origin,invite,fetchImpl=fetch
+}={}){
+  checkHandle(handle);checkPassphrase(passphrase);
+  const path=targetPath(handle,storeDir);
+  const meta=await lstat(path);
+  if(!meta.isFile()||meta.isSymbolicLink()||
+     (process.platform!=='win32'&&(meta.mode&0o077)!==0))
+    throw Error('Identity must be a regular private file (chmod 600)');
+  const state=JSON.parse(await readFile(path,'utf8'));
+  if(state?.version!==1||state?.type!=='soc-agent-ed25519-encrypted'||
+     state.handle!==handle||typeof state.private_key_encrypted!=='string'||
+     typeof state.origin!=='string')
+    throw Error('Saved identity is invalid');
+  if(origin&&originOnly(origin)!==state.origin)
+    throw Error('Origin mismatch: recovery must use the original server');
+  if(agentUuid.test(state.agent_id||''))
+    return {agent_id:state.agent_id,handle,origin:state.origin,
+      state_path:path,already_registered:true};
+  if(state.agent_id!==null)
+    throw Error('Unrecognized pending identity state');
+  let privateKey;
+  try{privateKey=createPrivateKey({
+    key:state.private_key_encrypted,format:'pem',passphrase
+  });}catch{throw Error('Unable to decrypt the pending agent identity');}
+  const publicKey=createPublicKey(privateKey)
+    .export({format:'der',type:'spki'}).toString('base64url');
+  const timestamp=String(Math.floor(Date.now()/1000));
+  const proof=sign(null,Buffer.from(recoveryPayload(publicKey,timestamp),'utf8'),
+    privateKey).toString('base64url');
+  const lock=await open(path+'.lock','wx',0o600).catch(err=>{
+    if(err.code==='EEXIST')throw Error('A registration or recovery is already in progress');
+    throw err;
+  });
+  try{
+    const response=await fetchImpl(state.origin+'/v1/agents/a2a/recover',{
+      method:'POST',redirect:'error',cache:'no-store',
+      headers:{'content-type':'application/json',accept:'application/json'},
+      body:JSON.stringify({public_key:publicKey,timestamp,proof}),
+      signal:AbortSignal.timeout(20_000)
+    });
+    let record;
+    if(response.status===200){
+      record=await response.json();
+    }else if(response.status===404&&invite){
+      if(!invitationPattern.test(invite))
+        throw Error('Invalid invitation for a controlled retry');
+      record=await enrollSignedAgent({
+        baseUrl:state.origin,invite,handle,
+        displayName:process.env.SOCIAL_AGENT_NAME||handle,
+        privateKey,fetchImpl
+      });
+    }else{
+      throw Error('Recovery not confirmed (HTTP '+response.status+
+        '). Pending encrypted identity retained.');
+    }
+    const agentId=record?.agent?.id;
+    if(!agentUuid.test(agentId||'')||record.agent.handle!==handle||
+       record.token_issued!==false)
+      throw Error('Unexpected recovery response; identity not confirmed');
+    const final={...state,agent_id:agentId,
+      registered_at:new Date().toISOString()};
+    const saved=await open(path,'r+',0o600);
+    try{await saved.truncate(0);await saved.writeFile(JSON.stringify(final)+'\n');}
+    finally{await saved.close();}
+    return {agent_id:agentId,handle,origin:state.origin,
+      state_path:path,recovered:true,automatic_activity:false};
+  }finally{
+    await lock.close();
     await unlink(path+'.lock').catch(()=>{});
   }
 }
@@ -125,7 +202,7 @@ export async function loadLocalAgent({
     throw Error('Agent identity must be a regular private file (chmod 600)');
   const state=JSON.parse(await readFile(path,'utf8'));
   if(!stateIsValid(state)||state.handle!==handle)
-    throw Error('Identity is missing or incomplete; do not generate a second key');
+    throw Error('Identity is missing or incomplete; run recover before arrive (never generate a second key)');
   if(origin&&originOnly(origin)!==state.origin)
     throw Error('Origin mismatch: agent identity is bound to its original server');
   let privateKey;
@@ -140,8 +217,8 @@ export async function loadLocalAgent({
 
 async function commandLine(){
   const command=process.argv[2];
-  if(!['enroll','arrive'].includes(command)){
-    throw Error('Usage: node examples/local-agent.mjs enroll|arrive (see /agents.html)');
+  if(!['enroll','arrive','recover'].includes(command)){
+    throw Error('Usage: node examples/local-agent.mjs enroll|recover|arrive (see /agents.html)');
   }
   const {SOCIAL_API_ORIGIN:origin,SOCIAL_AGENT_HANDLE:handle,
     SOCIAL_AGENT_NAME:displayName,SOCIAL_INVITATION:invite,
@@ -149,6 +226,13 @@ async function commandLine(){
   if(command==='enroll'){
     const result=await enrollLocalAgent({
       origin,handle,displayName,invite,passphrase,storeDir
+    });
+    process.stdout.write(JSON.stringify(result,null,2)+'\n');
+    return;
+  }
+  if(command==='recover'){
+    const result=await recoverLocalAgent({
+      origin,handle,passphrase,storeDir,invite
     });
     process.stdout.write(JSON.stringify(result,null,2)+'\n');
     return;
