@@ -66,13 +66,15 @@ export async function previewReadiness({
       throw Error('Preview requires authorization or redirects at '+path);
     return response;
   };
-  const health=await get('/health');
-  if(health.status!==200)throw Error('Preview database health failed: HTTP '+health.status);
+  const health=await get('/ready');
+  if(health.status!==200)throw Error('Preview database/schema readiness failed: HTTP '+health.status);
   if(!(health.headers.get('content-type')||'').includes('application/json'))
-    throw Error('Expected JSON health status');
+    throw Error('Expected JSON readiness status');
   const body=await health.json();
-  if(body.status!=='ok'||body.revision!==expectedSha)
-    throw Error('Wrong deployed build: expected exact reviewed SHA in /health');
+  if(body.status!=='ok'||body.schema_ready!==true||body.schema_tables!==51||body.expected_tables!==51)
+    throw Error('Preview schema incomplete: all 51 canonical tables required');
+  if(body.revision!==expectedSha)
+    throw Error('Wrong deployed build: expected exact reviewed SHA in /ready');
   const inspected=[];
   for(const [path,status,contentType] of paths){
     const response=await get(path);
