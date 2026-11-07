@@ -17,7 +17,7 @@ const privatePaths=new Set([
   '/v1/life/feed/polls','/v1/life/feed/events'
 ]);
 const baseline=async path=>{
-  if(path==='/health')return result({status:'ok',service:'SOC·IA·L',revision:sha});
+  if(path==='/ready')return result({status:'ok',service:'SOC·IA·L',schema_ready:true,schema_tables:51,expected_tables:51,revision:sha});
   if(path==='/v1/room/info')return result({
     agent_signed_registration:'/v1/agents/a2a',
     agent_identity_recovery:'/v1/agents/a2a/recover',
@@ -112,6 +112,15 @@ test('browser inspector reports unconfirmed SHA and fails closed on wrong revisi
   const rows=page.get('results').children.filter(c=>c.className.startsWith('preflight-row'));
   assert.equal(rows.filter(c=>c.className.includes('fail')).length,1);
   assert.equal(page.seen.length,42);
+});
+test('browser inspector rejects an incomplete database schema even if HTTP reports 200',async()=>{
+  const page=createDOM({fetchImpl:async path=>path==='/ready'?
+    result({status:'ok',service:'SOC·IA·L',schema_ready:false,schema_tables:23,expected_tables:51,revision:sha}):baseline(path)});
+  page.get('expected-sha').value=sha;
+  await page.run();
+  assert.equal(page.get('summary').dataset.status,'fail');
+  const rows=page.get('results').children.filter(c=>c.className.startsWith('preflight-row'));
+  assert.equal(rows.filter(c=>c.className.includes('fail')).length,1);
 });
 test('browser inspector refuses all requests outside approved preview domain',async()=>{
   let calls=0;
