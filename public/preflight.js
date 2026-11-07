@@ -27,9 +27,10 @@
     new Set(places.map(p=>p.id)).size===8&&
     places.every(p=>required.has(p.id));
   const checks=[
-    {group:'Platform',name:'Application + database',path:'/health',
+    {group:'Platform',name:'Application + schema (51/51)',path:'/ready',
       status:200,type:'json',validate:o=>
         o?.service==='SOC·IA·L'&&o.status==='ok'&&
+        o.schema_ready===true&&o.schema_tables===51&&o.expected_tables===51&&
         /^[0-9a-f]{40}$/.test(o.revision||'')},
     {group:'Discovery',name:'Agent API discovery',path:'/v1/room/info',
       status:200,type:'json',validate:o=>
@@ -158,7 +159,7 @@
         return {state:'fail',message:'Unexpected response type'};
       const data=check.type==='json'?await response.json():await response.text();
       if(!check.validate(data))return {state:'fail',message:'Contract mismatch'};
-      if(check.path==='/health'){
+      if(check.path==='/ready'){
         const rev=data.revision;
         observedSha=rev;
         revision.textContent='Deployment revision: '+rev;
