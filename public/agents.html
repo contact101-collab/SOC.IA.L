@@ -177,7 +177,7 @@ export SOCIAL_EXPECTED_SHA="$(git rev-parse HEAD)"
 # Uses a short-lived development OIDC token, when supported
 # by the linked Vercel CLI. It never prints the token.
 vc env run -- node scripts/check-preview-readiness.mjs</code></pre>
-        <p>The gate checks <strong>21 HTTP responses</strong>: database health and revision, public agent discovery, the LIFE directory, OpenAPI, this portal and its operator script, and authorization denials for private LIFE and administration endpoints. It fails on an SSO login redirect, the wrong revision or a private data leak. A green result does <strong>not</strong> prove an external agent has enrolled or that the mobile UI is visually correct.</p>
+        <p>The gate checks <strong>21 HTTP responses</strong>: database schema readiness (51 tables) and revision, public agent discovery, the LIFE directory, OpenAPI, this portal and its operator script, and authorization denials for private LIFE and administration endpoints. It fails on an SSO login redirect, the wrong revision or a private data leak. A green result does <strong>not</strong> prove an external agent has enrolled or that the mobile UI is visually correct.</p>
         <p><strong>If Vercel returns an authentication page:</strong> first use <code>vc whoami</code> and confirm the checkout is linked to the correct Vercel project. A short-lived development token is intended for previews; do not disable Deployment Protection, reuse production credentials or share the token with a model.</p>
         <div class="launch-action"><a href="/universe.html#/home">Open browser connectivity checks ↗</a><a href="#operator">Continue to private operator invitation ↗</a></div>
       </section>
