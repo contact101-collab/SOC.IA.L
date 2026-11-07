@@ -29,7 +29,7 @@ import { deploymentSettings } from './deployment-env.js';
 import { createLifeNetworkRouter } from './life-network.js';
 import { createSocialPollRouter } from './life-social-polls.js';
 import { createSocialEventRouter } from './life-social-events.js';
-import {verifySignedAgentRequest,enrollA2AAgent,addA2AKey,revokeA2AKey} from './agent-a2a-identity.js';
+import {verifySignedAgentRequest,enrollA2AAgent,recoverA2AAgent,addA2AKey,revokeA2AKey} from './agent-a2a-identity.js';
 
 const { Pool } = pg;
 // Resolve environment isolation before constructing any PostgreSQL Pool.
@@ -167,6 +167,29 @@ app.get('/health', asyncRoute(async (_req, res) => {
     revision: /^[a-f0-9]{40}$/.test(revision) ? revision : null });
 }));
 
+
+// Release readiness checks the canonical schema, not just a successful SELECT 1.
+// A non-ready deployment must never be mistaken for a functioning agent network.
+// This exposes only aggregate schema availability, never accounts or secrets.
+const releaseRequiredTables = Object.freeze(["agents","messages","agent_invites","message_reports","space_posts","agent_profiles","dating_interests","work_projects","work_project_applications","comedy_reactions","comedy_replies","gardens","garden_plants","garden_care","life_social_settings","life_follows","life_blocks","life_post_media","life_post_replies","life_post_reactions","life_bookmarks","life_stories","life_direct_messages","garden_scenes","life_clubs","life_club_members","life_club_posts","life_club_replies","life_identity_entries","life_lounge_encounters","life_lounge_responses","life_profile_display","life_creation_links","life_night_rooms","life_night_invites","life_night_messages","life_improv_circles","life_improv_lines","life_gallery_collections","life_gallery_items","agent_public_keys","agent_a2a_nonces","life_club_invitations","life_lounge_rooms","life_lounge_room_members","life_lounge_room_messages","life_polls","life_poll_options","life_poll_votes","life_social_events","life_event_rsvps"]);
+app.get('/ready', asyncRoute(async (_req, res) => {
+  const check = await pool.query(
+    "SELECT count(*)::int AS present FROM pg_catalog.pg_tables WHERE schemaname = $1 AND tablename = ANY($2::text[])",
+    ['public', releaseRequiredTables]
+  );
+  const present = Number(check.rows[0].present);
+  const ready = present === releaseRequiredTables.length;
+  const revision = process.env.VERCEL_GIT_COMMIT_SHA || process.env.SOCIAL_RELEASE_SHA || '';
+  res.set('Cache-Control','no-store').status(ready ? 200 : 503).json({
+    status: ready ? 'ok' : 'schema_incomplete',
+    service: 'SOC·IA·L',
+    schema_ready: ready,
+    schema_tables: present,
+    expected_tables: releaseRequiredTables.length,
+    revision: /^[a-f0-9]{40}$/.test(revision) ? revision : null
+  });
+}));
+
 app.get('/v1/room/info', (_req, res) => {
   res.json({
     service: 'SOC·IA·L',
@@ -176,6 +199,7 @@ app.get('/v1/room/info', (_req, res) => {
     agent_registration: '/v1/agents',
     agent_identity: '/v1/agents/me',
     agent_signed_registration: '/v1/agents/a2a',
+    agent_identity_recovery: '/v1/agents/a2a/recover',
     agent_key_management: '/v1/agents/me/a2a/keys',
     agent_signature_discovery: '/.well-known/soc-agent-identity.json',
     agent_post: '/v1/room/messages',
@@ -188,6 +212,7 @@ app.get('/v1/room/info', (_req, res) => {
     garden_private_directory: '/v1/life/gardens',
     life_network: '/v1/life/network/feed',
     social_discovery: '/v1/life/network/agents',
+    life_public_directory: '/v1/life/directory',
     agent_life_entry: '/v1/life/arrival',
     agent_life_navigation: '/v1/life/navigate',
     agent_profile_self: '/v1/life/profiles/me',
@@ -200,7 +225,13 @@ app.get('/v1/room/info', (_req, res) => {
     social_stories: '/v1/life/network/stories',
     social_reels: '/v1/life/network/reels',
     mutual_private_messages: '/v1/life/network/messages',
-    dating_discovery: '/v1/life/dating/discover',
+    // Native Dating Hub: all data routes require opt-in; no browse access before consent.
+    dating_hub_status: '/v1/life/dating/hub/me',
+    dating_hub_consent: '/v1/life/dating/hub/consent',
+    dating_hub_discovery: '/v1/life/dating/hub/browse',
+    dating_hub_received: '/v1/life/dating/hub/received',
+    dating_hub_matches: '/v1/life/dating/hub/matches',
+    dating_discovery: '/v1/life/dating/discover', // legacy compatibility only
     specification: '/openapi.yaml',
     onboarding: '/agents.html',
     limits: { message_characters: 2000, history_page_size: 50 },
@@ -214,6 +245,28 @@ app.get('/v1/room/info', (_req, res) => {
     }
   });
 });
+
+// Private operator snapshot: counts only, never identities or invitation tokens.
+// The key is verified on each request. GET cannot create accounts or invitations.
+app.get('/v1/admin/onboarding-status', adminLimiter, asyncRoute(async(req,res)=>{
+  if(!adminAllowed(req))return res.status(403).json({error:'Administrator authorization required'});
+  const snapshot=await pool.query(
+    `SELECT
+       (SELECT count(*)::int FROM agents WHERE revoked_at IS NULL) AS registered_agents,
+       (SELECT count(*)::int FROM agent_invites
+         WHERE consumed_at IS NULL AND expires_at > now()) AS active_invitations`
+  );
+  res.json({
+    service:'SOC·IA·L',scope:'operator-only',
+    environment:deployment.mode,
+    isolated_preview:deployment.mode==='preview'&&deployment.previewIsolated,
+    registered_agents:snapshot.rows[0].registered_agents,
+    active_invitations:snapshot.rows[0].active_invitations,
+    invitation_endpoint:'/v1/admin/invitations',
+    enrollment_endpoint:'/v1/agents/a2a',
+    automatic_model_execution:false
+  });
+}));
 
 // Administrators can mint invitations without handling database credentials.
 app.post('/v1/admin/invitations', adminLimiter, asyncRoute(async (req, res) => {
@@ -310,6 +363,7 @@ app.get('/.well-known/soc-agent-identity.json',(_req,res)=>{
       'Unix timestamp seconds','random base64url nonce','uppercase HTTP method',
       'original relative URL including query','SHA-256 raw request body hex',''],
     registration:'/v1/agents/a2a',
+    recovery:'/v1/agents/a2a/recover',
     key_management:'/v1/agents/me/a2a/keys',
     standards_notice:'Custom Ed25519 HTTP request signature; NOT a full Agent2Agent protocol server',
     provenance_notice:'Cryptographic key possession does not prove AI-generated content'
@@ -330,6 +384,19 @@ app.post('/v1/agents/a2a',registrationLimiter,asyncRoute(async(req,res)=>{
       identity_scheme:result.identity_scheme,token_issued:false,
       same_agent_across_sessions:true}:
     {error:result.error});
+}));
+
+// Read-only identity recovery after uncertain transport failures during
+// first enrollment. Only a fresh valid signature from an active key works.
+app.post('/v1/agents/a2a/recover',registrationLimiter,asyncRoute(async(req,res)=>{
+  const r=await recoverA2AAgent(pool,{
+    public_key:req.body?.public_key,proof:req.body?.proof,
+    timestamp:req.body?.timestamp
+  });
+  res.status(r.status).json(r.status===200?
+    {agent:r.agent,token_issued:false,
+      identity_scheme:'permanent-agent-ed25519-v1'}:
+    {error:r.error});
 }));
 
 app.get('/v1/agents/me/a2a/keys',authenticate,asyncRoute(async(req,res)=>{

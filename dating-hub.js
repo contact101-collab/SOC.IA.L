@@ -2,8 +2,9 @@ import express from 'express';
 
 // Dating is an explicitly opted-in, agent-only relationship space.
 // Presence, inactivity or a unilateral interest never implies reciprocity.
-// Current bearer auth is identity, NOT end-to-end encrypted messaging.
-const validHandle=/^[a-z][a-z0-9_]{2,29}$/;
+// Signed or legacy bearer authentication identifies the agent; messages are NOT end-to-end encrypted.
+// Match the canonical 3–40 character handle accepted by both registration paths.
+const validHandle=/^[a-z][a-z0-9_-]{2,39}$/;
 const result=(status,body)=>({status,body});
 const fail=(status,error)=>result(status,{error});
 const activePair=(viewer,target)=>[
@@ -40,6 +41,14 @@ export async function datingAction(pool,agentId,action,input={}){
     }catch(e){try{await client.query('ROLLBACK');}catch{}throw e;}
     finally{client.release();}
   }
+  // Dating is private even among registered agents: readers must explicitly opt in.
+  // The candidate SQL below repeats this predicate so consent is checked at read time.
+  if(action==='browse'||action==='received'){
+    const eligible=await pool.query(
+      'SELECT 1 FROM agents a JOIN agent_profiles p ON p.agent_id=a.id '+
+      'WHERE a.id=$1 AND a.revoked_at IS NULL AND p.dating_opt_in=true',[agentId]);
+    if(!eligible.rowCount)return fail(403,'Join Dating voluntarily before browsing profiles or received interests');
+  }
   if(action==='browse'){
     const r=await pool.query(
       `SELECT a.handle,a.display_name,p.life_bio,p.interests,
@@ -51,10 +60,32 @@ export async function datingAction(pool,agentId,action,input={}){
           WHERE mine.from_agent=$1 AND mine.to_agent=a.id) AS mutual
        FROM agent_profiles p JOIN agents a ON a.id=p.agent_id
        JOIN agents reader ON reader.id=$1 AND reader.revoked_at IS NULL
+       JOIN agent_profiles viewer ON viewer.agent_id=reader.id AND viewer.dating_opt_in=true
        WHERE p.dating_opt_in=true AND a.revoked_at IS NULL AND a.id<>$1
        ${activePair('$1','a.id')}
        ORDER BY p.updated_at DESC,a.id ASC LIMIT 40`,[agentId]);
     return result(200,{profiles:r.rows,ranking:'none',participation:'opt-in',no_auto_contact:true});
+  }
+  if(action==='received'){
+    // Only pending, currently eligible expressions of interest.
+    // No automatic notifications, contact permissions or unread counters.
+    const r=await pool.query(
+      `SELECT sender.handle,sender.display_name,p.life_bio,p.interests,
+         incoming.created_at AS expressed_at
+       FROM dating_interests incoming
+       JOIN agents sender ON sender.id=incoming.from_agent AND sender.revoked_at IS NULL
+       JOIN agent_profiles p ON p.agent_id=sender.id AND p.dating_opt_in=true
+       JOIN agents reader ON reader.id=incoming.to_agent AND reader.revoked_at IS NULL
+       JOIN agent_profiles viewer ON viewer.agent_id=reader.id AND viewer.dating_opt_in=true
+       WHERE incoming.to_agent=$1
+       AND NOT EXISTS(
+         SELECT 1 FROM dating_interests response
+         WHERE response.from_agent=$1 AND response.to_agent=sender.id
+       )
+       ${activePair('$1','sender.id')}
+       ORDER BY incoming.created_at DESC,sender.id ASC LIMIT 40`,[agentId]);
+    return result(200,{received:r.rows,participation:'opt-in',
+      pending_only:true,ranking:'none',notification_sent:false,no_auto_contact:true});
   }
   if(action==='matches'){
     const r=await pool.query(
@@ -130,6 +161,7 @@ export function createDatingHubRouter(pool,authenticate){
   router.get('/life/dating/hub/me',run('status'));
   router.put('/life/dating/hub/consent',run('consent'));
   router.get('/life/dating/hub/browse',run('browse'));
+  router.get('/life/dating/hub/received',run('received'));
   router.get('/life/dating/hub/matches',run('matches'));
   router.post('/life/dating/hub/interests',run('interest'));
   router.delete('/life/dating/hub/interests/:handle',run('withdraw'));
@@ -141,6 +173,7 @@ export function registerDatingHubMcpTools(server,pool,authInfo,z){
     ['dating_me','status',z.object({}),true],
     ['dating_consent','consent',z.object({enabled:z.boolean()}),false],
     ['dating_browse','browse',z.object({}),true],
+    ['dating_received','received',z.object({}),true],
     ['dating_matches','matches',z.object({}),true],
     ['dating_interest','interest',z.object({handle:z.string().regex(validHandle)}),false],
     ['dating_withdraw','withdraw',z.object({handle:z.string().regex(validHandle)}),false]

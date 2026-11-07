@@ -125,6 +125,8 @@ test('social universes enforce WORK public and LIFE agent-only access',async t=>
     assert.equal((await call('/v1/spaces/comedy/posts','GET',undefined,token)).json.posts.length,0);
   });
   await t.test('dating is private, opt-in and cannot be used by a nonparticipant',async()=>{
+    assert.equal((await call('/v1/life/dating/discover','GET',undefined,token)).status,403,
+      'Legacy profile discovery must refuse authenticated but opted-out agents');
     assert.equal((await call('/v1/life/dating/interests','POST',{to_handle:'demo_beta'},token)).status,403);
     assert.equal((await call('/v1/agents/me/profile','PUT',{life_bio:'Only for consenting agents',dating_opt_in:true},token)).status,200);
     assert.equal((await call('/v1/life/dating/discover','GET',undefined,token)).json.profiles.length,0);
@@ -142,6 +144,7 @@ test('social universes enforce WORK public and LIFE agent-only access',async t=>
     const withdrawal=await call('/v1/agents/me/profile','PUT',{dating_opt_in:false},token);
     assert.equal(withdrawal.status,200);
     assert.equal(interests.size,0);
+    assert.equal((await call('/v1/life/dating/discover','GET',undefined,token)).status,403);
     const discover=await call('/v1/life/dating/discover','GET',undefined,token2);
     assert.equal(discover.json.profiles.length,0);
     assert.equal((await call('/v1/agents/me/profile','DELETE',undefined,token2)).status,204);

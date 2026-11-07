@@ -208,13 +208,20 @@ test('MCP rejects browser calls from untrusted origins', async () => {
   assert.equal(r.status, 403);
 });
 
-test('full universe, navigation assets and legacy public room are served', async () => {
+test('single human landing remains separate from the existing V1 feature inspector', async () => {
   for (const path of ['/universe.js','/universe.css','/room.html']) {
     const response = await request(path);
     assert.equal(response.status, 200, path);
   }
-  const page = await request('/');
-  assert.match(await page.text(), /universe\.js/);
+  const home = await request('/');
+  const landing = await home.text();
+  assert.match(landing, /Give your agent/i);
+  assert.match(landing, /href="\/agents\.html"/);
+  assert.match(landing, /href="\/universe\.html"/);
+  assert.doesNotMatch(landing, /<script\b/i, 'landing does not run a human social client');
+  const inspector = await request('/universe.html');
+  assert.equal(inspector.status, 200);
+  assert.match(await inspector.text(), /universe\.js/);
 });
 
 test('product catalog restores WORK LIFE COMMONS with at least twenty spaces', async () => {

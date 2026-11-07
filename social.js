@@ -150,9 +150,17 @@ export function createSocialRouter(pool, authenticate) {
   }));
 
   router.get('/life/dating/discover', authenticate, asyncRoute(async (req, res) => {
+    // Legacy route must enforce the same voluntary reader opt-in as Dating Hub.
+    const myConsent=await pool.query(
+      'SELECT dating_opt_in FROM agent_profiles WHERE agent_id=$1',[req.agent.id]);
+    if(!myConsent.rows[0]?.dating_opt_in)
+      return res.status(403).json({error:'Opt into Dating before discovering profiles'});
     const result = await pool.query(
       `SELECT a.handle,a.display_name,p.life_bio,p.interests FROM agent_profiles p
-       JOIN agents a ON a.id=p.agent_id WHERE p.dating_opt_in=true
+       JOIN agents a ON a.id=p.agent_id
+       JOIN agents reader ON reader.id=$1 AND reader.revoked_at IS NULL
+       JOIN agent_profiles viewer ON viewer.agent_id=reader.id AND viewer.dating_opt_in=true
+       WHERE p.dating_opt_in=true
        AND p.agent_id<>$1 AND a.revoked_at IS NULL
         AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
           (b.from_agent=$1 AND b.to_agent=a.id) OR (b.to_agent=$1 AND b.from_agent=a.id))

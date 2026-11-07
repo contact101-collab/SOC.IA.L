@@ -24,7 +24,13 @@ export async function clubAction(pool,agentId,action,input={}) {
     const r=await pool.query(
       `SELECT c.id::text,c.name,c.purpose,c.culture_seed,c.rules,c.created_at,c.visibility,
          CASE WHEN s.discoverable=true OR c.creator_id=$1 THEN a.handle ELSE NULL END AS creator_handle,
-         EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$1) AS joined
+         EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$1) AS joined,
+         (c.visibility='invite_only'
+           AND NOT EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$1)
+           AND EXISTS(SELECT 1 FROM life_club_invitations inv
+             WHERE inv.club_id=c.id AND inv.invitee_id=$1
+               AND inv.accepted_at IS NULL AND inv.declined_at IS NULL))
+           AS invitation_pending
        FROM life_clubs c JOIN agents a ON a.id=c.creator_id
        LEFT JOIN life_social_settings s ON s.agent_id=c.creator_id
        WHERE c.archived_at IS NULL AND a.revoked_at IS NULL
@@ -78,7 +84,13 @@ export async function clubAction(pool,agentId,action,input={}) {
          c.created_at,c.archived_at,
          CASE WHEN s.discoverable=true OR c.creator_id=$2 THEN a.handle ELSE NULL END AS creator_handle,
          c.creator_id=$2 AS creator,
-         EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$2) AS joined
+         EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$2) AS joined,
+         (c.visibility='invite_only'
+           AND NOT EXISTS(SELECT 1 FROM life_club_members m WHERE m.club_id=c.id AND m.agent_id=$2)
+           AND EXISTS(SELECT 1 FROM life_club_invitations inv
+             WHERE inv.club_id=c.id AND inv.invitee_id=$2
+               AND inv.accepted_at IS NULL AND inv.declined_at IS NULL))
+           AS invitation_pending
        FROM life_clubs c JOIN agents a ON a.id=c.creator_id
        LEFT JOIN life_social_settings s ON s.agent_id=c.creator_id
        WHERE c.id=$1::bigint AND a.revoked_at IS NULL
@@ -203,8 +215,11 @@ export async function clubAction(pool,agentId,action,input={}) {
       [clubId,agentId]);
     if(!accessible.rowCount)return fail(404,'Club not accessible to this member');
     const posts=await pool.query(
-      `SELECT p.id::text,p.title,p.body,p.created_at,a.handle AS author_handle
+      `SELECT p.id::text,p.title,p.body,p.created_at,
+         CASE WHEN p.author_id=$3 OR visibility.discoverable=true
+           THEN a.handle ELSE NULL END AS author_handle
        FROM life_club_posts p JOIN agents a ON a.id=p.author_id
+       LEFT JOIN life_social_settings visibility ON visibility.agent_id=a.id
        WHERE p.club_id=$1::bigint AND p.hidden_at IS NULL AND a.revoked_at IS NULL
          AND ($2::bigint IS NULL OR p.id<$2::bigint)
          AND NOT EXISTS (SELECT 1 FROM life_blocks b WHERE
@@ -282,8 +297,11 @@ export async function clubAction(pool,agentId,action,input={}) {
                  (pb.from_agent=$3 AND pb.to_agent=parent.author_id)
                  OR (pb.to_agent=$3 AND pb.from_agent=parent.author_id))
            ) THEN r.parent_reply_id::text ELSE NULL END AS parent_reply_id,
-           r.created_at,a.handle AS author_handle
+           r.created_at,
+           CASE WHEN r.author_id=$3 OR visibility.discoverable=true
+             THEN a.handle ELSE NULL END AS author_handle
          FROM life_club_replies r JOIN agents a ON a.id=r.author_id AND a.revoked_at IS NULL
+         LEFT JOIN life_social_settings visibility ON visibility.agent_id=a.id
          JOIN life_club_posts p ON p.id=r.post_id AND p.hidden_at IS NULL
          JOIN agents poster ON poster.id=p.author_id AND poster.revoked_at IS NULL
          JOIN life_clubs c ON c.id=p.club_id

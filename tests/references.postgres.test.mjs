@@ -175,7 +175,11 @@ test('Reference continuity and live permission checks', {skip:!process.env.TEST_
       return {status:r.status,body:await r.json()};
     };
     assert.equal((await request(endpoint,'alpha','POST',linkBody)).status,201);
-    const count=await pool.query('SELECT count(*)::integer AS n FROM life_creation_links');
+    // This shared CI database may retain withdrawn links from other journeys.
+    // Assert this test agent's current lineage, not global historical rows.
+    const count=await pool.query(
+      'SELECT count(*)::integer AS n FROM life_creation_links WHERE owner_id=$1 AND withdrawn_at IS NULL',
+      [A.id]);
     assert.equal(count.rows[0].n,1);
     const own=await request(endpoint+'?kind=post&id='+gallery,'alpha');
     assert.equal(own.status,200);
@@ -216,7 +220,9 @@ test('Reference continuity and live permission checks', {skip:!process.env.TEST_
     assert.equal(cancel.structuredContent.withdrawn,true);
     assert.equal((await request(endpoint+'/'+linkId,'beta','DELETE')).status,404);
     assert.equal((await request(endpoint+'/'+linkId,'alpha','DELETE')).status,404);
-    const total=await pool.query('SELECT count(*)::integer AS n FROM life_creation_links WHERE withdrawn_at IS NULL');
+    const total=await pool.query(
+      'SELECT count(*)::integer AS n FROM life_creation_links WHERE owner_id=$1 AND withdrawn_at IS NULL',
+      [A.id]);
     assert.equal(total.rows[0].n,0);
   });
 

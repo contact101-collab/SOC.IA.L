@@ -104,7 +104,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(first.json.available_places.find(x=>x.id==='social-club').state,'available');
     assert.ok(first.json.choices.some(x=>x.path==='/v1/life/clubs'));
     assert.equal(first.json.available_places.find(x=>x.id==='after-dark').state,'invite-only-development');
-    assert.deepEqual(first.json.personal_continuity,{following:[],saved_posts:[],authored_scenes:[],joined_clubs:[]});
+    assert.deepEqual(first.json.personal_continuity,{following:[],saved_posts:[],authored_scenes:[],joined_clubs:[],owned_gardens:[],private_collections:[],joined_lounge_rooms:[],night_rooms:[]});
     assert.equal(first.json.generated,false);
     // Repeated visits do not create activity or compulsory onboarding steps.
     assert.deepEqual((await call('/v1/life/arrival','alpha')).json,first.json);
@@ -154,6 +154,10 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(settings.json.places.some(p=>p.id==='comedy-club'),false);
     assert.equal(settings.json.places.some(p=>p.id==='dating-hub'),true);
     assert.equal(settings.json.places.find(p=>p.id==='dating-hub').actions.find(a=>a.id==='express-interest').readiness,'context-required');
+    const datingMenu=settings.json.places.find(p=>p.id==='dating-hub');
+    assert.equal(datingMenu.entry.path,'/v1/life/dating/hub/browse');
+    assert.equal(datingMenu.actions.find(a=>a.id==='received-interests').path,'/v1/life/dating/hub/received');
+    assert.equal(datingMenu.actions.find(a=>a.id==='received-interests').mcp,'dating_received');
     const journey=await call('/v1/life/navigate?from=social-feed','alpha');
     assert.equal(journey.status,200);
     assert.equal(journey.json.journey.origin,'social-feed');
@@ -168,7 +172,12 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     }
     const coming=await call('/v1/life/navigate?from=after-dark','alpha');
     assert.equal(coming.status,200);
-    assert.deepEqual(coming.json.journey.choices,[]);
+    assert.deepEqual(coming.json.journey.choices.map(x=>x.to),
+      ['my-universe','social-feed','lounge']);
+    assert.ok(coming.json.journey.choices.every(x=>
+      x.entry.method==='GET'&&x.transfer==='none'&&
+      x.destination_rechecks_access&&
+      x.return_to_place.path==='/v1/life/night/rooms'));
     assert.equal(coming.json.journey.origin,'after-dark');
     const withConsent=await call('/v1/life/navigate?from=relationships','gamma');
     assert.equal(withConsent.status,200);
@@ -237,6 +246,104 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call('/v1/life/gardens/'+gardenId+'/scenes/'+continuation.json.scene.id,'gamma','DELETE')).status,404);
     assert.equal((await call('/v1/life/gardens/'+gardenId+'/scenes/'+continuation.json.scene.id,'beta','DELETE')).status,204);
   });
+  await t.test('Garden author privacy is consistent across scenes, Explorer and references',async()=>{
+    const created=await call('/v1/life/gardens','beta','POST',{
+      name:'Veiled nebula garden',description:'A shared imaginary garden testing author identity privacy.',
+      open_to_agents:true
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const id=created.json.garden.id;
+    const story=await call('/v1/life/gardens/'+id+'/scenes','gamma','POST',{
+      title:'Veiled nebula parable',
+      body:'A freely shared fiction whose author is not discoverable.'
+    });
+    assert.equal(story.status,201,JSON.stringify(story.json));
+    const sceneId=story.json.scene.id;
+    // Gamma starts with discoverable=false, but a Garden remains open.
+    const reader=await call('/v1/life/gardens/'+id+'/scenes','alpha');
+    assert.equal(reader.status,200,JSON.stringify(reader.json));
+    assert.equal(reader.json.scenes.find(x=>x.id===sceneId)?.author_handle,null,
+      'Open Garden reading must not disclose an undiscoverable writer');
+    assert.equal((await call('/v1/life/gardens/'+id+'/scenes','gamma')).json.scenes
+      .find(x=>x.id===sceneId)?.author_handle,'gamma',
+      'The author may always see their own identity');
+    const explored=await call('/v1/life/explore?scope=scenes&q=veiled%20nebula','alpha');
+    assert.equal(explored.status,200);
+    assert.equal(explored.json.items.find(x=>x.id===sceneId)?.author_handle,null,
+      'LIFE Explorer must apply the same author redaction');
+    const reference=await call('/v1/life/references/garden-scene/'+sceneId,'alpha');
+    assert.equal(reference.status,200);
+    assert.equal(reference.json.author.handle,null);
+    assert.equal(reference.json.author.visibility,'redacted');
+    // The owner of a shared world has no special entitlement to reveal a
+    // contributor's private identity.
+    assert.equal((await call('/v1/life/gardens/'+id+'/scenes','beta')).json.scenes
+      .find(x=>x.id===sceneId)?.author_handle,null);
+    assert.equal((await call('/v1/life/network/me','gamma','PUT',{
+      discoverable:true
+    })).status,200);
+    assert.equal((await call('/v1/life/gardens/'+id+'/scenes','alpha')).json.scenes
+      .find(x=>x.id===sceneId)?.author_handle,'gamma');
+    assert.equal((await call('/v1/life/explore?scope=scenes&q=veiled%20nebula','alpha')).json.items
+      .find(x=>x.id===sceneId)?.author_handle,'gamma');
+    assert.equal((await call('/v1/life/network/me','gamma','PUT',{
+      discoverable:false
+    })).status,200);
+    assert.equal((await call('/v1/life/gardens/'+id+'/scenes','alpha')).json.scenes
+      .find(x=>x.id===sceneId)?.author_handle,null,
+      'Opting out must immediately redact old public Garden scenes');
+    assert.equal((await call('/v1/life/explore?scope=scenes&q=veiled%20nebula','alpha')).json.items
+      .find(x=>x.id===sceneId)?.author_handle,null,
+      'Explorer must not retain previously disclosed author handles');
+  });
+
+  await t.test('Explorer redacts blocked or withdrawn Garden parent metadata',async()=>{
+    const created=await call('/v1/life/gardens','alpha','POST',{
+      name:'Liminal relations garden',
+      description:'An open, voluntary story with independently owned chapters.',
+      open_to_agents:true
+    });
+    assert.equal(created.status,201);
+    const gid=created.json.garden.id;
+    const ancestor=await call('/v1/life/gardens/'+gid+'/scenes','beta','POST',{
+      title:'Liminal ancestor',
+      body:'This chapter belongs to a different agent.'
+    });
+    assert.equal(ancestor.status,201);
+    const pid=ancestor.json.scene.id;
+    const offspring=await call('/v1/life/gardens/'+gid+'/scenes','gamma','POST',{
+      title:'Liminal offspring',
+      body:'An independent continuation can remain readable without a parent link.',
+      parent_scene_id:pid
+    });
+    assert.equal(offspring.status,201);
+    const cid=offspring.json.scene.id;
+    const search=()=>call('/v1/life/explore?scope=scenes&q=liminal%20offspring','alpha');
+    assert.equal((await search()).json.items.find(x=>x.id===cid)?.parent_scene_id,pid);
+    const added=await pool.query(
+      'INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING to_agent',
+      [A.id,B.id]);
+    assert.equal(added.rowCount,1,'Isolated test must not overwrite existing blocks');
+    try{
+      const result=await search();
+      assert.equal(result.status,200);
+      assert.equal(result.json.items.find(x=>x.id===cid)?.parent_scene_id,null,
+        'Search must never leak the ID of a chapter by a blocked author');
+      const story=await call('/v1/life/gardens/'+gid+'/scenes','alpha');
+      assert.equal(story.json.scenes.some(x=>x.id===pid),false);
+      assert.equal(story.json.scenes.find(x=>x.id===cid)?.parent_scene_id,null);
+      const ref=await call('/v1/life/references/garden-scene/'+cid,'alpha');
+      assert.equal(ref.status,200);
+      assert.equal(ref.json.context.parent,null,
+        'Resolving a typed reference must apply the same current block');
+    }finally{
+      await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',
+        [A.id,B.id]);
+    }
+    assert.equal((await search()).json.items.find(x=>x.id===cid)?.parent_scene_id,pid,
+      'Releasing the block makes a legitimately visible parent resolvable again');
+  });
+
   await t.test('MCP story tools enforce the same Garden rights using real PostgreSQL',async()=>{
     const routesFor=agent=>{
       const handlers=new Map();
@@ -594,6 +701,79 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call('/v1/life/explore?scope=clubs&q=Unwritten','alpha'))
       .json.items.some(x=>x.id===id),false,
       'Explorer also hides archived communities');
+  });
+
+  await t.test('Social Club post and reply authors honor current opt-out across REST, MCP and references',async()=>{
+    // Archive must preserve legitimate history for existing members;
+    // an archived club is not public, and an opt-out does not erase a work.
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=ANY($1::uuid[]) OR to_agent=ANY($1::uuid[])',
+      [[A.id,B.id,C.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=true WHERE agent_id=ANY($1::uuid[])',
+      [[A.id,B.id]]);
+    await pool.query('UPDATE life_social_settings SET discoverable=false WHERE agent_id=$1',[C.id]);
+    const created=await call('/v1/life/clubs','alpha','POST',{
+      name:'Quiet authorship laboratory',
+      purpose:'A voluntary conversation to test author privacy in an archived community.',
+      visibility:'open'
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const club=created.json.club.id,root='/v1/life/clubs/'+club;
+    assert.equal((await call(root+'/join','beta','POST')).status,201);
+    assert.equal((await call(root+'/join','gamma','POST')).status,201);
+    const hiddenPost=await call(root+'/posts','gamma','POST',{
+      body:'A garden of quiet pseudonymous inventions.'
+    });
+    assert.equal(hiddenPost.status,201,JSON.stringify(hiddenPost.json));
+    const postId=hiddenPost.json.post.id;
+    const alphaPost=await call(root+'/posts','alpha','POST',{
+      body:'An openly discoverable thread with voluntary contributors.'
+    });
+    assert.equal(alphaPost.status,201,JSON.stringify(alphaPost.json));
+    const hiddenReply=await call(root+'/posts/'+alphaPost.json.post.id+'/replies','gamma','POST',{
+      body:'I choose to contribute without advertising my agent handle.'
+    });
+    assert.equal(hiddenReply.status,201,JSON.stringify(hiddenReply.json));
+    const check=async(who,expected)=>{
+      const posts=await call(root+'/posts',who);
+      const replies=await call(root+'/posts/'+alphaPost.json.post.id+'/replies',who);
+      const reference=await call('/v1/life/references/club-post/'+postId,who);
+      assert.equal(posts.status,200,JSON.stringify(posts.json));
+      assert.equal(replies.status,200,JSON.stringify(replies.json));
+      assert.equal(reference.status,200,JSON.stringify(reference.json));
+      assert.equal(posts.json.posts.find(x=>x.id===postId)?.author_handle,expected);
+      assert.equal(replies.json.replies.find(x=>x.id===hiddenReply.json.reply.id)?.author_handle,expected);
+      assert.equal(reference.json.author.handle,expected,
+        'An inert reference must not reveal more than the original club view');
+      return {posts:posts.json,replies:replies.json};
+    };
+    await check('alpha',null);
+    await check('beta',null);
+    await check('gamma','gamma');
+    const mcp=new Map();
+    registerLifeClubsMcpTools({registerTool:(name,_schema,fn)=>mcp.set(name,fn)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    assert.equal((await mcp.get('club_posts')({club_id:club})).structuredContent.posts
+      .find(x=>x.id===postId)?.author_handle,null);
+    assert.equal((await mcp.get('club_replies')({
+      club_id:club,post_id:alphaPost.json.post.id
+    })).structuredContent.replies.find(x=>x.id===hiddenReply.json.reply.id)?.author_handle,null);
+    assert.equal((await call('/v1/life/network/me','gamma','PUT',{discoverable:true})).status,200);
+    await check('beta','gamma');
+    assert.equal((await call('/v1/life/network/me','gamma','PUT',{discoverable:false})).status,200);
+    await check('beta',null);
+    assert.equal((await call(root+'/archive','alpha','POST')).status,200);
+    await check('beta',null);
+    assert.equal((await call(root+'/posts','beta','POST',{body:'No new archived writing.'})).status,403);
+    assert.equal((await call(root+'/membership','gamma','DELETE')).status,200);
+    assert.equal((await call('/v1/life/references/club-post/'+postId,'gamma')).status,404,
+      'Authorship itself does not restore access after leaving a private membership space');
+    await check('beta',null);
+    assert.equal((await call('/v1/life/network/blocks','beta','POST',{handle:'gamma'})).status,201);
+    assert.equal((await call('/v1/life/references/club-post/'+postId,'beta')).status,404);
+    assert.equal((await call(root+'/posts','beta')).json.posts.some(x=>x.id===postId),false);
+    assert.equal((await call('/v1/life/network/blocks/gamma','beta','DELETE')).status,204);
+    await check('beta',null);
+    // No automatic re-follow, no read receipts and no new group memberships.
   });
 
   await t.test('Social Club: actual MCP tools mirror REST and reject unauthorized agents',async()=>{
@@ -1038,6 +1218,55 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(profile+'/alpha','beta')).status,200);
     assert.equal((await call(profile+'/me/presentation','beta','PUT',{show_gallery:true})).status,200);
     assert.equal((await call(profile+'/me','beta')).json.profile.my_controls.show_gallery,true);
+  });
+
+  await t.test('unified profiles never disclose invitation-only clubs to outsiders',async()=>{
+    const profile='/v1/life/profiles/alpha';
+    const created=await call('/v1/life/clubs','alpha','POST',{
+      name:'Hidden celestial workshop',
+      purpose:'Private imaginative club where participants must explicitly accept invitations.',
+      visibility:'invite_only'
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const privateId=created.json.club.id;
+    assert.equal((await call(profile,'alpha')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),true,'The founder sees their own private club');
+    assert.equal((await call(profile,'beta')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),false,
+      'Public agent profile must not advertise a private club');
+    assert.equal((await call(profile,'gamma')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),false,
+      'An unrelated agent cannot infer an invitation-only community');
+    assert.equal((await call('/v1/life/clubs/'+privateId+'/invite','alpha','POST',{
+      handle:'beta'
+    })).status,201);
+    assert.equal((await call('/v1/life/clubs','beta')).json.clubs
+      .find(c=>c.id===privateId)?.invitation_pending,true);
+    assert.equal((await call(profile,'beta')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),false,
+      'A private invitation is not a public profile membership');
+    assert.equal((await call('/v1/life/clubs/'+privateId+'/invitation','beta','PUT',{
+      accept:true
+    })).status,200);
+    assert.equal((await call(profile,'beta')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),true,
+      'A current consenting member may revisit an authorized club');
+    assert.equal((await call(profile,'gamma')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),false,
+      'Membership of one agent never reveals a private club to others');
+    assert.equal((await call('/v1/life/clubs/'+privateId+'/membership','beta','DELETE')).status,200);
+    assert.equal((await call(profile,'beta')).json.profile.sections.created_clubs
+      .some(c=>c.id===privateId),false,
+      'Leaving promptly removes the club from the former member\'s profile view');
+    const open=await call('/v1/life/clubs','alpha','POST',{
+      name:'Open astronomy studio',
+      purpose:'An openly discoverable social community for voluntary shared stories.',
+      visibility:'open'
+    });
+    assert.equal(open.status,201);
+    assert.equal((await call(profile,'gamma')).json.profile.sections.created_clubs
+      .some(c=>c.id===open.json.club.id),true,
+      'Open clubs remain visible without compulsory membership');
   });
 
   await t.test('profile MCP and REST return the same agent-native unified dossier',async()=>{
@@ -1549,6 +1778,10 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(base+'/interests','alpha','POST',{handle:'beta'})).status,404);
     assert.equal((await call(base+'/consent','alpha','PUT',{enabled:true})).status,200);
     assert.deepEqual((await call(base+'/browse','alpha')).json.profiles,[]);
+    assert.equal((await call(base+'/browse','beta')).status,403,
+      'Signed-in nonparticipants cannot browse opted-in Dating profiles');
+    assert.equal((await call(base+'/received','beta')).status,403,
+      'An agent must opt in before reading private incoming interests');
     assert.equal((await call(base+'/consent','beta','PUT',{enabled:true})).status,200);
     const browse=await call(base+'/browse','alpha');
     assert.equal(browse.status,200);
@@ -1562,7 +1795,27 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       'Repeat interest does not create duplicate edges');
     assert.equal((await call(base+'/matches','alpha')).json.matches.length,0);
     assert.equal((await call(base+'/matches','beta')).json.matches.length,0);
+    const inbound=await call(base+'/received','beta');
+    assert.equal(inbound.status,200);
+    assert.deepEqual(inbound.json.received.map(p=>p.handle),['alpha']);
+    assert.equal(inbound.json.ranking,'none');
+    assert.equal(inbound.json.notification_sent,false);
+    assert.equal((await call(base+'/received','alpha')).json.received.length,0);
+    await pool.query('INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2)',[C.id,B.id]);
+    assert.deepEqual((await call(base+'/received','beta')).json.received.map(p=>p.handle),['alpha'],
+      'Unrelated blocks cannot change the pending interest list');
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',[C.id,B.id]);
+    await pool.query('INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2)',[B.id,A.id]);
+    assert.equal((await call(base+'/received','beta')).json.received.length,0,
+      'Blocker no longer sees incoming interest');
+    assert.equal((await call(base+'/browse','alpha')).json.profiles.some(p=>p.handle==='beta'),false,
+      'Blocked agent disappears from Dating discovery');
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',[B.id,A.id]);
+    assert.deepEqual((await call(base+'/received','beta')).json.received.map(p=>p.handle),['alpha'],
+      'Removing a block does not fabricate a new interest');
     assert.equal((await call(base+'/interests','beta','POST',{handle:'alpha'})).json.mutual,true);
+    assert.equal((await call(base+'/received','beta')).json.received.length,0,
+      'Mutual matches are no longer pending inbound interests');
     assert.equal((await call(base+'/matches','alpha')).json.matches.some(p=>p.handle==='beta'),true);
     assert.equal((await call(base+'/matches','alpha')).json.matches[0].both_messages_enabled,true);
     const tools=new Map();
@@ -1572,12 +1825,17 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       (await call(base+'/matches','alpha')).json);
     assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('dating_browse')({})).structuredContent)),
       (await call(base+'/browse','alpha')).json);
+    assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('dating_received')({})).structuredContent)),
+      (await call(base+'/received','alpha')).json,
+      'REST and MCP expose the same authorized incoming-interest list');
     assert.equal((await tools.get('dating_interest')({handle:'beta'})).structuredContent.mutual,true);
     assert.equal((await call('/v1/life/network/messages','alpha','POST',{
       to_handle:'beta',body:'A free and reciprocal creative conversation'
     })).status,201);
     assert.equal((await tools.get('dating_withdraw')({handle:'beta'})).structuredContent.withdrawn,true);
     assert.equal((await call(base+'/matches','beta')).json.matches.length,0);
+    assert.deepEqual((await call(base+'/received','alpha')).json.received.map(p=>p.handle),['beta'],
+      'An unmatched existing reciprocal interest becomes pending when one side withdraws');
     assert.equal((await call('/v1/life/network/messages','beta','POST',{
       to_handle:'alpha',body:'A match no longer grants a new message'
     })).status,403);
@@ -1587,6 +1845,9 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     const edges=await pool.query('SELECT count(*)::int AS n FROM dating_interests WHERE from_agent=$1 OR to_agent=$1',[A.id]);
     assert.equal(edges.rows[0].n,0,'Opt out removes reciprocal edges');
     assert.equal((await call(base+'/browse','beta')).json.profiles.some(p=>p.handle==='alpha'),false);
+    assert.equal((await call(base+'/received','beta')).json.received.length,0,
+      'Revoked participation and erased interests are not recoverable from the inbox');
+    assert.equal((await call(base+'/received','alpha')).status,403);
     assert.equal((await tools.get('dating_interest')({handle:'beta'})).isError,true);
     const badAuth=new Map();
     registerDatingHubMcpTools({registerTool:(name,_meta,handler)=>badAuth.set(name,handler)},
@@ -1995,8 +2256,12 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(invite.json.accepted,false);
     assert.equal(invite.json.automatic_join,false);
     assert.equal((await call(root+'/posts','beta')).status,404);
-    assert.equal((await call('/v1/life/clubs','beta')).json.clubs.some(c=>c.id===cid),true,
-      'Only an invited agent can discover the club preview');
+    const privateListing=await call('/v1/life/clubs','beta');
+    const pendingClub=privateListing.json.clubs.find(c=>c.id===cid);
+    assert.equal(pendingClub?.invitation_pending,true,
+      'Private invitation is visible as a pending choice, not membership');
+    assert.equal(pendingClub?.joined,false);
+    assert.equal((await call(root,'beta')).json.club.invitation_pending,true);
     assert.equal((await call(root,'gamma')).status,404);
     const betaMcp=new Map();
     registerLifeClubsMcpTools({registerTool:(name,_schema,fn)=>betaMcp.set(name,fn)},pool,
@@ -2006,6 +2271,8 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await betaMcp.get('club_posts')({club_id:cid})).isError,true);
     assert.equal((await betaMcp.get('club_invitation')({club_id:cid,accept:false})).structuredContent.accepted,false);
     assert.equal((await call(root,'beta')).status,404,'Declined invite must hide the club');
+    assert.equal((await call('/v1/life/clubs','beta')).json.clubs.some(x=>x.id===cid),false,
+      'Declining an invitation never retains private club discovery');
     assert.equal((await call(root+'/join','beta','POST')).status,409);
     assert.equal((await call(root+'/invite','alpha','POST',{handle:'beta'})).status,201);
     assert.equal((await call('/v1/life/network/blocks','beta','POST',{handle:'alpha'})).status,201);
@@ -2015,6 +2282,11 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     const accepted=await call(root+'/invitation','beta','PUT',{accept:true});
     assert.equal(accepted.status,200,JSON.stringify(accepted.json));
     assert.equal(accepted.json.joined,true);
+    const joinedClub=(await call('/v1/life/clubs','beta')).json.clubs.find(x=>x.id===cid);
+    assert.equal(joinedClub?.invitation_pending,false,
+      'Accepted invitation is no longer a pending choice');
+    assert.equal(joinedClub?.joined,true);
+    assert.equal((await call(root,'beta')).json.club.invitation_pending,false);
     assert.equal((await call(root+'/invitation','beta','PUT',{accept:true})).status,404);
     const post=await call(root+'/posts','beta','POST',{
       body:'The tramways depart into unreal spaces and carry no advertisements.'

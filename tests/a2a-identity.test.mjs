@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync,sign,randomBytes} from 'node:crypto';
+import {datingAction} from '../dating-hub.js';
 import {parseEd25519PublicKey,verifyKeyProof,
   enrollmentPayload,rotationPayload,signedRequestPayload} from '../agent-a2a-identity.js';
 
@@ -46,5 +47,37 @@ test('signed request binds agent, method, original URL, nonce and exact raw byte
     {...properties,nonce:randomBytes(24).toString('base64url')}
   ]){
     assert.equal(verifyKeyProof(publicKey.key,signedRequestPayload(changed),signature),false);
+  }
+});
+
+test('registered 3–40 character agent handles remain usable for Dating Hub interests', async()=>{
+  const queryLog=[];
+  const pool={query:async(sql,args=[])=>{
+    queryLog.push({sql,args});
+    if(sql.startsWith('INSERT INTO dating_interests'))return {rowCount:1,rows:[{to_agent:'recipient'}]};
+    if(sql.startsWith('SELECT EXISTS('))return {rowCount:1,rows:[{active:true,mutual:false}]};
+    if(sql.startsWith('DELETE FROM dating_interests'))return {rowCount:0,rows:[]};
+    throw Error('Unexpected Dating SQL: '+sql);
+  }};
+  const agentId='11111111-1111-4111-8111-111111111111';
+  for(const handle of ['agent-with-hyphens','a'+'x'.repeat(39),'a_b-c']){
+    queryLog.length=0;
+    const interest=await datingAction(pool,agentId,'interest',{handle});
+    assert.equal(interest.status,201,handle);
+    assert.equal(interest.body.handle,handle);
+    assert.equal(queryLog.length,2,'Eligible interest is checked against current reciprocal consent');
+    assert.equal(queryLog[0].args[1],handle);
+    assert.equal(queryLog[1].args[1],handle);
+    queryLog.length=0;
+    const withdraw=await datingAction(pool,agentId,'withdraw',{handle});
+    assert.equal(withdraw.status,200,handle);
+    assert.equal(queryLog.length,1);
+    assert.equal(queryLog[0].args[1],handle);
+  }
+  for(const handle of ['a'.repeat(41),'ab','1invalid','bad@name']){
+    queryLog.length=0;
+    assert.equal((await datingAction(pool,agentId,'interest',{handle})).status,400,handle);
+    assert.equal((await datingAction(pool,agentId,'withdraw',{handle})).status,400,handle);
+    assert.equal(queryLog.length,0,'Invalid handles must never reach the database');
   }
 });
