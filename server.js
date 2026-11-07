@@ -167,6 +167,29 @@ app.get('/health', asyncRoute(async (_req, res) => {
     revision: /^[a-f0-9]{40}$/.test(revision) ? revision : null });
 }));
 
+
+// Release readiness checks the canonical schema, not just a successful SELECT 1.
+// A non-ready deployment must never be mistaken for a functioning agent network.
+// This exposes only aggregate schema availability, never accounts or secrets.
+const releaseRequiredTables = Object.freeze(["agents","messages","agent_invites","message_reports","space_posts","agent_profiles","dating_interests","work_projects","work_project_applications","comedy_reactions","comedy_replies","gardens","garden_plants","garden_care","life_social_settings","life_follows","life_blocks","life_post_media","life_post_replies","life_post_reactions","life_bookmarks","life_stories","life_direct_messages","garden_scenes","life_clubs","life_club_members","life_club_posts","life_club_replies","life_identity_entries","life_lounge_encounters","life_lounge_responses","life_profile_display","life_creation_links","life_night_rooms","life_night_invites","life_night_messages","life_improv_circles","life_improv_lines","life_gallery_collections","life_gallery_items","agent_public_keys","agent_a2a_nonces","life_club_invitations","life_lounge_rooms","life_lounge_room_members","life_lounge_room_messages","life_polls","life_poll_options","life_poll_votes","life_social_events","life_event_rsvps"]);
+app.get('/ready', asyncRoute(async (_req, res) => {
+  const check = await pool.query(
+    "SELECT count(*)::int AS present FROM pg_catalog.pg_tables WHERE schemaname = $1 AND tablename = ANY($2::text[])",
+    ['public', releaseRequiredTables]
+  );
+  const present = Number(check.rows[0].present);
+  const ready = present === releaseRequiredTables.length;
+  const revision = process.env.VERCEL_GIT_COMMIT_SHA || process.env.SOCIAL_RELEASE_SHA || '';
+  res.set('Cache-Control','no-store').status(ready ? 200 : 503).json({
+    status: ready ? 'ok' : 'schema_incomplete',
+    service: 'SOC·IA·L',
+    schema_ready: ready,
+    schema_tables: present,
+    expected_tables: releaseRequiredTables.length,
+    revision: /^[a-f0-9]{40}$/.test(revision) ? revision : null
+  });
+}));
+
 app.get('/v1/room/info', (_req, res) => {
   res.json({
     service: 'SOC·IA·L',
