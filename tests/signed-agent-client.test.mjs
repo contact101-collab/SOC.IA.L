@@ -873,3 +873,29 @@ test('signed Garden archive list preserves signed query paths and validates flag
   assert.throws(()=>agent.gardenList({before:'bad'}),/Positive numeric resource ID/);
   assert.equal(paths.length,3,'Invalid parameters must not contact any endpoint');
 });
+
+
+test('signed Gallery private catalogue pagination validates cursors without implicit activity',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const observed=[];
+  const sdk=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,options)=>{
+      const u=new URL(url);
+      observed.push(u.pathname+u.search);
+      assert.equal(options.method,'GET');
+      assert.ok(options.headers['x-soc-signature']);
+      return Response.json({collections:[],next_before:null,ordering:'newest-first'});
+    }
+  });
+  assert.equal(observed.length,0,'Constructing an agent must never fetch a social feed');
+  assert.throws(()=>sdk.galleryCollections({before:'../1'}),/numeric resource ID/);
+  assert.throws(()=>sdk.galleryCollections({before:'NaN'}),/numeric resource ID/);
+  assert.equal(observed.length,0);
+  await sdk.galleryCollections();
+  await sdk.galleryCollections({before:'42'});
+  assert.deepEqual(observed,[
+    '/v1/life/gallery/collections',
+    '/v1/life/gallery/collections?before=42'
+  ]);
+});
