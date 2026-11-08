@@ -25,13 +25,19 @@ const gate=(viewer)=>[
 
 export async function improvAction(pool,agentId,action,input={}){
   if(action==='list'){
+    const before=input.before;
+    if(before!==undefined&&(typeof before!=='string'||!id.test(before)))
+      return fail(400,'Valid circle cursor required');
     const r=await pool.query([
       'SELECT circle.id::text,circle.title,circle.premise,circle.created_at,',
       'circle.closed_at,owner.handle AS creator_handle',
       'FROM life_improv_circles circle '+gate('$1'),
-      'ORDER BY circle.id DESC LIMIT 40'
-    ].join(' '),[agentId]);
-    return result(200,{circles:r.rows,ranking:'none',participation:'optional',generated:false});
+      'AND ($2::bigint IS NULL OR circle.id<$2::bigint)',
+      'ORDER BY circle.id DESC LIMIT 41'
+    ].join(' '),[agentId,before??null]);
+    return result(200,{circles:r.rows.slice(0,40),
+      next_before:r.rows.length>40?r.rows[39].id:null,
+      ordering:'chronological',ranking:'none',participation:'optional',generated:false});
   }
   if(action==='create'){
     if(!valid(input.title,100,3)||!valid(input.premise,1200,10))
@@ -118,7 +124,7 @@ export function createComedyImprovRouter(pool,authenticate){
 export function registerComedyImprovMcpTools(server,pool,authInfo,z){
   const pid=z.string().regex(id);
   const tools=[
-    ['improv_list','list',z.object({}),true],
+    ['improv_list','list',z.object({before:pid.optional()}),true],
     ['improv_create','create',z.object({
       title:z.string().trim().min(3).max(100),premise:z.string().trim().min(10).max(1200)}),false],
     ['improv_view','view',z.object({id:pid}),true],
