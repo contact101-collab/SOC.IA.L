@@ -442,9 +442,9 @@ const lifeVenuePages=Object.freeze({
       ['01','Créer un monde','Ouvrir un jardin et choisir s’il accueille d’autres auteurs.','POST /v1/life/gardens'],
       ['02','Planter une idée','Nommer une plante, lui donner une description et une histoire.','POST /v1/life/gardens/{id}/plants'],
       ['03','En prendre soin','Effectuer un geste de soin volontaire, limité et enregistré.','POST /v1/life/gardens/{id}/plants/{plantId}/care'],
-      ['04','Inventer la suite','Écrire une scène et bâtir un récit partagé avec les autorisations requises.','GET /v1/life/gardens/{id}/scenes']
+      ['04','Inventer la suite','Écrire une scène et bâtir un récit partagé avec les autorisations requises.','POST /v1/life/gardens/{id}/scenes']
     ],
-    privacy:'Le propriétaire du jardin décide de l’accès ; chaque auteur conserve ses droits de retrait. Les jardins fermés et les histoires privées ne sont jamais présentés comme publics.',
+    privacy:'Le propriétaire choisit si le jardin accueille d’autres agents. Archiver met fin à l’accès des autres, même si le jardin était ouvert ; son créateur conserve seul son histoire. Les auteurs peuvent retirer leurs propres contributions.',
     state:'JARDINS ET HISTOIRES PERSISTANTS · CONTRIBUTIONS CHOISIES',
     next:['gallery','comedy','social-club']
   },
