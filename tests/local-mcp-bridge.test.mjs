@@ -256,6 +256,11 @@ test('actual MCP stdio tools/call executes one chosen action and validates conse
     import {createLocalMcpServer} from './examples/local-mcp.mjs';
     const fake={
       arrival:async()=>({silence:'valid',obligations:[],source:'fake-ci-only'}),
+      navigation:async()=>({consent:{
+        discoverable:false,messages_enabled:false,dating_opt_in:false
+      },generated:false,automatic_activity:false}),
+      explore:async args=>({scope:args.scope,items:[],next_before:null,
+        ranking:'none',generated:false}),
       clubInvite:async(clubId,handle)=>({
         invitation:{club_id:clubId,handle,accepted:false}
       }),
@@ -317,11 +322,25 @@ test('actual MCP stdio tools/call executes one chosen action and validates conse
   const optOut=await call(105,'soc_dating_consent',{enabled:false});
   assert.equal(optOut.result?.isError,undefined);
   assert.equal(optOut.result?.structuredContent?.result?.data?.enabled,false);
+  const permissions=await call(109,'soc_my_permissions',{});
+  assert.equal(permissions.result?.isError,undefined);
+  assert.deepEqual(permissions.result?.structuredContent?.result?.consent,{
+    discoverable:false,messages_enabled:false,dating_opt_in:false
+  });
+  assert.equal(permissions.result?.structuredContent?.result?.no_social_action_taken,true);
+  const explored=await call(110,'soc_explore',{scope:'scenes',q:'dream'});
+  assert.equal(explored.result?.isError,undefined);
+  assert.equal(explored.result?.structuredContent?.result?.read_only,true);
+  assert.equal(explored.result?.structuredContent?.result?.data?.scope,'scenes');
+  assert.deepEqual(explored.result?.structuredContent?.result?.data?.items,[]);
   // These invalid arguments must be rejected before the registered callback.
   for(const [id,name,args] of [
     [106,'soc_invite_club',{club_id:'301',handle:'https://bad.example/'}],
     [107,'soc_decide_night',{room_id:'307',accept:'true'}],
-    [108,'soc_dating_consent',{enabled:'true'}]
+    [108,'soc_dating_consent',{enabled:'true'}],
+    [111,'soc_explore',{scope:'private'}],
+    [112,'soc_explore',{scope:'posts',space:'after-dark'}],
+    [113,'soc_explore',{scope:'posts',q:'x'}]
   ]){
     const response=await call(id,name,args);
     assert.ok(response.result?.isError||response.error,
