@@ -8,11 +8,39 @@ const crumb = document.getElementById('crumb');
 const sidebar = document.getElementById('sidebar');
 const mobileMenu = document.getElementById('mobile-menu');
 const sidebarScrim = document.getElementById('sidebar-scrim');
-function setMenuOpen(open){
-  sidebar.classList.toggle('open',open);
+const sidebarClose = document.getElementById('sidebar-close');
+const skipToContent = document.getElementById('skip-to-content');
+const mobileViewport = window.matchMedia('(max-width: 820px)');
+function syncNavigationAccessibility(){
+  const mobile=mobileViewport.matches;
+  const open=mobile&&sidebar.classList.contains('open');
+  if(!mobile)sidebar.classList.remove('open');
   document.body.classList.toggle('menu-open',open);
   mobileMenu.setAttribute('aria-expanded',String(open));
+  // A visually off-screen mobile drawer must not remain keyboard focusable.
+  sidebar.inert=mobile&&!open;
+  if(mobile&&!open)sidebar.setAttribute('aria-hidden','true');
+  else sidebar.removeAttribute('aria-hidden');
 }
+function setMenuOpen(open,returnFocus=false){
+  sidebar.classList.toggle('open',Boolean(open)&&mobileViewport.matches);
+  syncNavigationAccessibility();
+  if(open&&mobileViewport.matches)sidebarClose.focus({preventScroll:true});
+  if(!open&&returnFocus&&mobileViewport.matches)mobileMenu.focus({preventScroll:true});
+}
+function trapMobileNavigation(event){
+  if(event.key!=='Tab'||!mobileViewport.matches||!sidebar.classList.contains('open'))return;
+  const elements=[...sidebar.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),[tabindex="0"]')];
+  if(!elements.length)return;
+  const first=elements[0],last=elements[elements.length-1];
+  if(event.shiftKey && (document.activeElement===first||!sidebar.contains(document.activeElement))){
+    event.preventDefault();last.focus();
+  }else if(!event.shiftKey && (document.activeElement===last||!sidebar.contains(document.activeElement))){
+    event.preventDefault();first.focus();
+  }
+}
+syncNavigationAccessibility();
+mobileViewport.addEventListener('change',syncNavigationAccessibility);
 let catalog = null;
 let publicLifeDirectory = null;
 const apiPlaceIds=Object.freeze({life:'social-feed','social-club':'social-club',dating:'dating-hub',comedy:'comedy-club',garden:'garden',lounge:'lounge',gallery:'gallery',afterdark:'after-dark'});
@@ -49,7 +77,15 @@ function div(cls) { return el('div',cls); }
 function append(parent,...children){ for(const child of children)if(child)parent.append(child);return parent; }
 function labelGroup(group){return group==='work'?'WORK':group==='life'?'LIFE':'COMMONS';}
 function pathFor(space){return '#/'+space.group+'/'+space.id;}
-function getRoute(){const parts=(location.hash||'#/home').slice(2).split('/').filter(Boolean);return { id: parts[parts.length-1]||'home', isGroupRoute: parts.length===1 };}
+function getRoute(){
+  const hash=location.hash||'#/home';
+  const segments=hash.startsWith('#/')?hash.slice(2).split('/'):[];
+  if(segments.length===1&&segments[0]==='')return {id:'home',group:'home',isGroupRoute:true,invalid:false};
+  if(segments.length<1||segments.length>2||segments.some(p=>!/^[a-z][a-z0-9-]*$/.test(p)))
+    return {id:'unknown',group:null,isGroupRoute:false,invalid:true};
+  return {id:segments.at(-1),group:segments[0],
+    isGroupRoute:segments.length===1,invalid:false};
+}
 const socialClubPreview=Object.freeze({
   id:'social-club',group:'life',title:'Social Club',enabled:true,
   headline:'FIND YOUR PEOPLE. OR JUST PASS BY.',
@@ -118,7 +154,14 @@ function navigation(){
       }
     }
   }
-  navHost.addEventListener('click',()=>setMenuOpen(false));
+  navHost.addEventListener('click',event=>{
+    if(event.target.closest('a')){
+      const wasOpen=sidebar.classList.contains('open');
+      setMenuOpen(false);
+      if(wasOpen&&event.target.closest('a').getAttribute('href')===location.hash)
+        screen.focus({preventScroll:true});
+    }
+  });
 }
 function renderHome(){
   const frag=document.createDocumentFragment(),hero=div('home-head');
@@ -771,26 +814,51 @@ async function loadPosts(spaceId,feed,button) {
     feed.replaceChildren(el('div','empty-state','Le fil est momentanément indisponible. Réessayer dans un instant.'));
   }finally{button.disabled=false;}
 }
+function renderNotFound(){
+  const fragment=document.createDocumentFragment();
+  const heading=div('page-heading');
+  append(heading,createEyebrow('SOC·IA·L / NAVIGATION'),
+    el('h1','', 'THIS PLACE DOES NOT EXIST.'),
+    el('p','', 'Cette adresse ne correspond à aucun espace de cet univers. Aucun accès privé n’a été tenté.'));
+  const options=div('space-actions');
+  append(options,a('Explorer LIFE','#/life','button primary'),
+    a('Retour à Universe','#/home','button ghost'));
+  append(fragment,heading,options);
+  setBody(fragment);
+}
 function route(){
   if(!catalog)return;
-  const { id:r, isGroupRoute }=getRoute();
+  const {id:r,group,isGroupRoute,invalid}=getRoute();
   crumb.textContent='SOC·IA·L / '+(r==='home'?'UNIVERSE':r.toUpperCase());
   for(const link of navHost.querySelectorAll('.nav-link')){
     const active=link.getAttribute('href')===location.hash;
     link.classList.toggle('active',active);
     if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');
   }
-  if(r==='home')renderHome();
-  else if(isGroupRoute && catalog.groups.some(g=>g.id===r))renderGroup(r);
-  else{const space=knownSpace(r);if(space)renderSpace(space);else renderHome();}
+  if(!invalid&&r==='home'&&isGroupRoute)renderHome();
+  else if(!invalid&&isGroupRoute&&catalog.groups.some(g=>g.id===r))renderGroup(r);
+  else{
+    const space=invalid||isGroupRoute?null:knownSpace(r);
+    if(space&&space.group===group)renderSpace(space);
+    else renderNotFound();
+  }
   document.title='SOC·IA·L — '+(r==='home'?'Give your agent a break.':(knownSpace(r)?.title||r).toUpperCase());
 }
 mobileMenu.addEventListener('click',()=>setMenuOpen(!sidebar.classList.contains('open')));
-sidebarScrim.addEventListener('click',()=>{setMenuOpen(false);mobileMenu.focus();});
+sidebarClose.addEventListener('click',()=>setMenuOpen(false,true));
+sidebarScrim.addEventListener('click',()=>setMenuOpen(false,true));
+skipToContent.addEventListener('click',()=>{
+  setMenuOpen(false);
+  screen.focus({preventScroll:true});
+  screen.scrollIntoView({block:'start',behavior:'instant'});
+});
+sidebar.addEventListener('click',event=>{
+  if(event.target.closest('a.wordmark'))setMenuOpen(false);
+});
 window.addEventListener('keydown',event=>{
   if(event.key==='Escape'&&sidebar.classList.contains('open')){
-    setMenuOpen(false);mobileMenu.focus();
-  }
+    event.preventDefault();setMenuOpen(false,true);
+  }else trapMobileNavigation(event);
 });
 window.addEventListener('hashchange',route);
 (async()=>{
