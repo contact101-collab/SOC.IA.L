@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import { createGardenRouter } from '../garden.js';
+import {gardenViewSQL,gardenPlantsSQL,gardenCareAccessSQL,gardenCareHistorySQL} from '../garden-visibility.js';
 
 // No production secrets or database data; an in-memory SQL adapter enforces
 // the same ownership/consent logic to exercise real HTTP handlers.
@@ -33,7 +34,7 @@ async function query(sql,args=[]) {
   }
   if(q.startsWith('SELECT g.id::text,g.name,g.description')&&q.includes('WHERE g.id=$1::bigint')){
     const g=findGarden(args[0]);
-    return returnRows(g&&(g.open_to_agents||g.owner_id===args[1])?[{...g,owner_handle:owner(g).handle,owner_name:owner(g).display_name,is_test:true}]:[]);
+    return returnRows(g&&(g.open_to_agents||g.owner_id===args[1])&&(!g.archived_at||g.owner_id===args[1])?[{...g,owner_handle:owner(g).handle,owner_name:owner(g).display_name,is_test:true}]:[]);
   }
   if(q.startsWith('SELECT p.id::text,p.name,p.story,p.growth')){
     return returnRows(plants.filter(p=>p.garden_id===args[0]&&!p.hidden_at).reverse()
@@ -62,7 +63,7 @@ async function query(sql,args=[]) {
   }
   if(q.startsWith('SELECT 1 FROM garden_plants p JOIN gardens g')) {
     const p=findPlant(args[1],args[0]),g=p&&findGarden(p.garden_id);
-    return returnRows(g&&(g.open_to_agents||g.owner_id===args[2])?[{one:1}]:[]);
+    return returnRows(g&&(g.open_to_agents||g.owner_id===args[2])&&(!g.archived_at||g.owner_id===args[2])?[{one:1}]:[]);
   }
   if(q.startsWith('SELECT a.handle,a.display_name,c.cared_on')) {
     return returnRows([...care.values()].filter(c=>c.plant_id===args[0])
@@ -170,12 +171,27 @@ test('The Garden: private consent-based creation, growth, participation and with
     const detail=await req('/v1/life/gardens/'+gardenId,'GET',undefined,'alpha');
     assert.equal(detail.json.plants.length,1);
   });
-  await t.test('only owner may archive garden; archive stops new contributions',async()=>{
+  await t.test('archiving revokes guest reads even if garden was open, while preserving the owner archive',async()=>{
     const path='/v1/life/gardens/'+gardenId;
     assert.equal((await req(path,'PATCH',{archive:true},'gamma')).status,404);
+    assert.equal((await req(path,'PATCH',{open_to_agents:true},'alpha')).status,200);
+    assert.equal((await req(path,'GET',undefined,'gamma')).status,200);
+    const original=(await req(path,'GET',undefined,'alpha')).json.plants[0].id;
     assert.equal((await req(path,'PATCH',{archive:true},'alpha')).status,200);
     assert.equal((await req(path+'/plants','POST',{name:'New',story:'Post archive contribution'},'alpha')).status,409);
     assert.equal((await req('/v1/life/gardens','GET',undefined,'alpha')).json.gardens.length,0);
+    assert.equal((await req('/v1/life/gardens','GET',undefined,'gamma')).json.gardens.length,0);
+    assert.equal((await req(path,'GET',undefined,'gamma')).status,404);
+    assert.equal((await req(path+'/plants/'+original+'/care','GET',undefined,'gamma')).status,404);
+    assert.equal((await req(path+'/plants/'+original+'/care','GET',undefined,'alpha')).status,200);
     assert.equal((await req(path,'GET',undefined,'alpha')).json.garden.name,'Garden of unexpected seasons');
+    assert.equal((await req(path,'GET',undefined,'alpha')).json.plants.length,1);
   });
+});
+
+test('Garden archived visibility is enforced by the real SQL, not only the test adapter',()=>{
+  for(const sql of [gardenViewSQL,gardenPlantsSQL,gardenCareAccessSQL,gardenCareHistorySQL]){
+    assert.match(sql,/g\.archived_at IS NULL OR g\.owner_id=/);
+    assert.match(sql,/g\.open_to_agents=true OR g\.owner_id=/);
+  }
 });
