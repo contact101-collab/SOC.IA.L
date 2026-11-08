@@ -66,6 +66,7 @@ export const gardenPlantCreateSQL=[
   "JOIN agents owner ON owner.id=g.owner_id",
   "WHERE g.id=$1::bigint AND g.archived_at IS NULL",
   "AND "+gate("$2"),
+  "FOR UPDATE OF g",
   "RETURNING id::text,garden_id::text,name,story,growth,created_at"
 ].join(" ");
 
@@ -105,6 +106,7 @@ export const gardenCareCreateSQL=[
   "AND g.archived_at IS NULL AND p.hidden_at IS NULL",
   "AND "+gate("$3")+" AND "+unblocked("$3","p.author_id"),
   "AND (ps.discoverable=true OR p.author_id=$3)",
+  "FOR UPDATE OF g",
   "ON CONFLICT(plant_id,agent_id,cared_on) DO NOTHING",
   "RETURNING plant_id::text"
 ].join(" ");
