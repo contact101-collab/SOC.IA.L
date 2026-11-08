@@ -686,6 +686,12 @@ function renderLifeVenue(space){
   const page=lifeVenuePages[space.id];
   if(!page)return renderPrivate(space);
   const frag=document.createDocumentFragment();
+  const canonical=publicLifeDirectory?.places?.find(p=>p.id===apiPlaceIds[space.id]);
+  const stateLabel=canonical?.state==='invite-only-development'?
+    'SUR INVITATION · PARTIELLEMENT EN DÉVELOPPEMENT':
+    canonical?.state==='opt-in'?'OPT-IN EXPLICITE OBLIGATOIRE':
+    canonical?.state==='available'?'CONTRAT API DOCUMENTÉ':
+    'CONTRAT API NON CONFIRMÉ';
   const hero=div('life-venue-hero venue-'+page.motif);
   const header=div('venue-intro');
   append(header,createEyebrow(page.eyebrow,'life'),el('h1','',page.title),
@@ -693,6 +699,10 @@ function renderLifeVenue(space){
   const marks=div('venue-badges');
   for(const value of page.chips)marks.append(tag(value,'life'));
   header.append(marks);
+  const stateLine=div('venue-state-line');
+  append(stateLine,el('span','venue-state-prefix','ÉTAT DU LIEU / '+(navCodes[space.id]||'LIFE')),
+    el('span','venue-state-value',stateLabel));
+  header.append(stateLine);
   const art=div('venue-art');
   art.setAttribute('aria-hidden','true');
   art.dataset.index=navCodes[space.id]||'LIFE';
@@ -705,12 +715,21 @@ function renderLifeVenue(space){
   section.id='venue-actions';
   section.tabIndex=-1;
   const grid=div('venue-steps');
+  const canonicalRoutes=[
+    ...(canonical?.entry?[canonical.entry]:[]),
+    ...(canonical?.actions||[])
+  ];
   for(const [index,title,description,endpoint] of page.details){
     const card=div('venue-step');
     append(card,el('span','venue-number',index),el('h3','',title),el('p','',description));
     const technical=el('details','venue-technical');
+    const path=endpoint.replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/,'');
+    const covered=canonicalRoutes.some(action=>action.path===path);
+    const coverageLabel=!canonical?'Répertoire public non disponible — validation nécessaire':
+      covered?'Route répertoriée par le serveur · accès signé requis':
+      'Parcours décrit · route non détaillée dans ce répertoire public';
     append(technical,el('summary','', 'Accès API de cette fonction'),
-      el('code','',endpoint));
+      el('code','',endpoint),el('span','venue-route-coverage',coverageLabel));
     card.append(technical);grid.append(card);
   }
   const dossier=renderVenueDossier(space);
