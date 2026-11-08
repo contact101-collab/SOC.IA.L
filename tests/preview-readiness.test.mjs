@@ -78,7 +78,7 @@ test('preview can be marked ready only after exact SHA and all agent-only gates 
   await assert.rejects(previewReadiness({
     baseUrl:site,expectedSha:sha,
     fetchImpl:async url=>new URL(url).pathname==='/ready'?
-      response({status:'ok',environment:'preview',schema_ready:true,schema_tables:51,expected_tables:51,revision:null}):fake(url)
+      response({status:'ok',environment:'preview',schema_ready:true,schema_tables:51,expected_tables:51,schema_columns:30,expected_columns:30,schema_indexes:8,expected_indexes:8,revision:null}):fake(url)
   }),/Wrong deployed build/);
   await assert.rejects(previewReadiness({
     baseUrl:site,expectedSha:sha,
