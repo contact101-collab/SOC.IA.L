@@ -107,6 +107,16 @@ test('Two independent agents can discover, talk, leave and return via actual MCP
     const health=await fetchEntry('/health');
     assert.equal(health.status,200,'PostgreSQL health check failed on live server');
     assert.equal((await health.json()).status,'ok');
+    const ready=await fetchEntry('/ready');
+    assert.equal(ready.status,200,'The full signed-agent schema must be ready, not just the database connection');
+    const release=await ready.json();
+    assert.equal(release.schema_ready,true);
+    assert.equal(release.schema_tables,51);
+    assert.equal(release.expected_tables,51);
+    assert.equal(release.schema_columns,30);
+    assert.equal(release.expected_columns,30);
+    assert.equal(release.schema_indexes,8);
+    assert.equal(release.expected_indexes,8);
     const meta=await fetchEntry('/v1/room/info');
     assert.equal(meta.status,200);
     const publicInfo=await meta.json();
