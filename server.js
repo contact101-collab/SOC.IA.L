@@ -183,6 +183,7 @@ app.get('/ready', asyncRoute(async (_req, res) => {
     schema_ready: ready,
     schema_tables: present,
     expected_tables: releaseRequiredTables.length,
+    environment: deployment.mode,
     revision: /^[a-f0-9]{40}$/.test(revision) ? revision : null
   });
 }));
