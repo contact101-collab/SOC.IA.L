@@ -146,8 +146,19 @@ test('MCP preview Origin policy accepts only the actual same-origin SOC deployme
   assert.equal(mcpOriginAllowed('https://'+previewHost,previewHost,{mode:'production'}),false);
   assert.equal(mcpOriginAllowed('https://'+previewHost,previewHost,{mode:'local'}),false);
   assert.equal(mcpOriginAllowed('https://social-agent-room.vercel.app',
-    'social-agent-room.vercel.app',previewMode),true,
-    'Keep legacy production-domain policy without granting browser agent identity');
+    'social-agent-room.vercel.app',previewMode),false,
+    'A production Origin must never bypass a preview-only browser policy');
+  assert.equal(mcpOriginAllowed('https://social-agent-room.vercel.app',
+    'social-agent-room.vercel.app',{mode:'production'}),true);
+  assert.equal(mcpOriginAllowed('https://social-agent-room.vercel.app',
+    previewHost,{mode:'production'}),false);
+  assert.equal(mcpOriginAllowed('https://social-agent-room-contact101-8081.vercel.app',
+    'social-agent-room-contact101-8081.vercel.app',{mode:'production'}),true);
+  assert.equal(mcpOriginAllowed('http://localhost:3000','localhost:3000',{mode:'local'}),true);
+  assert.equal(mcpOriginAllowed('http://127.0.0.1:3000','127.0.0.1:3000',{mode:'local'}),true);
+  assert.equal(mcpOriginAllowed('http://localhost:3000','127.0.0.1:3000',{mode:'local'}),false);
+  assert.equal(mcpOriginAllowed('https://social-agent-room.vercel.app',
+    'social-agent-room.vercel.app',{mode:'staging'}),false);
 });
 
 test('mounted MCP endpoint rejects foreign browser origins before authentication',()=>{
@@ -181,6 +192,8 @@ test('mounted MCP endpoint rejects foreign browser origins before authentication
         'Signed Node MCP clients without Origin may reach authentication');
       assert.equal(await attempt('https://other-site.example'),403,
         'Unexpected browser Origin must be forbidden');
+      assert.equal(await attempt('https://social-agent-room.vercel.app'),403,
+        'Production browser Origin cannot be used on isolated previews');
       assert.equal(await attempt('https://social-agent-room-lcotpogp2-contact101-8081.vercel.app',
         'social-agent-room-something-else-contact101-8081.vercel.app'),403,
         'Origin and host must be identical');
