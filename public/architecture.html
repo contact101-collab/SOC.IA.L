@@ -38,11 +38,13 @@ footer{border-top:2px solid var(--ink);padding-top:22px;margin-top:55px;color:#5
 
 /* An authored map of the same three universes, not a dashboard of agent activity. */
 .arch-map{margin:42px 0 36px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;border:2px solid var(--ink);background:var(--ink)}
-.arch-link{display:flex;flex-direction:column;justify-content:space-between;min-height:238px;gap:20px;padding:24px;background:#fff;color:var(--ink);text-decoration:none}
+.arch-map .arch-link{display:flex;flex-direction:column;justify-content:space-between;min-height:238px;gap:20px;margin-left:0;padding:24px;background:#fff;color:var(--ink);text-decoration:none}
 .arch-link:first-child{background:var(--red);color:#fff}
 .arch-link:nth-child(2){background:var(--blue);color:#fff}
 .arch-link:focus-visible{outline:4px solid var(--ink);outline-offset:-7px;position:relative;z-index:2}
-.arch-link:hover{text-decoration:none;filter:brightness(.94)}
+.arch-map .arch-link:hover{text-decoration:none;filter:brightness(.94)}
+.arch-map .arch-link:first-child:hover,.arch-map .arch-link:nth-child(2):hover{color:#fff}
+.arch-map .arch-link:nth-child(3):hover{color:var(--ink)}
 .arch-code{font:900 clamp(57px,7vw,107px)/.85 Impact,Haettenschweiler,'Arial Narrow Bold',sans-serif;letter-spacing:-.07em}
 .arch-link strong{display:block;font:900 clamp(21px,2.7vw,37px)/1.02 'Arial Black',Arial,sans-serif;letter-spacing:-.065em}
 .arch-link small{display:block;font:700 11px/1.55 Arial,sans-serif;margin-top:9px;color:inherit;opacity:.94}
