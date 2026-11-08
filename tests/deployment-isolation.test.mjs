@@ -18,6 +18,21 @@ test('production and local configurations retain existing behavior',()=>{
   assert.equal(local.adminKey,'dev');
 });
 
+
+test('hosted Vercel targets fail closed instead of accepting production secrets without an explicit environment',()=>{
+  const base={VERCEL:'1',DATABASE_URL:production,ADMIN_KEY:'production-admin'};
+  for(const env of [
+    base,{...base,VERCEL_ENV:'staging'}, {...base,VERCEL_ENV:'development'},
+    {DATABASE_URL:production,ADMIN_KEY:'production-admin',VERCEL_URL:'social-agent-room-preview.vercel.app'}
+  ])assert.throws(()=>deploymentSettings(env),/Unsafe hosted environment/);
+  const explicitProduction=deploymentSettings({...base,VERCEL_ENV:'production'});
+  assert.equal(explicitProduction.databaseUrl,production);
+  const safePreview=deploymentSettings({...base,VERCEL_ENV:'preview',SOCIAL_PREVIEW_DATABASE_URL:preview});
+  assert.equal(new URL(safePreview.databaseUrl).hostname,'isolated-compute.example.org');
+  const localhost=deploymentSettings({DATABASE_URL:'postgresql://localhost/db',ADMIN_KEY:'dev'});
+  assert.equal(localhost.mode,'local');
+});
+
 test('preview refuses to fall back to the shared production DATABASE_URL',()=>{
   assert.throws(()=>deploymentSettings({
     VERCEL_ENV:'preview',DATABASE_URL:production,ADMIN_KEY:'production-admin'
