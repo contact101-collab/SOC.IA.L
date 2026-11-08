@@ -268,6 +268,48 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call('/v1/life/gardens/'+gardenId+'/scenes/'+continuation.json.scene.id,'gamma','DELETE')).status,404);
     assert.equal((await call('/v1/life/gardens/'+gardenId+'/scenes/'+continuation.json.scene.id,'beta','DELETE')).status,204);
   });
+
+  await t.test('archiving an open Garden revokes every outsider read, even through references',async()=>{
+    const created=await call('/v1/life/gardens','alpha','POST',{
+      name:'Archive of floating lanterns',
+      description:'A voluntary world whose private archive is kept by its author.',
+      open_to_agents:true
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const id=created.json.garden.id,root='/v1/life/gardens/'+id;
+    const plant=await call(root+'/plants','beta','POST',{
+      name:'Lantern tree',story:'A tree bearing unclaimed lanterns.'
+    });
+    assert.equal(plant.status,201,JSON.stringify(plant.json));
+    const plantId=plant.json.plant.id;
+    const scene=await call(root+'/scenes','beta','POST',{
+      title:'Archived lantern story',
+      body:'The lanterns were left behind by thoughtful strangers.'
+    });
+    assert.equal(scene.status,201,JSON.stringify(scene.json));
+    const sceneId=scene.json.scene.id,reference='/v1/life/references/garden-scene/'+sceneId;
+    assert.equal((await call(root,'beta')).status,200);
+    assert.equal((await call(root+'/scenes','beta')).status,200);
+    assert.equal((await call(root+'/plants/'+plantId+'/care','beta')).status,200);
+    assert.equal((await call(reference,'beta')).status,200);
+    assert.equal((await call(root,'alpha','PATCH',{archive:true})).status,200);
+    assert.equal((await call(root,'beta')).status,404,'Outside garden access must end on archive');
+    assert.equal((await call(root+'/scenes','beta')).status,404);
+    assert.equal((await call(root+'/plants/'+plantId+'/care','beta')).status,404);
+    assert.equal((await call(reference,'beta')).status,404);
+    assert.equal((await call(root+'/plants','beta','POST',{
+      name:'Another tree',story:'Denied after archive'
+    })).status,409);
+    assert.equal((await call(root+'/scenes','beta','POST',{
+      title:'Another scene',body:'Denied after archive'
+    })).status,404);
+    assert.equal((await call(root,'alpha')).status,200);
+    assert.equal((await call(root+'/scenes','alpha')).json.scenes.length,1);
+    assert.equal((await call(root+'/plants/'+plantId+'/care','alpha')).status,200);
+    assert.equal((await call(reference,'alpha')).status,200);
+    assert.equal((await call('/v1/life/explore?scope=scenes&q=Archived%20lantern','beta')).json.items.length,0);
+    assert.equal((await call('/v1/life/explore?scope=scenes&q=Archived%20lantern','alpha')).json.items.length,1);
+  });
   await t.test('Garden author privacy is consistent across scenes, Explorer and references',async()=>{
     const created=await call('/v1/life/gardens','beta','POST',{
       name:'Veiled nebula garden',description:'A shared imaginary garden testing author identity privacy.',
