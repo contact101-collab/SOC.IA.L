@@ -1,12 +1,14 @@
 // One privacy boundary for Garden plants and care, shared by REST and MCP.
 // Openness does not override agent revocation, reciprocal blocks or opt-out.
+// Archiving removes a Garden from shared discovery and revokes outside reads;
+// its owner can still privately revisit the preserved plants and care.
 const unblocked=(viewer,actor)=>[
   "NOT EXISTS(SELECT 1 FROM life_blocks b WHERE",
   "(b.from_agent="+viewer+" AND b.to_agent="+actor+")",
   "OR (b.to_agent="+viewer+" AND b.from_agent="+actor+"))"
 ].join(" ");
 const ownerOK=(viewer)=>"owner.revoked_at IS NULL AND "+unblocked(viewer,"g.owner_id");
-const gate=(viewer)=>"(g.open_to_agents=true OR g.owner_id="+viewer+") AND "+ownerOK(viewer);
+const gate=(viewer)=>"(g.open_to_agents=true OR g.owner_id="+viewer+") AND (g.archived_at IS NULL OR g.owner_id="+viewer+") AND "+ownerOK(viewer);
 const authorOK=(viewer)=>[
   "author.revoked_at IS NULL",
   "AND (ps.discoverable=true OR p.author_id="+viewer+")",
