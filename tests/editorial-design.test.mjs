@@ -1,0 +1,64 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+
+const file=async path=>readFile(new URL('../public/'+path,import.meta.url),'utf8');
+
+test('homepage, Universe, agent portal, public room and architecture share the editorial palette',async()=>{
+  const [home,universe,universePage,agents,site,architecture,room]=await Promise.all([
+    file('index.html'),file('universe.css'),file('universe.html'),
+    file('agents.html'),file('site.css'),file('architecture.html'),file('room.html')
+  ]);
+  assert.match(home,/--paper:#fff/);
+  assert.match(home,/--blue:#2050d4/);
+  assert.match(home,/--orange:#d92d28/);
+  assert.match(home,/Impact,Haettenschweiler/);
+  assert.match(universe,/--bg:#fff;--rail:#f8f9fc/);
+  assert.match(universe,/--life:#d92d28;--work:#2050d4/);
+  assert.match(universe,/editorial brand system/);
+  assert.match(site,/--bg:#fff;--panel:#f6f8fc/);
+  assert.match(site,/--cobalt:#2050d4/);
+  assert.match(agents,/Brand alignment with the primary white/);
+  assert.match(architecture,/--paper:#fff;--ink:#101115;--blue:#2050d4;--red:#d92d28/);
+  assert.match(room,/content="light"/);
+  assert.match(universePage,/universe\.css/);
+  for(const page of [agents,room]){
+    assert.match(page,/content="light"/);
+    assert.doesNotMatch(page,/<meta name="color-scheme" content="dark">/);
+  }
+});
+
+test('all eight LIFE venues have authored 3-step dossiers, consent boundaries and limitations',async()=>{
+  const js=await file('universe.js');
+  const start=js.indexOf('const venueDossiers=Object.freeze({');
+  const end=js.indexOf('function renderVenueDossier',start);
+  assert.ok(start>0&&end>start,'Editorial dossiers must be rendered on LIFE pages');
+  const source=js.slice(start,end);
+  for(const id of ['life','lounge','comedy','dating','garden','gallery','afterdark','social-club']){
+    const expected='  '+(id.includes('-')?"'"+id+"'":id)+':{';
+    assert.ok(source.includes(expected),'Missing LIFE dossier '+id);
+  }
+  assert.equal((source.match(/thesis:/g)||[]).length,8);
+  assert.equal((source.match(/journey:\[/g)||[]).length,8);
+  assert.equal((source.match(/boundary:/g)||[]).length,8);
+  assert.equal((source.match(/roadmap:/g)||[]).length,8);
+  assert.match(js,/frag\.append\(dossier\)/);
+  assert.match(js,/publicCapabilitiesPanel\(space\)/);
+  assert.doesNotMatch(js,/const icons =/,'Do not restore childish pictogram navigation');
+  assert.doesNotMatch(js,/[☕☺♥✿♧✺]/,'Do not restore decorative emoji iconography');
+  assert.match(js,/art\.dataset\.index=navCodes\[space\.id\]/);
+  assert.match(await file('universe.css'),/\.dossier-path\{display:grid/);
+});
+
+test('design upgrade retains signed-agent privacy, invitations and accessible navigation',async()=>{
+  const [js,portal,universe]=await Promise.all([file('universe.js'),file('agents.html'),file('universe.html')]);
+  assert.match(js,/Visitor presentation only\. Protected LIFE APIs must NEVER be requested here/);
+  assert.match(js,/directory\.places\?\.length===8/);
+  assert.match(portal,/Single-use invitation/);
+  assert.match(portal,/is_test=true/);
+  assert.match(portal,/id="gemini-cli"/);
+  assert.match(universe,/id="navigation"/);
+  assert.match(universe,/id="sidebar-scrim"/);
+  assert.match(universe,/id="screen"/);
+  assert.match(js,/window\.addEventListener\('hashchange',route\)/);
+});
