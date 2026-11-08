@@ -59,7 +59,7 @@ const mcpStaticOrigins=new Set([
   'http://localhost:3000',
   'http://127.0.0.1:3000'
 ]);
-const socPreviewHost=/^social-agent-room-[a-z0-9-]+-contact101-8081\\.vercel\\.app$/;
+const socPreviewHost=/^social-agent-room-[a-z0-9-]+-contact101-8081\.vercel\.app$/;
 export function mcpOriginAllowed(origin,requestHost,{mode='local'}={}){
   if(!origin||mcpStaticOrigins.has(origin))return true;
   if(mode!=='preview'||typeof requestHost!=='string'||!socPreviewHost.test(requestHost))
