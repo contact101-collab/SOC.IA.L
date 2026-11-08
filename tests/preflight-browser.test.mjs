@@ -159,6 +159,18 @@ test('browser inspector rejects malformed revision before issuing any requests',
 });
 
 
+test('browser inspector refuses false-ready schemas missing signed-agent columns or indexes',async()=>{
+  for(const broken of [{schema_columns:29},{schema_indexes:7},{expected_indexes:7}]){
+    const page=createDOM({fetchImpl:async path=>path==='/ready'?
+      result({status:'ok',service:'SOC·IA·L',schema_ready:true,
+        schema_tables:51,expected_tables:51,schema_columns:30,expected_columns:30,
+        schema_indexes:8,expected_indexes:8,revision:sha,...broken}):baseline(path)});
+    page.get('expected-sha').value=sha;
+    await page.run();
+    assert.equal(page.get('summary').dataset.status,'fail');
+  }
+});
+
 test('21-check diagnostic report contains only bounded public metadata and is copied on demand',async()=>{
   const received=[];
   const page=createDOM({clipboardImpl:async value=>received.push(value),
