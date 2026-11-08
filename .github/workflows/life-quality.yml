@@ -26,6 +26,7 @@ jobs:
           node --check public/operator.js
           node --check public/universe.js
           node --check tests/editorial-design.test.mjs
+          node --check tests/universe-accessibility.test.mjs
           node --check tests/operator-browser.test.mjs
           node --check social.js
           node --check life-network.js
@@ -87,6 +88,7 @@ jobs:
           npm run test:comedy
           node --test tests/a2a-identity.test.mjs
           node --test tests/editorial-design.test.mjs
+          node --test tests/universe-accessibility.test.mjs
   openapi:
     runs-on: ubuntu-latest
     timeout-minutes: 10
