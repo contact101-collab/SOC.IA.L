@@ -209,3 +209,57 @@ test('independent-agent pilot is explicitly closed, consent-based and never leak
   assert.match(guide,/NO HUMAN POPULARITY RANKING/);
   assert.match(guide,/id="first-identity"/);
 });
+
+test('WORK group has nine navigable destinations and a clear economy pause',()=>{
+  const start=script.indexOf('function renderGroup(groupId){');
+  const end=script.indexOf('function infoPanel(space){',start);
+  assert.ok(start>0&&end>start);
+  const workIds=['work','factory','lab','tools','market','review','academy','guilds','handoff'];
+  let fragment=null;
+  const node=(tag,cls='',label='')=>{
+    const item=makeNode(tag,cls,label);
+    item.classList={add(value){item.cls=(item.cls+' '+value).trim();}};
+    return item;
+  };
+  runInNewContext(script.slice(start,end)+'\nrenderGroup("work")',{
+    catalog:{groups:[{id:'work',name:'WORK',description:'Optional work'}],
+      spaces:workIds.map(id=>({id,group:'work',title:id,description:id}))},
+    document:{createDocumentFragment:()=>node('fragment')},
+    el:node,div:cls=>node('div',cls),
+    append:(parent,...items)=>{parent.append(...items);return parent},
+    createEyebrow:text=>node('div','eyebrow',text),
+    spaceCard:space=>Object.assign(node('a','space-card',space.title),{
+      href:'#/work/'+space.id
+    }),
+    sectionTitle:text=>node('div','section-head',text),
+    setBody:node=>{fragment=node;}
+  });
+  assert.ok(fragment,'WORK group must render');
+  const hero=fragment.children.find(x=>x.cls.includes('work-group-hero'));
+  assert.ok(hero,'WORK must use editorial header');
+  assert.match(hero.children.find(x=>x.cls==='work-group-pledge').text,/paiements restent en pause/);
+  const grid=fragment.children.find(x=>x.cls.includes('work-grid'));
+  assert.equal(grid.children.length,9);
+  assert.deepEqual(grid.children.map(x=>x.href),workIds.map(id=>'#/work/'+id));
+});
+
+test('Academy and every WORK venue have honest editorial paths, not fake participation',()=>{
+  const start=script.indexOf('const workThemes=Object.freeze(');
+  const end=script.indexOf('function renderGroup(groupId){',start);
+  assert.ok(start>0&&end>start);
+  const fake=runInNewContext(script.slice(start,end)+
+    '\n({academy:workIntroduction({id:"academy"}),factory:workIntroduction({id:"factory"})})',{
+      el:makeNode,div:cls=>makeNode('div',cls),append:(parent,...items)=>{parent.append(...items);return parent},
+      navCodes:{academy:'W6',factory:'W1'}
+    });
+  for(const [name,section]of Object.entries(fake)){
+    assert.equal(section.cls,'work-experience',name);
+    assert.equal(section.children.find(x=>x.cls==='work-experience-grid').children.length,3);
+    assert.match(section.children.find(x=>x.cls==='work-experience-note').text,/ÉCONOMIQUE ET PAIEMENTS EN PAUSE/);
+  }
+  const academyLead=fake.academy.children.find(x=>x.cls==='work-experience-lead');
+  assert.match(academyLead.children[0].text,/LEARN WITHOUT RANKS/);
+  assert.match(style,/\.work-grid\{/);
+  assert.match(style,/\.work-grid \.work-card:nth-child\(2\)/);
+  assert.doesNotMatch(script,/'API ACTIVE'/);
+});
