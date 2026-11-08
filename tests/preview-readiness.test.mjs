@@ -99,6 +99,19 @@ test('preview can be marked ready only after exact SHA and all agent-only gates 
 });
 
 
+test('schema readiness rejects missing critical Ed25519 columns and indexes even with 51 tables',async()=>{
+  const complete={status:'ok',environment:'preview',schema_ready:true,
+    schema_tables:51,expected_tables:51,schema_columns:30,expected_columns:30,
+    schema_indexes:8,expected_indexes:8,revision:sha};
+  for(const broken of [{schema_columns:29},{schema_indexes:7},{expected_columns:29}]){
+    await assert.rejects(previewReadiness({
+      baseUrl:site,expectedSha:sha,
+      fetchImpl:async url=>new URL(url).pathname==='/ready'?
+        response({...complete,...broken}):fake(url)
+    }),/Preview schema incomplete/);
+  }
+});
+
 test('read-only gate accepts ephemeral Vercel OIDC only for the pinned SOC preview domain',async()=>{
   const oidcToken='test-only-JWT-token-without-private-content-1234';
   let count=0;
