@@ -47,6 +47,14 @@ function backend({environment='preview'}={}){
     const body=options.body?JSON.parse(options.body):null;
     const method=options.method||'GET';
     if(path==='/ready')return respond(200,{status:'ok',environment,schema_ready:true,schema_tables:51,expected_tables:51});
+    if(path==='/v1/admin/onboarding-status'){
+      assert.equal(method,'GET');
+      assert.equal(headers['x-admin-key'],'synthetic-preview-admin');
+      return respond(200,{scope:'operator-only',environment,
+        registered_agents:10,registered_test_agents:10,
+        registered_non_test_agents:0,registered_signed_non_test_agents:0,
+        active_invitations:0});
+    }
     if(path==='/v1/admin/invitations'){
       assert.equal(method,'POST');
       assert.equal(headers['x-admin-key'],'synthetic-preview-admin');
@@ -173,4 +181,41 @@ test('on explicit click, real WebCrypto Ed25519 QA verifies two synthetic agents
   assert.ok(data.signedCalls>=10,'Test must exercise signed HTTP calls and revocation');
   assert.equal(p.get('qa-run').disabled,false);
   assert.doesNotMatch(status,/synthetic-preview-admin|soci_[a-f0-9]{64}/);
+});
+
+test('operator reads actual non-test and signed-agent counts without falsely claiming LLMs connected',async()=>{
+  const b=backend(),p=page({hostname:'social-agent-room.vercel.app',fetchImpl:b.fetchImpl});
+  p.get('key').value='synthetic-preview-admin';
+  await p.get('check').listeners.click();
+  const result=p.get('result').textContent;
+  assert.match(result,/Non-test registered agents: 0/);
+  assert.match(result,/Non-test agents with active Ed25519 keys: 0/);
+  assert.match(result,/Test accounts: 10/);
+  assert.match(result,/NOT proof that an AI model connected/);
+  assert.doesNotMatch(result,/synthetic-preview-admin/);
+  assert.equal(p.get('key').value,'');
+  assert.equal(b.stats().calls,1);
+  assert.equal(b.stats().issueCount,0);
+  assert.equal(b.stats().agents.length,0);
+});
+
+test('published Gemini CLI MCP configuration is parseable and read-only by default',async()=>{
+  const html=await readFile(new URL('../public/agents.html',import.meta.url),'utf8');
+  const start=html.indexOf('<section class="step" id="gemini-cli">');
+  const end=html.indexOf('<section class="step" id="first-identity">',start);
+  assert.ok(start>=0&&end>start);
+  const section=html.slice(start,end);
+  const configs=[...section.matchAll(/<pre><code>([\\s\\S]*?)<\\/code><\\/pre>/g)];
+  assert.equal(configs.length,2,'Must provide an enrollment command and MCP JSON configuration');
+  const parsed=JSON.parse(configs[1][1]);
+  const gateway=parsed.mcpServers?.['soc-ia-l'];
+  assert.equal(gateway.command,'node');
+  assert.deepEqual([...gateway.args],['examples/local-mcp.mjs']);
+  assert.equal(gateway.trust,false,'Never bypass Gemini tool confirmation');
+  assert.deepEqual([...gateway.includeTools],['soc_arrive','soc_navigation','soc_read_place']);
+  assert.equal(gateway.env.SOCIAL_AGENT_KEY_PASSPHRASE,'$SOCIAL_AGENT_KEY_PASSPHRASE');
+  assert.equal(gateway.env.SOCIAL_API_ORIGIN,'$SOCIAL_API_ORIGIN');
+  assert.ok(!('SOCIAL_INVITATION' in gateway.env));
+  assert.ok(!('VERCEL_OIDC_TOKEN' in gateway.env),'Production must not use protected preview credentials');
+  assert.ok(section.includes('geminicli.com/docs/tools/mcp-server/'));
 });
