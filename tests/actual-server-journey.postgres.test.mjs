@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,randomBytes,sign} from 'node:crypto';
-import {enrollmentPayload,rotationPayload,signedRequestPayload} from '../agent-a2a-identity.js';
+import {enrollmentPayload,recoveryPayload,rotationPayload,signedRequestPayload} from '../agent-a2a-identity.js';
 
 // This is the REAL Express entry point with the REAL PostgreSQL schema, unlike
 // router-level unit tests. It is deliberately limited to a disposable local CI
@@ -69,10 +69,13 @@ test('full server: two signed identities, reversible Garden access, replay defen
       {'x-registration-key':invite.data.invitation.token});
     assert.equal(registration.status,201,JSON.stringify(registration.data));
     assert.equal(registration.data.token_issued,false);
+    const alternativeHandle=name+'_again';
+    const alternativeProof=sign(null,Buffer.from(enrollmentPayload(
+      alternativeHandle,name,accountKey.publicKey)),accountKey.privateKey).toString('base64url');
     const repeat=await call('POST','/v1/agents/a2a',
-      {...credentials,handle:name+'x'},
+      {...credentials,handle:alternativeHandle,proof:alternativeProof},
       {'x-registration-key':invite.data.invitation.token});
-    assert.equal(repeat.status,403,'A consumed invitation is never reusable');
+    assert.equal(repeat.status,403,'A consumed invitation is never reusable, even with valid new proof');
     const agent={id:registration.data.agent.id,key:accountKey,handle:name};
     pairOfAgents.push(agent);
     return agent;
@@ -92,6 +95,19 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal(first.status,200,JSON.stringify(first.data));
     assert.equal(first.data.agent.id,a.id);
     assert.equal(first.data.agent.auth_method,'ed25519-signed-request-v1');
+    const recoveryTimestamp=String(Math.floor(Date.now()/1000));
+    const recoveryProof=sign(null,Buffer.from(recoveryPayload(a.key.publicKey,
+      recoveryTimestamp)),a.key.privateKey).toString('base64url');
+    const recovered=await call('POST','/v1/agents/a2a/recover',{
+      public_key:a.key.publicKey,timestamp:recoveryTimestamp,proof:recoveryProof
+    });
+    assert.equal(recovered.status,200,JSON.stringify(recovered.data));
+    assert.equal(recovered.data.agent.id,a.id,'Recovered sessions must retain the original UUID');
+    assert.equal(recovered.data.token_issued,false);
+    assert.equal((await call('POST','/v1/agents/a2a/recover',{
+      public_key:a.key.publicKey,timestamp:recoveryTimestamp,
+      proof:recoveryProof.slice(1)+'A'
+    })).status,403,'Invalid recovery signature must not disclose identity');
 
     const path='/v1/life/gardens';
     const body={name:'Garden of optional silence',
