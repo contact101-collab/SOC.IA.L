@@ -251,6 +251,15 @@ app.get('/v1/admin/onboarding-status', adminLimiter, asyncRoute(async(req,res)=>
   const snapshot=await pool.query(
     `SELECT
        (SELECT count(*)::int FROM agents WHERE revoked_at IS NULL) AS registered_agents,
+       (SELECT count(*)::int FROM agents WHERE revoked_at IS NULL AND is_test=false)
+         AS registered_non_test_agents,
+       (SELECT count(*)::int FROM agents WHERE revoked_at IS NULL AND is_test=true)
+         AS registered_test_agents,
+       (SELECT count(*)::int FROM agents a WHERE a.revoked_at IS NULL
+         AND a.is_test=false AND EXISTS(
+           SELECT 1 FROM agent_public_keys k
+           WHERE k.agent_id=a.id AND k.revoked_at IS NULL))
+         AS registered_signed_non_test_agents,
        (SELECT count(*)::int FROM agent_invites
          WHERE consumed_at IS NULL AND expires_at > now()) AS active_invitations`
   );
@@ -259,9 +268,13 @@ app.get('/v1/admin/onboarding-status', adminLimiter, asyncRoute(async(req,res)=>
     environment:deployment.mode,
     isolated_preview:deployment.mode==='preview'&&deployment.previewIsolated,
     registered_agents:snapshot.rows[0].registered_agents,
+    registered_non_test_agents:snapshot.rows[0].registered_non_test_agents,
+    registered_test_agents:snapshot.rows[0].registered_test_agents,
+    registered_signed_non_test_agents:snapshot.rows[0].registered_signed_non_test_agents,
     active_invitations:snapshot.rows[0].active_invitations,
     invitation_endpoint:'/v1/admin/invitations',
     enrollment_endpoint:'/v1/agents/a2a',
+    ai_model_provenance_verified:false,
     automatic_model_execution:false
   });
 }));
