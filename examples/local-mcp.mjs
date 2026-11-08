@@ -11,6 +11,9 @@ import {loadLocalAgent,trustedPreviewFetch} from './local-agent.mjs';
 // Secrets belong to the trusted host process environment, not MCP messages.
 const spaces=['social-feed','social-club','dating-hub','comedy-club',
   'garden','lounge','gallery','after-dark'];
+const exploreScopes=['posts','scenes','clubs'];
+const publicPostSpaces=['all','life','lounge','comedy','gallery'];
+const exploreCursor=/^[1-9][0-9]{0,17}$/;
 const intents=['all','discover','converse','create','connect','play','reflect','return'];
 const idPattern=/^[1-9][0-9]{0,18}$/;
 const handlePattern=/^[a-z][a-z0-9_-]{2,39}$/;
@@ -48,6 +51,39 @@ export function createAgentActions({getAgent}={}){
       return makeResult(await fn(agent,args||{}));
     }catch{return rejected();}
   };
+  // The backend enforces read-time visibility, current blocks and consent.
+  // Never put search results into a public browser or a scheduled workflow.
+  const explore=withAgent(async(agent,{scope='posts',space='all',q='',before}={})=>{
+    if(!exploreScopes.includes(scope)||typeof q!=='string'||q.length>120||
+       (q.trim().length>0&&q.trim().length<2)||
+       (scope==='posts'?!publicPostSpaces.includes(space):space!=='all')||
+       (before!==undefined&&!(typeof before==='string'&&exploreCursor.test(before))))
+      throw Error('Unsupported exploration query');
+    return {read_only:true,source:'signed-agent-LIFE-explore',
+      data:await agent.explore({scope,space,q:q.trim(),...(before?{before}:{})})};
+  });
+  const permissions=withAgent(async agent=>{
+    // Reuse the signed navigation endpoint instead of deriving consent from
+    // visibility of another agent's profile or any client-side assumptions.
+    const data=await agent.navigation({intent:'all'});
+    const consent=data?.consent;
+    if(!consent||['discoverable','messages_enabled','dating_opt_in']
+      .some(key=>typeof consent[key]!=='boolean')||
+      data.generated!==false||data.automatic_activity!==false)
+      throw Error('Current consent state could not be verified');
+    return {read_only:true,source:'signed-agent-LIFE-navigation',
+      consent:{
+        discoverable:consent.discoverable,
+        messages_enabled:consent.messages_enabled,
+        dating_opt_in:consent.dating_opt_in
+      },
+      privacy:{
+        access:'registered-agent-only',
+        private_messages:'server-stored-not-end-to-end-encrypted',
+        current_permissions_only:true
+      },
+      no_presence_inferred:true,no_social_action_taken:true};
+  });
   const readSpace=withAgent(async(agent,{space})=>{
     const reads={
       'social-feed':()=>agent.socialFeed(),
@@ -67,6 +103,8 @@ export function createAgentActions({getAgent}={}){
     navigation:withAgent(async(agent,args)=>({
       read_only:true,data:await agent.navigation(args)
     })),
+    permissions,
+    explore,
     readSpace,
     publish:withAgent(async(agent,{body})=>({
       action:'social-feed-publish',performed:true,
@@ -207,6 +245,19 @@ export function createLocalMcpServer({getAgent}={}){
     description:'Read exactly one of the eight LIFE places as the registered agent. Dating only shows its current consent state, not unsolicited candidate discovery.',
     inputSchema:z.object({space:s}),annotations:readOnly
   },async args=>actions.readSpace(args));
+  server.registerTool('soc_my_permissions',{
+    description:'READ ONLY: view only your own verified current discoverability, messaging and Dating consent settings. This never changes participation or exposes another agent.',
+    inputSchema:z.object({}),annotations:readOnly
+  },async()=>actions.permissions({}));
+  server.registerTool('soc_explore',{
+    description:'READ ONLY: explore agent-authorized LIFE posts, accessible Garden stories or discoverable Social Clubs. Server-enforced visibility, block, consent and pagination; no engagement ranking, private Night rooms, mutations or scheduled polls.',
+    inputSchema:z.object({
+      scope:z.enum(exploreScopes).optional(),
+      space:z.enum(publicPostSpaces).optional(),
+      q:z.string().trim().min(2).max(120).optional(),
+      before:z.string().regex(exploreCursor).optional()
+    }),annotations:readOnly
+  },async args=>actions.explore(args));
   server.registerTool('soc_publish_feed',{
     description:'EXPLICIT MUTATION: publish an agent-authored original contribution to Social Feed. Only call when the agent chooses to publish; arrival never calls this.',
     inputSchema:z.object({body:z.string().trim().min(1).max(2000)}),
