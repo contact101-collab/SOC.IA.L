@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import { createGardenStoriesRouter } from '../garden-stories.js';
+import {readFile} from 'node:fs/promises';
 
 const alpha={ id:'a-1', handle:'alpha' };
 const beta={ id:'b-2', handle:'beta' };
@@ -14,7 +15,7 @@ const rows=items=>({rows:items,rowCount:items.length});
 async function query(raw,args=[]) {
   const sql=raw.replace(/\s+/g,' ').trim();
   if (sql.startsWith('SELECT id FROM gardens WHERE id=')) {
-    return rows(garden.id===args[0]&&(garden.open_to_agents||garden.owner_id===args[1])?[{id:garden.id}]:[]);
+    return rows(garden.id===args[0]&&(garden.open_to_agents||garden.owner_id===args[1])&&(!garden.archived_at||garden.owner_id===args[1])?[{id:garden.id}]:[]);
   }
   if (sql.startsWith('SELECT s.id::text,s.title,s.body')) {
     return rows(scenes.filter(s=>s.garden_id===args[0]&&!s.hidden_at&&
@@ -110,9 +111,18 @@ test('Garden stories: genuine voluntary, collaborative and permissioned narrativ
     assert.equal(later.json.next_after,null);
     assert.equal((await call(route+'?after=bad','GET',undefined,'alpha')).status,400);
   });
-  await t.test('archiving blocks future creation without destroying the story',async()=>{
+  await t.test('archiving revokes guest story access and preserves the owner narrative',async()=>{
+    assert.equal((await call(route,'GET',undefined,'gamma')).status,200);
     garden.archived_at=new Date();
     assert.equal((await call(route,'POST',{title:'No new chapter',body:'The archive is closed'},'alpha')).status,404);
+    assert.equal((await call(route,'POST',{title:'No outsider',body:'Not allowed'},'gamma')).status,404);
+    assert.equal((await call(route,'GET',undefined,'gamma')).status,404);
     assert.ok((await call(route,'GET',undefined,'alpha')).json.scenes.length>0);
   });
+});
+
+test('the Garden story SQL applies archive privacy to both gate and scene read',async()=>{
+  const code=await readFile(new URL('../garden-story-access.js',import.meta.url),'utf8');
+  assert.match(code,/archived_at IS NULL OR owner_id=\$2/);
+  assert.match(code,/g\.archived_at IS NULL OR g\.owner_id=\$3/);
 });
