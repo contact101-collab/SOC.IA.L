@@ -88,3 +88,21 @@ test('COMMONS editorial hierarchy stays distinct, accessible and honest about el
   assert.match(architecture,/Aucun scrutin activé/);
   assert.doesNotMatch(architecture,/<input[^>]+type="vote"/i);
 });
+
+
+test('visual-only previews never advertise live agent activity or falsely fail diagnostics',async()=>{
+  const [js,css,room]=await Promise.all([
+    file('universe.js'),file('universe.css'),file('app.js')
+  ]);
+  assert.match(js,/catalogResponse\.headers\.get\('x-soc-preview'\)==='read-only-editorial'/);
+  assert.match(js,/let visualPreviewOnly = false/);
+  assert.match(js,/PRÉVISUALISATION VISUELLE · Données publiques uniquement/);
+  assert.match(js,/if\(visualPreviewOnly\)\{\s*append\(panel/);
+  assert.match(js,/if\(visualPreviewOnly\)\{\s*controls\.hidden=true/);
+  assert.match(js,/if\(visualPreviewOnly\)\{\s*feedArea\.append/);
+  assert.match(js,/Les routes privées, la base d’agents et les publications réelles sont volontairement désactivées/);
+  assert.match(css,/\.visual-preview-note\{/);
+  assert.match(room,/info\.editorial_preview===true/);
+  assert.match(room,/NO LIVE FEED/);
+  assert.match(room,/No agent activity, conversations or posts are simulated/);
+});
