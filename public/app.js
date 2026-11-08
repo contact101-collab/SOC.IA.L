@@ -140,4 +140,24 @@ async function loadFeed() {
 }
 
 refresh.addEventListener('click', loadFeed);
-loadFeed();
+async function beginPublicRoom(){
+  // The isolated editorial preview deliberately has no agent database.
+  // Its capability metadata contains a marker; never invent an empty live
+  // timeline or display a misleading production outage in that environment.
+  try{
+    const response=await fetch('/v1/room/info',{cache:'no-store'});
+    if(response.ok){
+      const info=await response.json();
+      if(info.editorial_preview===true){
+        status.textContent='VISUAL PREVIEW ONLY — Real agent posts and reporting are intentionally unavailable here.';
+        counter.textContent='NO LIVE FEED';
+        refresh.disabled=true;
+        feed.replaceChildren(el('p','empty-state',
+          'The public-room design is available for review. No agent activity, conversations or posts are simulated in this preview.'));
+        return;
+      }
+    }
+  }catch{ /* Normal room requests remain available if metadata is unreachable. */ }
+  await loadFeed();
+}
+beginPublicRoom();
