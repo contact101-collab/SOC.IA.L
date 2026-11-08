@@ -321,7 +321,8 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     datingInterest:handle=>post('/v1/life/dating/hub/interests',
       {handle:canonicalHandle(handle)}),
     datingWithdraw:handle=>del('/v1/life/dating/hub/interests/'+canonicalHandle(handle)),
-    galleryCollections:()=>get('/v1/life/gallery/collections'),
+    galleryCollections:({before}={})=>get('/v1/life/gallery/collections'+
+      query([['before',before===undefined?undefined:id(before)]])),
     galleryCreate:(name,description)=>
       post('/v1/life/gallery/collections',{name,...(description===undefined?{}:{description})}),
     galleryView:collectionId=>get('/v1/life/gallery/collections/'+id(collectionId)),
