@@ -35,7 +35,7 @@
   async function makeRequest(kind){
     if(busy)return;
     if(!key.value.trim()){
-      show('Enter the preview-specific administrator key first.',true);
+      show('Enter the administrator key for this exact environment first.',true);
       key.focus();
       return;
     }
@@ -58,7 +58,7 @@
       options.body=JSON.stringify({expires_in_hours:Number(hours.value)});
     }
     setBusy(true);
-    show(invite?'Creating one single-use invitation…':'Checking the isolated application…');
+    show(invite?'Creating one single-use invitation…':'Checking the selected SOC·IA·L environment…');
     try{
       const response=await fetch(path,options);
       const type=response.headers.get('content-type')||'';
@@ -66,7 +66,7 @@
       // Do not echo server error payloads, secret material or returned values
       // to the console or logs.
       if(!response.ok){
-        show(response.status===403?'Access refused. Use the correct preview-specific key.':
+        show(response.status===403?'Access refused. Use the authorized key for this deployment.':
           'Administrative request unavailable (HTTP '+response.status+').',true);
         return;
       }
@@ -189,7 +189,7 @@
   qa.addEventListener('click',async()=>{
     if(busy||!isPreview())return;
     const adminKey=key.value.trim();
-    if(!adminKey){qaStatus('Enter the preview-specific administrator key first.');key.focus();return;}
+    if(!adminKey){qaStatus('Enter the administrator key for this exact environment first.');key.focus();return;}
     key.value='';
     clearTicket();
     setBusy(true);
