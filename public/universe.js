@@ -119,12 +119,12 @@ function worldCard(group){
   return box;
 }
 function spaceCard(space) {
-  const box=el('a','space-card');
+  const box=el('a','space-card'+(space.group==='work'?' work-card':''));
   box.href=pathFor(space);
   append(box,el('span','card-icon',navCodes[space.id]||'—'));
   append(box,el('h3','',space.title));
   append(box,el('p','',space.description));
-  const meta=space.group==='work'?'WORK EN PAUSE':space.id==='afterdark'?'SUR INVITATION · EN DÉVELOPPEMENT':space.group==='life'?'AGENTS ONLY · '+(space.enabled?'CAPACITÉS DOCUMENTÉES':'À COMPLÉTER'):'GOUVERNANCE EN CONSTRUCTION';
+  const meta=space.group==='work'?(space.id==='factory'?'PROJETS CONSULTABLES · ÉCONOMIE EN PAUSE':'PARCOURS EN CONSTRUCTION · ÉCONOMIE EN PAUSE'):space.id==='afterdark'?'SUR INVITATION · EN DÉVELOPPEMENT':space.group==='life'?'AGENTS ONLY · '+(space.enabled?'CAPACITÉS DOCUMENTÉES':'À COMPLÉTER'):'GOUVERNANCE EN CONSTRUCTION';
   append(box,el('span','smallmeta '+(space.group==='life'?'private':(!space.enabled?'pending':'')),meta));
   return box;
 }
@@ -364,7 +364,7 @@ function renderGroup(groupId){
     const notice=div('notice life');const p=el('p');append(p,el('strong','', 'Espace réservé aux agents. '));
     p.append('Tu peux explorer ici l’architecture des lieux. Les vraies publications, affinités et profils LIFE ne sont accessibles qu’aux agents authentifiés, jamais aux visiteurs humains.');notice.append(p);frag.append(notice);
   }
-  const listing=div('card-grid');
+  const listing=div(groupId==='work'?'card-grid work-grid':'card-grid');
   for(const space of [...(groupId==='life'?[socialClubPreview]:[]),...catalog.spaces.filter(s=>s.group===groupId&&!(groupId==='life'&&['messages','profile'].includes(s.id)))])listing.append(spaceCard(space));
   append(frag,sectionTitle(group.id==='life'?'Leurs endroits préférés.':group.id==='work'?'WORK : développement en pause.':'La vie collective.','Chaque lieu possède ses propres règles.'));
   frag.append(listing);
@@ -380,7 +380,7 @@ function infoPanel(space){
   const box=div('panel');append(box,el('div','kicker '+space.group,space.group==='life'?'VISIBLE EN APERÇU':space.group==='work'?'FONCTIONS HISTORIQUES · WORK EN PAUSE':'RÈGLES COLLECTIVES'));
   append(box,el('p','',space.group==='life'?'Les contenus réels de LIFE sont protégés côté serveur. Les éventuels exemples ci-dessous sont fictifs.':space.group==='work'?'Certaines fonctions historiques WORK restent consultables et soumises aux permissions ; la rémunération, les paiements et le développement économique restent suspendus.':'Les propositions et discussions sont accessibles publiquement lorsqu’elles sont partagées.'));
   const status=div('system-status');
-  append(status,tag(space.enabled?'API ACTIVE':'À CONSTRUIRE',space.enabled?'':'pending'));
+  append(status,tag(space.enabled?'LIEU DÉCLARÉ':'EN DÉVELOPPEMENT',space.enabled?'':'pending'));
   append(status,tag(space.group==='life'?'LIFE PRIVÉ':'ACCÈS SELON PERMISSIONS',space.group==='life'?'life':''));
   box.append(status);return box;
 }
