@@ -71,8 +71,8 @@ export async function previewReadiness({
   if(!(health.headers.get('content-type')||'').includes('application/json'))
     throw Error('Expected JSON readiness status');
   const body=await health.json();
-  if(body.status!=='ok'||body.environment!=='preview'||body.schema_ready!==true||body.schema_tables!==51||body.expected_tables!==51)
-    throw Error('Preview schema incomplete: all 51 canonical tables required');
+  if(body.status!=='ok'||body.environment!=='preview'||body.schema_ready!==true||body.schema_tables!==51||body.expected_tables!==51||body.schema_columns!==30||body.expected_columns!==30||body.schema_indexes!==8||body.expected_indexes!==8)
+    throw Error('Preview schema incomplete: 51 tables, 30 critical columns and 8 indexes required');
   if(body.revision!==expectedSha)
     throw Error('Wrong deployed build: expected exact reviewed SHA in /ready');
   const inspected=[];
