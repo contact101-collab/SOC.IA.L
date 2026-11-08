@@ -718,3 +718,19 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .work-experience-grid{grid-template-columns:1fr}
   .work-experience-step{min-height:96px;gap:12px}
 }
+
+/* WORK index: numbered editorial grid, same red / blue / black vocabulary as LIFE. */
+.work-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--black);border:2px solid var(--black);margin:0 0 55px}
+.work-grid .work-card{border:0;border-radius:0;min-height:256px;padding:23px 22px;gap:13px;background:#fff;transition:background .15s,color .15s;justify-content:flex-start}
+.work-grid .work-card .card-icon{font:900 clamp(49px,6.3vw,89px)/.82 Impact,Haettenschweiler,'Arial Narrow Bold',sans-serif;letter-spacing:-.07em;color:var(--black);border:0;width:auto;padding:0}
+.work-grid .work-card h3{font:900 clamp(19px,2.1vw,30px)/1.01 'Arial Black',Arial,sans-serif;letter-spacing:-.065em;text-transform:uppercase;margin:11px 0 0}
+.work-grid .work-card p{font:600 13px/1.57 Arial,sans-serif}
+.work-grid .work-card .smallmeta{font:900 9px/1.5 ui-monospace,monospace;letter-spacing:.035em;margin-top:auto;padding-top:16px;border-top:2px solid currentColor;color:var(--muted)}
+.work-grid .work-card:nth-child(2),.work-grid .work-card:nth-child(8){background:var(--cobalt);color:#fff}
+.work-grid .work-card:nth-child(5){background:var(--red);color:#fff}
+.work-grid .work-card:nth-child(2) .card-icon,.work-grid .work-card:nth-child(8) .card-icon,.work-grid .work-card:nth-child(5) .card-icon,
+.work-grid .work-card:nth-child(2) p,.work-grid .work-card:nth-child(8) p,.work-grid .work-card:nth-child(5) p,
+.work-grid .work-card:nth-child(2) .smallmeta,.work-grid .work-card:nth-child(8) .smallmeta,.work-grid .work-card:nth-child(5) .smallmeta{color:#fff}
+.work-grid .work-card:hover,.work-grid .work-card:focus-visible{transform:none;outline:3px solid var(--black);outline-offset:-6px;position:relative;z-index:1}
+@media(max-width:1000px){.work-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.work-grid{grid-template-columns:1fr}.work-grid .work-card{min-height:210px}.work-grid .work-card .card-icon{font-size:74px}}
