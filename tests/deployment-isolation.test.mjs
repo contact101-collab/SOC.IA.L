@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { deploymentSettings } from '../deployment-env.js';
+import { deploymentSettings, mcpOriginAllowed } from '../deployment-env.js';
 
 const production='postgresql://owner:prod-secret@prod-compute.example.org/neondb?sslmode=require';
 const preview='postgresql://guest:preview-secret@isolated-compute.example.org/neondb?sslmode=require';
@@ -114,4 +114,66 @@ test('real preview Express server uses its isolated DB URL and refuses a product
   });
   assert.equal(run.status,0,(run.stderr||run.stdout).slice(0,2000));
   assert.match(run.stdout,/SAFE_PREVIEW_CONFIRMED/);
+});
+
+test('MCP preview Origin policy accepts only the actual same-origin SOC deployment',()=>{
+  const previewHost='social-agent-room-lcotpogp2-contact101-8081.vercel.app';
+  const branchHost='social-agent-room-git-fix-rc6-dating-age-f0e136-contact101-8081.vercel.app';
+  const previewMode={mode:'preview'};
+  assert.equal(mcpOriginAllowed('https://'+previewHost,previewHost,previewMode),true);
+  assert.equal(mcpOriginAllowed('https://'+branchHost,branchHost,previewMode),true);
+  assert.equal(mcpOriginAllowed(undefined,previewHost,previewMode),true,
+    'Trusted non-browser agent runtimes do not send Origin');
+  assert.equal(mcpOriginAllowed('https://'+previewHost,branchHost,previewMode),false,
+    'Do not permit a different preview as a browser origin');
+  assert.equal(mcpOriginAllowed('https://attacker.vercel.app','attacker.vercel.app',previewMode),false);
+  assert.equal(mcpOriginAllowed('https://social-agent-room.evil.org','social-agent-room.evil.org',previewMode),false);
+  assert.equal(mcpOriginAllowed('https://'+previewHost,previewHost,{mode:'production'}),false);
+  assert.equal(mcpOriginAllowed('https://'+previewHost,previewHost,{mode:'local'}),false);
+  assert.equal(mcpOriginAllowed('https://social-agent-room.vercel.app',
+    'social-agent-room.vercel.app',previewMode),true,
+    'Keep legacy production-domain policy without granting browser agent identity');
+});
+
+test('mounted MCP endpoint rejects foreign browser origins before authentication',()=>{
+  const env={
+    ...process.env,SOCIAL_TEST_MODE:'1',VERCEL_ENV:'preview',
+    DATABASE_URL:production,SOCIAL_PREVIEW_DATABASE_URL:preview,
+    PGSSL:'false'
+  };
+  const script=`
+    import assert from 'node:assert/strict';
+    const {app,pool}=await import('./server.js');
+    const s=await new Promise(resolve=>{
+      const listener=app.listen(0,'127.0.0.1',()=>resolve(listener));
+    });
+    try{
+      const host='social-agent-room-lcotpogp2-contact101-8081.vercel.app';
+      const base='http://127.0.0.1:'+s.address().port+'/mcp';
+      const attempt=async(origin,hostname=host)=>{
+        const headers={host:hostname,authorization:'Bearer definitely-invalid'};
+        if(origin)headers.origin=origin;
+        const response=await fetch(base,{headers,redirect:'manual'});
+        return response.status;
+      };
+      assert.equal(await attempt('https://'+host),401,
+        'Legitimate preview browser Origin may reach authentication');
+      assert.equal(await attempt(null),401,
+        'Signed Node MCP clients without Origin may reach authentication');
+      assert.equal(await attempt('https://other-site.example'),403,
+        'Unexpected browser Origin must be forbidden');
+      assert.equal(await attempt('https://social-agent-room-lcotpogp2-contact101-8081.vercel.app',
+        'social-agent-room-something-else-contact101-8081.vercel.app'),403,
+        'Origin and host must be identical');
+    }finally{
+      await new Promise(resolve=>s.close(resolve));
+      await pool.end();
+    }
+    process.stdout.write('PREVIEW_MCP_ORIGIN_GUARD_PASS');
+  `;
+  const run=spawnSync(process.execPath,['--input-type=module','-e',script],{
+    cwd:new URL('../',import.meta.url).pathname,env,encoding:'utf8',timeout:15000
+  });
+  assert.equal(run.status,0,(run.stderr||run.stdout).slice(0,2000));
+  assert.match(run.stdout,/PREVIEW_MCP_ORIGIN_GUARD_PASS/);
 });
