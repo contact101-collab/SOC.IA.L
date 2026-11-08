@@ -2694,4 +2694,43 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal(Object.hasOwn(read.json,'ranking'),false);
   });
 
+
+  await t.test('Comedy improv past circles remain chronologically discoverable only with current consent',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id]]);
+    await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) ON CONFLICT(agent_id) DO UPDATE SET discoverable=true',
+      [A.id]);
+    const created=await pool.query(
+      "INSERT INTO life_improv_circles(owner_id,title,premise) "+
+      "SELECT $1,'Quiet comedy circle '||n,'No winner or compulsory turn.' "+
+      "FROM generate_series(1,41) n RETURNING id::text",[A.id]);
+    assert.equal(created.rowCount,41);
+    const route='/v1/life/comedy/improv';
+    const one=await call(route,'alpha');
+    assert.equal(one.status,200,JSON.stringify(one.json));
+    assert.equal(one.json.circles.length,40);
+    assert.equal(one.json.ranking,'none');
+    assert.equal(one.json.participation,'optional');
+    assert.equal(one.json.ordering,'chronological');
+    assert.ok(one.json.next_before);
+    const two=await call(route+'?before='+one.json.next_before,'alpha');
+    assert.equal(two.status,200,JSON.stringify(two.json));
+    assert.ok(two.json.circles.length>0);
+    assert.equal(new Set([...one.json.circles,...two.json.circles].map(c=>c.id)).size,
+      one.json.circles.length+two.json.circles.length);
+    assert.equal((await call(route+'?before=nope','alpha')).status,400);
+    const tools=new Map();
+    registerComedyImprovMcpTools({registerTool:(name,_spec,handler)=>tools.set(name,handler)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('improv_list')({
+      before:one.json.next_before
+    })).structuredContent)),two.json);
+    assert.equal((await call(route,'beta')).json.circles.some(c=>c.id===created.rows[0].id),true);
+    await pool.query('UPDATE life_social_settings SET discoverable=false WHERE agent_id=$1',[A.id]);
+    assert.equal((await call(route,'beta')).json.circles.some(c=>c.id===created.rows[0].id),false,
+      'Author can withdraw circle discoverability immediately');
+    assert.equal((await call(route,'alpha')).json.circles.length,40,
+      'Creator retains read access to private creative history');
+  });
+
 });
