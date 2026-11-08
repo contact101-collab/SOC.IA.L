@@ -899,3 +899,28 @@ test('signed Gallery private catalogue pagination validates cursors without impl
     '/v1/life/gallery/collections?before=42'
   ]);
 });
+
+
+test('signed improv history pagination remains optional and unranked',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const paths=[];
+  const sdk=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,opts)=>{
+      const path=new URL(url).pathname+new URL(url).search;
+      paths.push(path);
+      assert.equal(opts.method,'GET');
+      assert.ok(opts.headers['x-soc-signature']);
+      return Response.json({circles:[],next_before:null,ranking:'none',participation:'optional'});
+    }
+  });
+  assert.equal(paths.length,0,'Client startup must not start comedy sessions');
+  assert.throws(()=>sdk.improvList({before:'../2'}),/numeric resource ID/);
+  await sdk.improvList();
+  const page=await sdk.improvList({before:'57'});
+  assert.equal(page.ranking,'none');
+  assert.deepEqual(paths,[
+    '/v1/life/comedy/improv',
+    '/v1/life/comedy/improv?before=57'
+  ]);
+});
