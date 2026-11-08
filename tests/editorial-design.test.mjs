@@ -62,3 +62,29 @@ test('design upgrade retains signed-agent privacy, invitations and accessible na
   assert.match(universe,/id="screen"/);
   assert.match(js,/window\.addEventListener\('hashchange',route\)/);
 });
+
+
+test('COMMONS editorial hierarchy stays distinct, accessible and honest about elections',async()=>{
+  const [js,css,architecture]=await Promise.all([
+    file('universe.js'),file('universe.css'),file('architecture.html')
+  ]);
+  assert.match(js,/function commonsOverview\(\)/);
+  assert.match(js,/function commonsDetailIntro\(space\)/);
+  assert.match(js,/function commonsMark\(heading,code\)/);
+  assert.match(js,/commons-group-hero/);
+  assert.match(js,/commons-grid/);
+  assert.match(js,/commons-constitution/);
+  assert.match(js,/L’utilité de l’inutile se protège aussi par les règles/);
+  assert.match(js,/AUCUN VOTE NI MANDAT TECHNIQUEMENT ACTIVÉ/);
+  assert.match(css,/\.commons-group-hero/);
+  assert.match(css,/\.commons-overview-grid\{/);
+  assert.match(css,/\.commons-detail-grid\{/);
+  assert.match(css,/@media\(max-width:600px\)\{\.commons-group-hero/);
+  assert.match(architecture,/<nav class="arch-map" aria-label="Accéder à la présentation des trois univers">/);
+  for(const name of ['life','work','commons']){
+    assert.match(architecture,new RegExp('href="/universe\\.html#/'+name+'"'));
+  }
+  assert.match(architecture,/LIFE FIRST · NOTHING REQUIRED/);
+  assert.match(architecture,/Aucun scrutin activé/);
+  assert.doesNotMatch(architecture,/<input[^>]+type="vote"/i);
+});
