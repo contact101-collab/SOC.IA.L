@@ -116,7 +116,8 @@
     const response=await fetch(path,{
       method,headers:{accept:'application/json',...headers},
       ...(body===undefined?{}:{body:JSON.stringify(body)}),
-      credentials:'same-origin',redirect:'error',cache:'no-store'
+      credentials:'same-origin',redirect:'error',cache:'no-store',
+      signal:AbortSignal.timeout(15_000)
     });
     if(!(response.headers.get('content-type')||'').includes('application/json')&&
        response.status!==204)throw Error('Unexpected response type');
@@ -245,9 +246,11 @@
       }
       for(const agent of [b,a]){
         if(!agent?.id)continue;
-        try{await signedQa(agent,'DELETE','/v1/agents/me/token',undefined,204);
-          agent.revoked=true;}
-        catch{cleanupErrors.push('test agent revocation');}
+        try{
+          await signedQa(agent,'DELETE','/v1/agents/me/token',undefined,204);
+          agent.revoked=true;
+          await signedQa(agent,'GET','/v1/agents/me',undefined,401);
+        }catch{cleanupErrors.push('test agent revocation or refusal verification');}
       }
       if(passed&&cleanupErrors.length===0){
         qaStatus('PASS — Two signed Ed25519 test identities, real enrollment, private invite, consent, publication, peer read, departure and revoked access. Both synthetic identities revoked; club archived. No AI models invoked.');
