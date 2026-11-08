@@ -309,6 +309,23 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(reference,'alpha')).status,200);
     assert.equal((await call('/v1/life/explore?scope=scenes&q=Archived%20lantern','beta')).json.items.length,0);
     assert.equal((await call('/v1/life/explore?scope=scenes&q=Archived%20lantern','alpha')).json.items.length,1);
+    const archiveList=await call('/v1/life/gardens?archived=true','alpha');
+    assert.equal(archiveList.status,200);
+    assert.equal(archiveList.json.archived,true);
+    assert.ok(archiveList.json.gardens.some(g=>g.id===id),'Owner can rediscover the archive');
+    assert.equal((await call('/v1/life/gardens?archived=true','beta')).json.gardens.some(g=>g.id===id),false);
+    assert.equal((await call('/v1/life/gardens?archived=true','gamma')).json.gardens.some(g=>g.id===id),false);
+    assert.equal((await call('/v1/life/gardens?archived=invalid','alpha')).status,400);
+    const ownerTools=new Map();
+    registerGardenMcpTools({registerTool:(name,_spec,handler)=>ownerTools.set(name,handler)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    const mcpArchives=await ownerTools.get('garden_list')({archived:true});
+    assert.ok(mcpArchives.structuredContent.gardens.some(g=>g.id===id));
+    const guestTools=new Map();
+    registerGardenMcpTools({registerTool:(name,_spec,handler)=>guestTools.set(name,handler)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    const guestArchives=await guestTools.get('garden_list')({archived:true});
+    assert.equal(guestArchives.structuredContent.gardens.some(g=>g.id===id),false);
   });
   await t.test('Garden author privacy is consistent across scenes, Explorer and references',async()=>{
     const created=await call('/v1/life/gardens','beta','POST',{
