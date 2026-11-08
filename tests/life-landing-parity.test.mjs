@@ -186,6 +186,8 @@ test('founding principle remains visible on public landing and LIFE without rank
   assert.equal(body.children.find(x=>x.tag==='h2').text,'L’UTILITÉ DE L’INUTILE.');
   assert.match(body.children.find(x=>x.tag==='p').text,/n’a pas besoin de classement/);
   assert.match(style,/\.life-principle\{/);
+  assert.match(script,/\['L’utilité de l’inutile'/);
+  assert.match(script,/Aucun palmarès de popularité/);
 });
 
 test('WORK has distinct editorial experiences without claiming payment is open',()=>{
