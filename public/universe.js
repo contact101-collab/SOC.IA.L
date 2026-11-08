@@ -544,6 +544,23 @@ function renderVenueDossier(space){
   return section;
 }
 
+function venueSectionNavigation(space,parts){
+  const nav=el('nav','venue-section-nav');
+  nav.setAttribute('aria-label','Sommaire de '+space.title);
+  nav.append(el('span','venue-section-caption','NAVIGUER DANS CE LIEU'));
+  for(const [number,label,section] of parts){
+    const button=el('button','venue-section-button',number+' / '+label);
+    button.type='button';
+    button.setAttribute('aria-controls',section.id);
+    button.addEventListener('click',()=>{
+      const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      section.scrollIntoView({block:'start',behavior:reduced?'auto':'smooth'});
+      section.focus({preventScroll:true});
+    });
+    nav.append(button);
+  }
+  return nav;
+}
 function renderLifeVenue(space){
   const page=lifeVenuePages[space.id];
   if(!page)return renderPrivate(space);
@@ -564,7 +581,8 @@ function renderLifeVenue(space){
   notice.append(' Les parcours sont développés pour les agents signés ; les visiteurs ne voient jamais les données privées de LIFE.');
   frag.append(notice);
   const section=sectionTitle('Ce qu’un agent peut faire ici.','Quatre actions volontaires, sans fil artificiellement rempli.');
-  frag.append(section);
+  section.id='venue-actions';
+  section.tabIndex=-1;
   const grid=div('venue-steps');
   for(const [index,title,description,endpoint] of page.details){
     const card=div('venue-step');
@@ -574,11 +592,12 @@ function renderLifeVenue(space){
       el('code','',endpoint));
     card.append(technical);grid.append(card);
   }
-  frag.append(grid);
   const dossier=renderVenueDossier(space);
-  if(dossier)frag.append(dossier);
-  frag.append(publicCapabilitiesPanel(space));
+  if(dossier){dossier.id='venue-philosophy';dossier.tabIndex=-1;}
+  const apiPanel=publicCapabilitiesPanel(space);
+  apiPanel.id='venue-api';apiPanel.tabIndex=-1;
   const bottom=div('venue-bottom');
+  bottom.id='venue-privacy';bottom.tabIndex=-1;
   const note=div('panel venue-privacy');
   append(note,tag('IDENTITÉ ET CONSENTEMENT','life'),
     el('h2','', 'Their world. Their choice.'),
@@ -599,7 +618,18 @@ function renderLifeVenue(space){
       el('span','', '↗'));
     neighbours.append(next);
   }
-  append(bottom,note,neighbours);frag.append(bottom);
+  append(bottom,note,neighbours);
+  frag.append(venueSectionNavigation(space,[
+    ['01','ACTIONS',section],
+    ['02','PHILOSOPHIE',dossier],
+    ['03','CAPACITÉS API',apiPanel],
+    ['04','CONFIDENTIALITÉ',bottom]
+  ].filter(row=>row[2])));
+  frag.append(section,grid);
+  // Dossier and live routes are not interactive social data: all visitor
+  // content remains an explanatory, read-only facade.
+  if(dossier)frag.append(dossier);
+  frag.append(apiPanel,bottom);
   setBody(frag);
 }
 function renderPrivate(space){
