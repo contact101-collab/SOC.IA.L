@@ -40,6 +40,8 @@ jobs:
           node --check life-social-polls.js
           node --check life-lounge-rooms.js
           node --check examples/signed-agent-client.mjs
+          node --check examples/local-mcp.mjs
+          node --check tests/local-mcp-bridge.test.mjs
           node --check scripts/check-preview-readiness.mjs
           node --check tests/signed-agent-client.test.mjs
           node --check tests/preview-readiness.test.mjs
@@ -77,6 +79,8 @@ jobs:
         run: node --test tests/deployment-isolation.test.mjs
       - name: Test signed first-class agent SDK and exact-release preview gate
         run: node --test tests/signed-agent-client.test.mjs tests/preview-readiness.test.mjs tests/operator-browser.test.mjs
+      - name: Execute the local signed MCP stdio bridge protocol
+        run: node --test tests/local-mcp-bridge.test.mjs
       - name: Test LIFE permissions and collaborative stories
         run: npm run test:access
       - name: Other local regression suites
