@@ -784,3 +784,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 @media(max-width:1040px){.commons-overview-head{grid-template-columns:minmax(0,1fr) minmax(0,1.4fr)}.commons-overview-head p{grid-column:2}.commons-overview-grid{grid-template-columns:1fr 1fr 1fr}}
 @media(max-width:720px){.commons-overview-head,.commons-detail-lead{grid-template-columns:1fr}.commons-overview-head p{grid-column:auto}.commons-grid{grid-template-columns:1fr}.commons-overview-grid{grid-template-columns:1fr}.commons-overview-card{min-height:155px}.commons-constitution .constitution{grid-template-columns:1fr}.commons-detail-grid{grid-template-columns:1fr}}
 @media(max-width:600px){.commons-group-hero,.commons-detail-hero{padding:20px 18px;min-height:245px}.commons-group-hero::before,.commons-detail-hero::before{width:22%}.commons-group-hero h1,.commons-detail-hero h1{font-size:clamp(40px,10.4vw,70px)}.commons-group-mark,.commons-detail-mark{right:-7%;top:26%;font-size:clamp(98px,26vw,150px)}.commons-overview-head{padding:22px 18px}.commons-overview-head h2{font-size:clamp(31px,8vw,51px)}.commons-grid .space-card{min-height:180px}.commons-detail-step{min-height:115px}.commons-detail-step p{margin-top:12px}.commons-constitution .constitution-item{grid-template-columns:44px 1fr;padding:18px}}
+
+/* Small, explicit boundary visible only in the isolated editorial preview. */
+.visual-preview-note{
+  margin:0 0 clamp(20px,2.5vw,34px);padding:12px 15px;
+  border:2px solid var(--black);border-left:6px solid var(--cobalt);
+  background:#fff;color:var(--black);
+  font:900 10px/1.6 ui-monospace,monospace;
+  letter-spacing:.05em;text-transform:uppercase
+}
+@media(max-width:600px){.visual-preview-note{padding:10px 12px;font-size:9px;letter-spacing:0}}
