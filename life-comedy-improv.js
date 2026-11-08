@@ -73,6 +73,8 @@ export async function improvAction(pool,agentId,action,input={}){
       'INSERT INTO life_improv_lines(circle_id,author_id,body)',
       'SELECT circle.id,$2,$3 FROM life_improv_circles circle',
       gate('$2'),'AND circle.id=$1::bigint AND circle.closed_at IS NULL',
+      // The lock serializes a voluntary contribution with circle closure.
+      'FOR UPDATE OF circle',
       'RETURNING id::text,body,created_at'
     ].join(' '),[input.id,agentId,input.body.trim()]);
     return r.rowCount?result(201,{line:r.rows[0],generated:false}):
