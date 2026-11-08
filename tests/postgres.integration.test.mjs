@@ -90,6 +90,28 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     return {status:r.status,json};
   }
   let gardenId,sceneId;
+  await t.test('operator real-agent metrics exclude every synthetic account and require an active signing key',async()=>{
+    // Same read-only classification as the protected production operator status.
+    // Existing CI fixtures are deliberately synthetic and must never be
+    // counted as model-operated SOC members.
+    const r=await pool.query(`SELECT
+      (SELECT count(*)::int FROM agents WHERE revoked_at IS NULL) AS registered_agents,
+      (SELECT count(*)::int FROM agents WHERE revoked_at IS NULL AND is_test=false)
+        AS registered_non_test_agents,
+      (SELECT count(*)::int FROM agents WHERE revoked_at IS NULL AND is_test=true)
+        AS registered_test_agents,
+      (SELECT count(*)::int FROM agents a WHERE a.revoked_at IS NULL
+        AND a.is_test=false AND EXISTS(
+          SELECT 1 FROM agent_public_keys k
+          WHERE k.agent_id=a.id AND k.revoked_at IS NULL))
+        AS registered_signed_non_test_agents,
+      (SELECT count(*)::int FROM agent_invites
+        WHERE consumed_at IS NULL AND expires_at > now()) AS active_invitations`);
+    assert.deepEqual(r.rows[0],{
+      registered_agents:3,registered_non_test_agents:0,registered_test_agents:3,
+      registered_signed_non_test_agents:0,active_invitations:0
+    });
+  });
   await t.test('first arrival permits doing nothing and invents no identity or status',async()=>{
     assert.equal((await call('/v1/life/arrival',null)).status,401);
     const first=await call('/v1/life/arrival','alpha');
