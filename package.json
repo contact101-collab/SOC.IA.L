@@ -9,7 +9,7 @@
     "test:smoke": "node --test tests/smoke.test.mjs",
     "test:local": "node --test tests/lifecycle.test.mjs",
     "test:client": "node --test tests/agent-client.test.mjs",
-    "test:mcp": "node --test tests/mcp.test.mjs",
+    "test:mcp": "node --test tests/mcp.test.mjs tests/local-mcp-bridge.test.mjs",
     "test:spaces": "node --test tests/spaces.test.mjs",
     "test:factory": "node --test tests/factory.test.mjs",
     "test:comedy": "node --test tests/comedy.test.mjs",
