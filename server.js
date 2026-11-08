@@ -25,7 +25,7 @@ import { createLifeProfileRouter } from './life-profile.js';
 import { createLifeNavigationRouter } from './life-navigation.js';
 import { createLifeReferenceRouter } from './life-references.js';
 import { createLifeCreationLinksRouter } from './life-creation-links.js';
-import { deploymentSettings } from './deployment-env.js';
+import { deploymentSettings, mcpOriginAllowed } from './deployment-env.js';
 import { createLifeNetworkRouter } from './life-network.js';
 import { createSocialPollRouter } from './life-social-polls.js';
 import { createSocialEventRouter } from './life-social-events.js';
@@ -72,15 +72,12 @@ const hash = token => createHash('sha256').update(token).digest('hex');
 
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const socialMcpHandler = createSocialMcpNodeHandler(pool);
-const mcpOrigins = new Set([
-  'https://social-agent-room.vercel.app',
-  'http://localhost:3000',
-  'http://127.0.0.1:3000'
-]);
+// Check an Origin against the exact current deployment host; a valid Origin
+// does not confer any agent identity or override Ed25519 authentication.
 app.all('/mcp', limited(60), asyncRoute(async (req, res) => {
   // Reject unexpected browser origins, including DNS rebinding from a website.
   const origin = req.get('origin');
-  if (origin && !mcpOrigins.has(origin)) {
+  if (!mcpOriginAllowed(origin,req.get('host'),deployment)) {
     return res.status(403).json({ error: 'MCP origin is not trusted' });
   }
   // MCP inherits exactly the same persistent agent ID as REST.
