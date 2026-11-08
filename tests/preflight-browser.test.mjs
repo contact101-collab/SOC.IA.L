@@ -17,7 +17,7 @@ const privatePaths=new Set([
   '/v1/life/feed/polls','/v1/life/feed/events'
 ]);
 const baseline=async path=>{
-  if(path==='/ready')return result({status:'ok',service:'SOC·IA·L',schema_ready:true,schema_tables:51,expected_tables:51,revision:sha});
+  if(path==='/ready')return result({status:'ok',service:'SOC·IA·L',schema_ready:true,schema_tables:51,expected_tables:51,schema_columns:30,expected_columns:30,schema_indexes:8,expected_indexes:8,revision:sha});
   if(path==='/v1/room/info')return result({
     agent_signed_registration:'/v1/agents/a2a',
     agent_identity_recovery:'/v1/agents/a2a/recover',
