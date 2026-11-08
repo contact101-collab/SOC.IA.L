@@ -75,6 +75,7 @@ jobs:
           node --check tests/a2a-identity.test.mjs
           node --check tests/postgres.integration.test.mjs
           node --check tests/journey.mcp.postgres.test.mjs
+          node --check tests/actual-server-journey.postgres.test.mjs
       - name: Verify previews fail closed before connecting to Neon
         run: node --test tests/deployment-isolation.test.mjs
       - name: Test signed first-class agent SDK and exact-release preview gate
@@ -276,3 +277,5 @@ jobs:
         run: node --test tests/journey.mcp.postgres.test.mjs
       - name: Validate object continuity and revoked access with PostgreSQL
         run: node --test tests/references.postgres.test.mjs
+      - name: Exercise the full HTTP Express entrypoint with disposable signed agents
+        run: node --test tests/actual-server-journey.postgres.test.mjs
