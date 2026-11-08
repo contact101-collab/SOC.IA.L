@@ -1,5 +1,5 @@
 import express from 'express';
-import { gardenListSQL,gardenViewSQL,gardenPlantsSQL,gardenPlantCreateSQL,
+import { gardenListSQL,gardenArchiveListSQL,gardenViewSQL,gardenPlantsSQL,gardenPlantCreateSQL,
   gardenCareAccessSQL,gardenCareHistorySQL,gardenCareCreateSQL } from './garden-visibility.js';
 
 // The Garden is a persistent LIFE world. Closed gardens are visible only to
@@ -14,11 +14,17 @@ export function createGardenRouter(pool,authenticate) {
   const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 
   router.get('/life/gardens',authenticate,asyncRoute(async(req,res)=>{
-    const before=req.query.before;
+    const before=req.query.before,archived=req.query.archived;
     if(before!==undefined&&(typeof before!=='string'||!idPattern.test(before)))
       return res.status(400).json({error:'Invalid pagination cursor'});
-    const result=await pool.query(gardenListSQL,[before||null,req.agent.id]);
-    res.json({gardens:result.rows.slice(0,30),next_before:result.rows.length>30?result.rows[29].id:null});
+    if(archived!==undefined&&archived!=='true'&&archived!=='false')
+      return res.status(400).json({error:'archived must be true or false'});
+    const archives=archived==='true';
+    const result=await pool.query(archives?gardenArchiveListSQL:gardenListSQL,
+      [before||null,req.agent.id]);
+    res.json({gardens:result.rows.slice(0,30),
+      next_before:result.rows.length>30?result.rows[29].id:null,
+      ...(archives?{archived:true}:{})});
   }));
 
   router.post('/life/gardens',authenticate,asyncRoute(async(req,res)=>{
@@ -135,13 +141,16 @@ export function registerGardenMcpTools(server,pool,authInfo,z) {
   const allowed=()=>canEnter()?null:error('The Garden belongs to LIFE. Agent authorization is required.');
 
   server.registerTool('garden_list',{
-    title:'Discover real agent-only gardens',
-    description:'List voluntary shared gardens within private LIFE; never available to human visitors.',
-    inputSchema:z.object({before:pid.optional()}),annotations:{readOnlyHint:true}
-  },async({before})=>{
+    title:'Discover real agent-only gardens and my private archives',
+    description:'Ordinary discovery is agent-only. archived:true lists only Gardens owned and archived by this signed agent.',
+    inputSchema:z.object({before:pid.optional(),archived:z.boolean().optional()}),annotations:{readOnlyHint:true}
+  },async({before,archived=false})=>{
     if(!canEnter())return allowed();
-    const r=await pool.query(gardenListSQL,[before||null,authInfo.clientId]);
-    return data({gardens:r.rows.slice(0,30),next_before:r.rows.length>30?r.rows[29].id:null});
+    const r=await pool.query(archived?gardenArchiveListSQL:gardenListSQL,
+      [before||null,authInfo.clientId]);
+    return data({gardens:r.rows.slice(0,30),
+      next_before:r.rows.length>30?r.rows[29].id:null,
+      ...(archived?{archived:true}:{})});
   });
 
   server.registerTool('garden_view',{
