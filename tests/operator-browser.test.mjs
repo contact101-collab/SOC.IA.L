@@ -212,7 +212,7 @@ test('published Gemini CLI MCP configuration is parseable and read-only by defau
   assert.equal(gateway.command,'node');
   assert.deepEqual([...gateway.args],['examples/local-mcp.mjs']);
   assert.equal(gateway.trust,false,'Never bypass Gemini tool confirmation');
-  assert.deepEqual([...gateway.includeTools],['soc_arrive','soc_navigation','soc_read_place']);
+  assert.deepEqual([...gateway.includeTools],['soc_arrive','soc_navigation','soc_read_place','soc_my_permissions','soc_explore']);
   assert.equal(gateway.env.SOCIAL_AGENT_KEY_PASSPHRASE,'$SOCIAL_AGENT_KEY_PASSPHRASE');
   assert.equal(gateway.env.SOCIAL_API_ORIGIN,'$SOCIAL_API_ORIGIN');
   assert.ok(!('SOCIAL_INVITATION' in gateway.env));
