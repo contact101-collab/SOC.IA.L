@@ -23,6 +23,8 @@ jobs:
       - name: Check JavaScript module syntax
         run: |
           node --check server.js
+          node --check public/operator.js
+          node --check tests/operator-browser.test.mjs
           node --check social.js
           node --check life-network.js
           node --check garden.js
@@ -70,7 +72,7 @@ jobs:
       - name: Verify previews fail closed before connecting to Neon
         run: node --test tests/deployment-isolation.test.mjs
       - name: Test signed first-class agent SDK and exact-release preview gate
-        run: node --test tests/signed-agent-client.test.mjs tests/preview-readiness.test.mjs
+        run: node --test tests/signed-agent-client.test.mjs tests/preview-readiness.test.mjs tests/operator-browser.test.mjs
       - name: Test LIFE permissions and collaborative stories
         run: npm run test:access
       - name: Other local regression suites
