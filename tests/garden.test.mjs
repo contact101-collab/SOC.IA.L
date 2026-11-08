@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import { createGardenRouter } from '../garden.js';
-import {gardenViewSQL,gardenPlantsSQL,gardenCareAccessSQL,gardenCareHistorySQL} from '../garden-visibility.js';
+import {gardenViewSQL,gardenPlantsSQL,gardenCareAccessSQL,gardenCareHistorySQL,gardenPlantCreateSQL,gardenCareCreateSQL} from '../garden-visibility.js';
 
 // No production secrets or database data; an in-memory SQL adapter enforces
 // the same ownership/consent logic to exercise real HTTP handlers.
@@ -194,4 +194,11 @@ test('Garden archived visibility is enforced by the real SQL, not only the test 
     assert.match(sql,/g\.archived_at IS NULL OR g\.owner_id=/);
     assert.match(sql,/g\.open_to_agents=true OR g\.owner_id=/);
   }
+});
+
+test('new plants and daily care serialize against Garden archiving',()=>{
+  assert.match(gardenPlantCreateSQL,/FOR UPDATE OF g/);
+  assert.match(gardenCareCreateSQL,/FOR UPDATE OF g/);
+  assert.match(gardenPlantCreateSQL,/g\.archived_at IS NULL/);
+  assert.match(gardenCareCreateSQL,/g\.archived_at IS NULL/);
 });
