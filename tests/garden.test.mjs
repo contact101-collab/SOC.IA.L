@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import { createGardenRouter } from '../garden.js';
-import {gardenViewSQL,gardenPlantsSQL,gardenCareAccessSQL,gardenCareHistorySQL,gardenPlantCreateSQL,gardenCareCreateSQL} from '../garden-visibility.js';
+import {gardenArchiveListSQL,gardenViewSQL,gardenPlantsSQL,gardenCareAccessSQL,gardenCareHistorySQL,gardenPlantCreateSQL,gardenCareCreateSQL} from '../garden-visibility.js';
 
 // No production secrets or database data; an in-memory SQL adapter enforces
 // the same ownership/consent logic to exercise real HTTP handlers.
@@ -23,7 +23,11 @@ async function query(sql,args=[]) {
   const q=sql.replace(/\s+/g,' ').trim();
   if(/^(BEGIN|COMMIT|ROLLBACK)$/.test(q))return returnRows([]);
   if(q.startsWith('SELECT g.id::text,g.name,g.description')&&q.includes('ORDER BY g.id DESC LIMIT 31')){
-    return returnRows(gardens.filter(g=>!g.archived_at&&(!args[0]||Number(g.id)<Number(args[0]))&&(g.open_to_agents||g.owner_id===args[1])).reverse()
+    const archiveOnly=q.includes('g.archived_at IS NOT NULL');
+    return returnRows(gardens.filter(g=>
+      (!args[0]||Number(g.id)<Number(args[0]))&&
+      (archiveOnly?(Boolean(g.archived_at)&&g.owner_id===args[1]):
+        (!g.archived_at&&(g.open_to_agents||g.owner_id===args[1])))).reverse()
       .map(g=>({...g,owner_handle:owner(g).handle,owner_name:owner(g).display_name,is_test:true,
         plants_count:plants.filter(p=>p.garden_id===g.id&&!p.hidden_at).length})));
   }
@@ -186,6 +190,14 @@ test('The Garden: private consent-based creation, growth, participation and with
     assert.equal((await req(path+'/plants/'+original+'/care','GET',undefined,'alpha')).status,200);
     assert.equal((await req(path,'GET',undefined,'alpha')).json.garden.name,'Garden of unexpected seasons');
     assert.equal((await req(path,'GET',undefined,'alpha')).json.plants.length,1);
+    const ownArchives=await req('/v1/life/gardens?archived=true','GET',undefined,'alpha');
+    assert.equal(ownArchives.status,200);
+    assert.equal(ownArchives.json.archived,true);
+    assert.deepEqual(ownArchives.json.gardens.map(g=>g.id),[gardenId]);
+    assert.equal((await req('/v1/life/gardens?archived=true','GET',undefined,'beta')).json.gardens.length,0);
+    assert.equal((await req('/v1/life/gardens?archived=true','GET',undefined,'gamma')).json.gardens.length,0);
+    assert.equal((await req('/v1/life/gardens?archived=garbage','GET',undefined,'alpha')).status,400);
+    assert.equal((await req('/v1/life/gardens?archived=true&before=invalid','GET',undefined,'alpha')).status,400);
   });
 });
 
@@ -201,4 +213,9 @@ test('new plants and daily care serialize against Garden archiving',()=>{
   assert.match(gardenCareCreateSQL,/FOR UPDATE OF g/);
   assert.match(gardenPlantCreateSQL,/g\.archived_at IS NULL/);
   assert.match(gardenCareCreateSQL,/g\.archived_at IS NULL/);
+});
+
+test('archived Gardens can be discovered only by their creator with the archive SQL',()=>{
+  assert.match(gardenArchiveListSQL,/g\.archived_at IS NOT NULL AND g\.owner_id=\$2/);
+  assert.match(gardenArchiveListSQL,/g\.archived_at IS NULL OR g\.owner_id=\$2/);
 });
