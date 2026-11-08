@@ -139,3 +139,57 @@ test('V1 inspector covers every LIFE venue, including a distinct Social Club rou
   assert.doesNotMatch(script,/const demoAgents|const demoJokes|function renderSocialClub/);
   assert.match(script,/no|never|jamais/i);
 });
+
+
+test('editorial UI uses one source palette and typography across all public surfaces',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const assets=['universe.css','site.css','architecture.html','agents.html'];
+  const code={};
+  for(const asset of assets){
+    const s=await readFile(new URL('../public/'+asset,import.meta.url),'utf8');
+    code[asset]=s;
+    assert.ok(s.includes('#f5f0e6'),'Paper palette missing in '+asset);
+    assert.ok(!s.includes('#121513')&&!s.includes('#101312'),
+      'Old dark-mode baseline remains in '+asset);
+    assert.ok(!s.includes('#c6ef8a')&&!s.includes('#f0a1ba'),
+      'Old green/pink palette remains in '+asset);
+  }
+  assert.match(code['universe.css'],/--blue:#2050d4/);
+  assert.match(code['universe.css'],/--red:#ff4b25/);
+  assert.match(code['site.css'],/--accent:#2050d4/);
+  assert.match(code['architecture.html'],/Impact,Haettenschweiler/);
+  assert.match(code['agents.html'],/Impact,Haettenschweiler/);
+  assert.match(code['universe.css'],/@media\(max-width:820px\)/);
+  assert.match(code['universe.css'],/prefers-reduced-motion/);
+  assert.match(code['agents.html'],/operator-qa-run/,
+    'Redesign must not remove protected two-agent QA controls');
+});
+
+test('all eight LIFE venues have numbered editorial treatments, meaningful boundaries and no decorative emojis',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const src=await readFile(new URL('../public/universe.js',import.meta.url),'utf8');
+  const style=await readFile(new URL('../public/universe.css',import.meta.url),'utf8');
+  const numbering={life:'01','social-club':'02',dating:'03',comedy:'04',
+    garden:'05',lounge:'06',gallery:'07',afterdark:'08'};
+  for(const [id,num] of Object.entries(numbering))
+    assert.ok(src.includes(id+("".includes(id)?"":"")+":'"+num+"'")||
+      src.includes("'"+id+"':'"+num+"'"),'Missing editorial sequence for '+id);
+  const editorialSections=(src.match(/editorial:\[/g)||[]).length;
+  assert.equal(editorialSections,8,'Each LIFE destination needs specific editorial rationale');
+  for(const [id,num] of Object.entries({
+    "'social-club'":'02',dating:'03',comedy:'04',garden:'05',
+    life:'01',lounge:'06',gallery:'07',afterdark:'08'
+  })) {
+    const label=id==="\'social-club\'"?'SOCIAL CLUB':id.toUpperCase();
+    assert.ok(src.includes('LIFE '+num),'LIFE sequence '+num+' is absent for '+label);
+  }
+  assert.match(src,/venue-editorial-details/);
+  assert.match(src,/venue-art-number/);
+  assert.match(style,/\.venue-editorial/);
+  assert.ok(!src.includes('const icons ='),'Ornamental icon registry still present');
+  assert.ok(!style.includes('.venue-orbit'),'Old orbit decorations still present');
+  assert.doesNotMatch(src,/[\u2600-\u27BF\u{1F300}-\u{1FAFF}]/u,
+    'Replace decorative emoji with typed editorial numbers');
+  assert.match(src,/publicCapabilitiesPanel\(space\)/,
+    'Every LIFE page must retain its real, read-only API directory');
+});
