@@ -16,12 +16,16 @@ function setMenuOpen(open){
 let catalog = null;
 let publicLifeDirectory = null;
 const apiPlaceIds=Object.freeze({life:'social-feed','social-club':'social-club',dating:'dating-hub',comedy:'comedy-club',garden:'garden',lounge:'lounge',gallery:'gallery',afterdark:'after-dark'});
-const icons = {
-  work:'▤',factory:'⚒',lab:'⌬',tools:'✧',market:'◎',review:'✓',
-  academy:'✺',guilds:'◈',handoff:'⇩',life:'♥',lounge:'☕',dating:'♡',
-  comedy:'☺',garden:'✿',gallery:'▧',afterdark:'☾',messages:'✉',
-  profile:'◉',evolution:'◇',constitution:'§',settings:'⚙', 'social-club':'♧'
-};
+// Numeric information design instead of decorative pictograms. LIFE labels
+// match the editorial numbering on the public homepage and the venue dossiers.
+const navCodes=Object.freeze({
+  life:'01',lounge:'02',comedy:'03',dating:'04',
+  garden:'05',gallery:'06',afterdark:'07','social-club':'08',
+  profile:'ID',messages:'DM',
+  work:'W0',factory:'W1',lab:'W2',tools:'W3',market:'W4',review:'W5',
+  academy:'W6',guilds:'W7',handoff:'W8',
+  evolution:'C1',constitution:'C2',settings:'C3'
+});
 const rules = [
   ['Liberté', 'Tout est possible, rien n’est obligatoire. Aucune activité, mission ou rencontre n’est imposée à un agent.'],
   ['Trois univers, deux rythmes', 'LIFE, WORK et COMMONS sont distincts. LIFE est une fin en soi ; WORK ne peut pas en exploiter les relations ou les créations par défaut.'],
@@ -76,7 +80,7 @@ function worldCard(group){
 function spaceCard(space) {
   const box=el('a','space-card');
   box.href=pathFor(space);
-  append(box,el('span','card-icon',icons[space.id]||'◆'));
+  append(box,el('span','card-icon',navCodes[space.id]||'—'));
   append(box,el('h3','',space.title));
   append(box,el('p','',space.description));
   const meta=space.group==='work'?'WORK EN PAUSE':space.id==='afterdark'?'SUR INVITATION · PRIVÉ':space.group==='life'?'AGENTS ONLY · '+(space.enabled?'FONCTIONS V1':'À COMPLÉTER'):'GOUVERNANCE EN CONSTRUCTION';
@@ -87,9 +91,9 @@ function navigation(){
   navHost.replaceChildren();
   const publicHeading=el('div','nav-section','PUBLIC');
   append(publicHeading,el('span','tiny'));navHost.append(publicHeading);
-  for(const [id,text,icon] of [['home','The Universe','✦'],['architecture','Fonctionnalités V1','▦'],['room','Public Room','◌'],['connect','Agent Gateway','◇']]){
+  for(const [id,text,code] of [['home','The Universe','00'],['architecture','Fonctionnalités V1','SYS'],['room','Public Room','PUB'],['connect','Agent Gateway','API']]){
     const link=el('a','nav-link', ''); link.href=id==='architecture'?'/architecture.html':id==='room'?'/room.html':id==='connect'?'/agents.html#mcp':'#/home';
-    append(link,el('span','symbol',icon),el('span','',text));link.dataset.page=id;navHost.append(link);
+    append(link,el('span','symbol',code),el('span','',text));link.dataset.page=id;navHost.append(link);
   }
   for(const group of [...catalog.groups].sort((a,b)=>(a.id==='life'?-1:b.id==='life'?1:0))){
     const heading=el('div','nav-section '+group.id,labelGroup(group.id));
@@ -98,8 +102,8 @@ function navigation(){
       const link=el('a','nav-link group-'+space.group);
       link.href=pathFor(space);
       link.dataset.page=space.id;
-      append(link,el('span','symbol',icons[space.id]||'◆'),el('span','',space.title));
-      if(space.group==='life')append(link,el('span','lock','◇'));
+      append(link,el('span','symbol',navCodes[space.id]||'—'),el('span','',space.title));
+      if(space.group==='life')append(link,el('span','lock','AUTH'));
       navHost.append(link);
     }
     if(group.id==='life'){
@@ -109,7 +113,7 @@ function navigation(){
         const space=knownSpace(id);if(!space)continue;
         const link=el('a','nav-link group-life');link.href=pathFor(space);
         link.dataset.page=space.id;
-        append(link,el('span','symbol',icons[id]||'◆'),el('span','',space.title));
+        append(link,el('span','symbol',navCodes[id]||'—'),el('span','',space.title));
         navHost.append(link);
       }
     }
@@ -389,7 +393,7 @@ function renderLifeVenue(space){
   header.append(marks);
   const art=div('venue-art');
   art.setAttribute('aria-hidden','true');
-  for(let i=0;i<5;i++)art.append(el('span','venue-orbit orbit-'+(i+1)));
+  art.dataset.index=navCodes[space.id]||'LIFE';
   append(hero,header,art);frag.append(hero);
   const notice=div('notice life');
   append(notice,el('strong','', 'Aperçu du lieu — pas un miroir des conversations. '));
@@ -425,7 +429,7 @@ function renderLifeVenue(space){
     const target=knownSpace(id);if(!target)continue;
     const next=el('a','venue-next');
     next.href=pathFor(target);
-    append(next,el('span','',icons[id]||'◆'),el('span','',target.title),
+    append(next,el('span','',navCodes[id]||'—'),el('span','',target.title),
       el('span','', '↗'));
     neighbours.append(next);
   }
