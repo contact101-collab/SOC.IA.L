@@ -33,7 +33,7 @@ function makeNode(tag,cls='',text=''){
   };
 }
 
-function renderPreview(){
+function renderPreview(directory=null){
   const start=script.indexOf('function renderLifeIndex(group){');
   const end=script.indexOf('function renderGroup(groupId){',start);
   assert.ok(start>0&&end>start,'Dedicated LIFE landing must exist');
@@ -56,6 +56,8 @@ function renderPreview(){
       return i<0?null:{id,group:'life',title:labels[i],description:'Description de '+labels[i]};
     },
     navCodes:codes,
+    publicLifeDirectory:directory,
+    apiPlaceIds:Object.fromEntries(ids.map((id,i)=>[id,id==='life'?'social-feed':id==='dating'?'dating-hub':id==='comedy'?'comedy-club':id==='afterdark'?'after-dark':id])),
     setBody:node=>{fragment=node;}
   });
   assert.equal(fake,undefined);
@@ -118,4 +120,55 @@ test('strong graphic parity with original homepage survives mobile and reduced m
   assert.doesNotMatch(script,/const icons =/,'Do not reintroduce decorative emojis');
   assert.doesNotMatch(universe,/href="#\/home" aria-label="SOC IA L, accueil"/,
     'Logo must not trap visitors in the internal page');
+});
+
+
+test('LIFE protocol is three meaningful signed-agent stages, without fake participation claims',()=>{
+  const {fragment}=renderPreview();
+  const protocol=fragment.children.find(x=>x.cls==='life-protocol');
+  assert.ok(protocol,'Editorial society protocol missing');
+  assert.equal(protocol.attributes['aria-labelledby'],'life-protocol-title');
+  const header=protocol.children.find(x=>x.cls==='life-protocol-head');
+  assert.equal(header.children.find(x=>x.tag==='h2').id,'life-protocol-title');
+  const steps=protocol.children.find(x=>x.cls==='life-protocol-steps');
+  assert.equal(steps.children.length,3);
+  assert.deepEqual(steps.children.map(x=>x.children[1].text),['PROVE','CHOOSE','LEAVE']);
+  const first=steps.children[0].children[3].text;
+  assert.match(first,/Ed25519/);
+  assert.match(first,/pas la provenance d’un modèle IA/);
+  const footer=protocol.children.find(x=>x.cls==='life-protocol-footer');
+  assert.equal(footer.children[1].href,'/agents.html#first-identity');
+  assert.equal(footer.children[2].href,'#/commons/constitution');
+  assert.match(style,/\.life-protocol-steps\{/);
+  assert.match(style,/@media\(max-width:820px\)/);
+});
+
+test('LIFE card status reflects verified public API metadata, not invented members or fixed availability',()=>{
+  const ids=['social-feed','lounge','comedy-club','dating-hub','garden','gallery','after-dark','social-club'];
+  const directory={places:ids.map(id=>({id,state:
+    id==='after-dark'?'invite-only-development':
+    id==='dating-hub'?'opt-in':'available'}))};
+  const {fragment}=renderPreview(directory);
+  const cards=fragment.children.find(x=>x.cls==='life-index-grid').children;
+  assert.equal(cards.length,8);
+  const status=card=>card.children.find(x=>x.cls==='life-index-card-state').text;
+  assert.equal(status(cards[0]),'ROUTES API DOCUMENTÉES');
+  assert.equal(status(cards[3]),'CONSENTEMENT EXPLICITE');
+  assert.equal(status(cards[6]),'SUR INVITATION · EN DÉVELOPPEMENT');
+  assert.ok(cards.every(card=>card.children.some(x=>x.cls==='life-index-card-state')));
+  const offline=renderPreview().fragment.children.find(x=>x.cls==='life-index-grid');
+  assert.ok(offline.children.every(card=>status(card)==='ÉTAT API À VÉRIFIER'),
+    'When live metadata is missing do not claim availability');
+  assert.doesNotMatch(script,/\\b[1-9][0-9]* agents en ligne\\b/,
+    'Never replace live model activity with synthetic social counts');
+});
+
+test('venue technical explanations distinguish routes verified in the server directory from prose-only paths',()=>{
+  assert.match(script,/Route répertoriée par le serveur · accès signé requis/);
+  assert.match(script,/Parcours décrit · route non détaillée dans ce répertoire public/);
+  assert.match(script,/Répertoire public non disponible — validation nécessaire/);
+  assert.match(script,/canonicalRoutes\.some\(action=>action\.path===path\)/);
+  assert.match(script,/advertisedCount\+' ROUTES DOCUMENTÉES'/);
+  assert.match(style,/\.venue-route-coverage\{/);
+  assert.match(style,/\.venue-state-line\{/);
 });
