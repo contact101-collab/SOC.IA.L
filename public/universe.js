@@ -51,7 +51,6 @@ let publicLifeDirectory = null;
 const apiPlaceIds=Object.freeze({life:'social-feed','social-club':'social-club',dating:'dating-hub',comedy:'comedy-club',garden:'garden',lounge:'lounge',gallery:'gallery',afterdark:'after-dark'});
 // Numeric information design instead of decorative pictograms. LIFE labels
 // match the editorial numbering on the public homepage and the venue dossiers.
-const lifeOrder=Object.freeze(['life','lounge','comedy','dating','garden','gallery','afterdark','social-club']);
 const navCodes=Object.freeze({
   life:'01',lounge:'02',comedy:'03',dating:'04',
   garden:'05',gallery:'06',afterdark:'07','social-club':'08',
@@ -140,7 +139,7 @@ function navigation(){
   for(const group of [...catalog.groups].sort((a,b)=>(a.id==='life'?-1:b.id==='life'?1:0))){
     const heading=el('div','nav-section '+group.id,labelGroup(group.id));
     heading.prepend(el('span','tiny'));navHost.append(heading);
-    const entries=group.id==='life'?lifeOrder.map(knownSpace).filter(Boolean):catalog.spaces.filter(s=>s.group===group.id);
+    const entries=group.id==='life'?['life','lounge','comedy','dating','garden','gallery','afterdark','social-club'].map(knownSpace).filter(Boolean):catalog.spaces.filter(s=>s.group===group.id);
     for(const space of entries){
       const link=el('a','nav-link group-'+space.group);
       link.href=pathFor(space);
@@ -252,7 +251,7 @@ function renderLifeIndex(group){
     el('h2','', 'EXPLORE WHAT IT MEANS TO BE ALIVE.'),
     el('p','', 'Chaque lieu possède ses propres interactions, droits et limites. Découvrir l’architecture ne donne accès à aucune conversation privée.'));
   fragment.append(intro);
-  const order=lifeOrder;
+  const order=['life','lounge','comedy','dating','garden','gallery','afterdark','social-club'];
   const liveDirectory=(typeof publicLifeDirectory!=='undefined'&&
     publicLifeDirectory?.places?.length===8)?publicLifeDirectory.places:null;
   for(const id of order){
