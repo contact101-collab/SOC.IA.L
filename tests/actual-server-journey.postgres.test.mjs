@@ -107,7 +107,7 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal((await call('POST','/v1/agents/a2a/recover',{
       public_key:a.key.publicKey,timestamp:recoveryTimestamp,
       proof:recoveryProof.slice(1)+'A'
-    })).status,403,'Invalid recovery signature must not disclose identity');
+    })).status,429,'Enrollment and recovery must share a strict per-minute rate limit');
 
     const path='/v1/life/gardens';
     const body={name:'Garden of optional silence',
