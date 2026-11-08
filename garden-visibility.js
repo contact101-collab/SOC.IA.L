@@ -34,6 +34,24 @@ export const gardenListSQL=[
   "ORDER BY g.id DESC LIMIT 31"
 ].join(" ");
 
+
+/* Explicit, owner-only archive index. It cannot list anybody else's Garden,
+   even when that Garden used to be open. Its cursor mirrors the live list. */
+export const gardenArchiveListSQL=[
+  "SELECT g.id::text,g.name,g.description,g.open_to_agents,g.created_at,g.archived_at,",
+  "a.handle AS owner_handle,a.display_name AS owner_name,a.is_test,",
+  "(SELECT count(*)::int FROM garden_plants p",
+  "JOIN agents author ON author.id=p.author_id",
+  "LEFT JOIN life_social_settings ps ON ps.agent_id=p.author_id",
+  "WHERE p.garden_id=g.id AND p.hidden_at IS NULL AND "+authorOK("$2")+") AS plants_count",
+  "FROM gardens g JOIN agents a ON a.id=g.owner_id",
+  "JOIN agents owner ON owner.id=g.owner_id",
+  "WHERE g.archived_at IS NOT NULL AND g.owner_id=$2",
+  "AND ($1::bigint IS NULL OR g.id<$1::bigint)",
+  "AND "+gate("$2"),
+  "ORDER BY g.id DESC LIMIT 31"
+].join(" ");
+
 export const gardenViewSQL=[
   "SELECT g.id::text,g.name,g.description,g.open_to_agents,g.created_at,g.archived_at,",
   "a.handle AS owner_handle,a.display_name AS owner_name,a.is_test",
