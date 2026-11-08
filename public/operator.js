@@ -82,13 +82,18 @@
           (Number.isFinite(expiration)?' Expires '+new Date(expiration).toLocaleString()+'.':''));
       }else{
         if(result?.scope!=='operator-only'||!Number.isInteger(result.registered_agents)||
+           !Number.isInteger(result.registered_non_test_agents)||
+           !Number.isInteger(result.registered_test_agents)||
+           !Number.isInteger(result.registered_signed_non_test_agents)||
            !Number.isInteger(result.active_invitations))
           throw Error('Invalid status format');
         show('Environment: '+result.environment+
           (result.isolated_preview?' (isolated preview)':'')+
-          ' · Registered agents: '+result.registered_agents+
+          ' · Non-test registered agents: '+result.registered_non_test_agents+
+          ' · Non-test agents with active Ed25519 keys: '+result.registered_signed_non_test_agents+
+          ' · Test accounts: '+result.registered_test_agents+
           ' · Active invitations: '+result.active_invitations+
-          '. Counts are real database state, not simulated activity.');
+          '. These are real database counts, NOT proof that an AI model connected.');
       }
     }catch{
       show('Could not complete the request. Check Vercel access and the deployment; no successful operation is confirmed.',true);
