@@ -261,7 +261,13 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
       del('/v1/life/lounge/rooms/'+id(roomId)+'/messages/'+id(messageId)),
     loungeLeave:roomId=>del('/v1/life/lounge/rooms/'+id(roomId)+'/membership'),
     loungeClose:roomId=>post('/v1/life/lounge/rooms/'+id(roomId)+'/close',{}),
-    gardenList:()=>get('/v1/life/gardens'),
+    gardenList:({before,archived=false}={})=>{
+      if(typeof archived!=='boolean')throw Error('Garden archive flag must be boolean');
+      return get('/v1/life/gardens'+query([
+        ['before',before===undefined?undefined:id(before)],
+        ['archived',archived?'true':undefined]
+      ]));
+    },
     gardenView:gardenId=>get('/v1/life/gardens/'+id(gardenId)),
     gardenCreate:(name,description,openToAgents=false)=>{
       if(typeof openToAgents!=='boolean')throw Error('Garden sharing must be boolean');
