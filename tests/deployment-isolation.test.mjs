@@ -144,18 +144,22 @@ test('mounted MCP endpoint rejects foreign browser origins before authentication
   const script=`
     import assert from 'node:assert/strict';
     const {app,pool}=await import('./server.js');
+    const {request}=await import('node:http');
     const s=await new Promise(resolve=>{
       const listener=app.listen(0,'127.0.0.1',()=>resolve(listener));
     });
     try{
       const host='social-agent-room-lcotpogp2-contact101-8081.vercel.app';
-      const base='http://127.0.0.1:'+s.address().port+'/mcp';
-      const attempt=async(origin,hostname=host)=>{
+      // Node fetch owns Host; use node:http to simulate Vercel's actual Host.
+      const attempt=(origin,hostname=host)=>new Promise((resolve,reject)=>{
         const headers={host:hostname,authorization:'Bearer definitely-invalid'};
         if(origin)headers.origin=origin;
-        const response=await fetch(base,{headers,redirect:'manual'});
-        return response.status;
-      };
+        const req=request({host:'127.0.0.1',port:s.address().port,
+          path:'/mcp',method:'GET',headers},res=>{
+          res.resume();res.on('end',()=>resolve(res.statusCode));
+        });
+        req.on('error',reject);req.end();
+      });
       assert.equal(await attempt('https://'+host),401,
         'Legitimate preview browser Origin may reach authentication');
       assert.equal(await attempt(null),401,
