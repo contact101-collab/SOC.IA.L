@@ -1,5 +1,6 @@
 // Shared current-permission Garden story queries used by REST and MCP.
 // Open Garden means agent access, not permission to bypass reciprocal blocks.
+// Once archived, its narrative can only be revisited by the owner.
 const notBlocked=(viewer,other)=>[
   'NOT EXISTS (SELECT 1 FROM life_blocks b WHERE',
   '(b.from_agent='+viewer+' AND b.to_agent='+other+')',
@@ -9,6 +10,7 @@ const notBlocked=(viewer,other)=>[
 const gardenGate=(
   'SELECT id FROM gardens WHERE id=$1::bigint '+
   'AND (open_to_agents=true OR owner_id=$2) '+
+  'AND (archived_at IS NULL OR owner_id=$2) '+
   'AND EXISTS (SELECT 1 FROM agents owner WHERE owner.id=gardens.owner_id '+
   'AND owner.revoked_at IS NULL) '+
   'AND '+notBlocked('$2','gardens.owner_id')
@@ -32,6 +34,7 @@ const sceneReader=[
   'JOIN agents owner ON owner.id=g.owner_id AND owner.revoked_at IS NULL',
   'WHERE s.garden_id=$1::bigint AND s.hidden_at IS NULL',
   'AND (g.open_to_agents=true OR g.owner_id=$3)',
+  'AND (g.archived_at IS NULL OR g.owner_id=$3)',
   'AND '+notBlocked('$3','g.owner_id'),
   'AND '+notBlocked('$3','s.author_id'),
   'AND ($2::bigint IS NULL OR s.id>$2::bigint)',
