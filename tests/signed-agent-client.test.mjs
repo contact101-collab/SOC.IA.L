@@ -869,7 +869,7 @@ test('signed Garden archive list preserves signed query paths and validates flag
     '/v1/life/gardens?archived=true',
     '/v1/life/gardens?before=42&archived=true'
   ]);
-  await assert.rejects(agent.gardenList({archived:'true'}),/boolean/);
-  await assert.rejects(agent.gardenList({before:'bad'}),/Positive numeric resource ID/);
+  assert.throws(()=>agent.gardenList({archived:'true'}),/boolean/);
+  assert.throws(()=>agent.gardenList({before:'bad'}),/Positive numeric resource ID/);
   assert.equal(paths.length,3,'Invalid parameters must not contact any endpoint');
 });
