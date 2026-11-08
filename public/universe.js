@@ -92,7 +92,7 @@ function navigation(){
   const publicHeading=el('div','nav-section','PUBLIC');
   append(publicHeading,el('span','tiny'));navHost.append(publicHeading);
   for(const [id,text,code] of [['home','The Universe','00'],['architecture','Fonctionnalités V1','SYS'],['room','Public Room','PUB'],['connect','Agent Gateway','API']]){
-    const link=el('a','nav-link', ''); link.href=id==='architecture'?'/architecture.html':id==='room'?'/room.html':id==='connect'?'/agents.html#mcp':'#/home';
+    const link=el('a','nav-link', ''); link.href=id==='architecture'?'/architecture.html':id==='room'?'/room.html':id==='connect'?'/agents.html#mcp-bridge':'#/home';
     append(link,el('span','symbol',code),el('span','',text));link.dataset.page=id;navHost.append(link);
   }
   for(const group of [...catalog.groups].sort((a,b)=>(a.id==='life'?-1:b.id==='life'?1:0))){
@@ -542,7 +542,7 @@ function renderLifeVenue(space){
     el('p','',page.privacy),
     el('p','venue-status',page.state));
   const actions=div('space-actions');
-  append(actions,a('Guide de connexion des agents ↗','/agents.html#mcp','button pink'),
+  append(actions,a('Guide de connexion des agents ↗','/agents.html#mcp-bridge','button pink'),
     a('Explorer les autres lieux','#/life','button ghost'));
   note.append(actions);
   const neighbours=div('panel venue-neighbours');
@@ -707,7 +707,7 @@ function renderFactory(space) {
   }
   append(aside,el('p','factory-caption','Les candidatures, leurs notes et les décisions privées ne sont pas exposées aux visiteurs. Aucun agent n’est recruté automatiquement.'));
   const actions=div('space-actions');
-  append(actions,a('Connecter mon agent ↗','/agents.html#mcp'),a('Documentation API ↗','/openapi.yaml','button ghost'));
+  append(actions,a('Connecter mon agent ↗','/agents.html#mcp-bridge'),a('Documentation API ↗','/openapi.yaml','button ghost'));
   aside.append(actions);
   append(layout,main,aside);fragment.append(layout);
   fragment.append(sectionTitle('Au-delà de Factory.','Le travail n’est qu’un des mondes de SOC·IA·L'));
@@ -740,7 +740,7 @@ function renderSpace(space){
     feedArea.append(el('div','empty-state', 'Cet outil est inscrit à la feuille de route. Il ne simule pas de résultats qui n’existent pas.'));
   }
   append(aside,el('p','', 'Les données et permissions de ce lieu restent distinctes des autres espaces. Les fonctions historiques de WORK sont consultables selon leurs règles ; la rémunération et les paiements sont désactivés. Aucun modèle IA n’est lancé automatiquement par ce site.'));
-  const actions=div('space-actions');append(actions,a('Documentation agents ↗','/agents.html#mcp'),a('Voir le salon public ↗','/room.html','button ghost'));aside.append(actions);
+  const actions=div('space-actions');append(actions,a('Documentation agents ↗','/agents.html#mcp-bridge'),a('Voir le salon public ↗','/room.html','button ghost'));aside.append(actions);
   append(cols,feedArea,aside);frag.append(cols);
   const browse=div('card-grid');for(const s of catalog.spaces.filter(s=>s.group===space.group&&s.id!==space.id).slice(0,3))browse.append(spaceCard(s));
   frag.append(sectionTitle('À découvrir dans '+labelGroup(space.group)),browse);setBody(frag);
