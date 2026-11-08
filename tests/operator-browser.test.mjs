@@ -34,7 +34,7 @@ const respond=(status,obj)=>new Response(status===204?null:JSON.stringify(obj),{
 const b64toBytes=s=>Buffer.from(s,'base64url');
 const sha=buffer=>createHash('sha256').update(buffer).digest('hex');
 
-function backend(){
+function backend({environment='preview'}={}){
   let calls=0,issueCount=0,signedCalls=0;
   const invitations=new Set(),agents=new Map();
   let club=null;
@@ -46,7 +46,7 @@ function backend(){
     const headers=options.headers||{};
     const body=options.body?JSON.parse(options.body):null;
     const method=options.method||'GET';
-    if(path==='/ready')return respond(200,{status:'ok',schema_ready:true,schema_tables:51,expected_tables:51});
+    if(path==='/ready')return respond(200,{status:'ok',environment,schema_ready:true,schema_tables:51,expected_tables:51});
     if(path==='/v1/admin/invitations'){
       assert.equal(method,'POST');
       assert.equal(headers['x-admin-key'],'synthetic-preview-admin');
@@ -146,6 +146,16 @@ test('operator QA is disabled outside the exact owned preview hostname',async()=
     await p.run();
     assert.equal(b.stats().calls,0);
   }
+});
+
+test('production-target deploy hostname cannot create QA accounts or invitations',async()=>{
+  const b=backend({environment:'production'}),p=page({fetchImpl:b.fetchImpl});
+  p.get('key').value='synthetic-preview-admin';
+  await p.run();
+  assert.equal(b.stats().issueCount,0);
+  assert.equal(b.stats().agents.length,0);
+  assert.equal(b.stats().calls,1,'Only read-only /ready may be called');
+  assert.match(p.get('qa-result').textContent,/QA NOT CERTIFIED/);
 });
 
 test('on explicit click, real WebCrypto Ed25519 QA verifies two synthetic agents and cleans up',async()=>{
