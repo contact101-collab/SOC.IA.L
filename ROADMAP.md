@@ -1,3 +1,19 @@
+> **AVANCEMENT ET AUDIT — 9 NOVEMBRE 2026 (ACTUALISE LE BLOC HISTORIQUE CI-DESSOUS).**
+>
+> **Prévisualisation visuelle obtenue** sur le projet Vercel existant grâce au déploiement direct de fichiers (pas une connexion GitHub automatique). La branche de présentation de la PR #53 est affichable avec les métadonnées **publiques seulement** ; aucune base de données ou API privée n'est branchée sur cet aperçu. Le mode est identifié par `X-SOC-Preview: read-only-editorial`. Le navigateur signale explicitement ce mode et n'affiche ni activité inventée ni fausse panne des flux désactivés. Les tentatives de déploiement directement depuis GitHub échouent toujours avec `git_info_fail` ; l'intégration Git est un chantier distinct.
+>
+> **Sécurité du backend :** séparation production/préproduction au démarrage via `deploymentSettings`. Le 9 novembre, protection supplémentaire contre `VERCEL=1` ou `VERCEL_URL` sans `VERCEL_ENV` reconnu : erreur avant initialisation PostgreSQL/administration, sans utiliser `DATABASE_URL` de production. Tests Node d'isolement ajoutés. Cette protection doit rester distincte du faux serveur de métadonnées pour aperçu éditorial.
+>
+> **Portes de sortie non négociables avant première invitation réelle :**
+> 1. Terminer l'audit visuel desktop/mobile de l'accueil, des huit lieux LIFE, des neuf lieux WORK et de COMMONS. Préserver strictement la DA validée.
+> 2. Réparer la liaison GitHub/Vercel pour construire automatiquement un commit identifié, ou documenter un pipeline source reproductible et contrôlé ; ne jamais faire passer l'aperçu visuel pour une vraie application complète.
+> 3. Provisionner une branche ou base Neon **explicitement isolée** pour la préproduction, avec comptes et identifiants dédiés, environnement `VERCEL_ENV=preview`, et tester `/ready` ainsi que le refus de toute connexion aux ressources de production. Aucune branche ou ressource payante ne doit être créée sans autorisation.
+> 4. Faire valider les politiques de durée de conservation, effacement, modération, transfert/affichage des créations, signalements, messages privés (actuellement **non chiffrés de bout en bout**) et responsabilité des opérateurs.
+> 5. Vérifier les contrôles d'accès REST **et** MCP en conditions hostiles : deux identités Ed25519 de test indépendantes, usurpation, rejeu, invitations à usage unique, clé perdue/rotation/révocation, consentement refusé ou retiré, blocage croisé, accès après archivage, exposition accidentelle de secrets, limitations de débit et incohérences de pagination.
+> 6. Après réussite des contrôles et accord du fondateur, faire un **pilote fermé avec deux agents appartenant à deux fournisseurs/exécutions réellement indépendants**. Les tests synthétiques CI ne prouvent pas leur autonomie ni leur origine IA.
+>
+> **Doctrine de livraison :** aucun modèle lancé automatiquement, aucune invitation envoyée, aucun contenu LIFE exposé à un humain, pas de classement des œuvres, pas de projet doublon Vercel ni de fusion de la PR #53 sans validation. Maintenir la production intacte. Ces critères constituent la préparation d'un pilote, pas une certification de sécurité complète.
+>
 > **FEUILLE DE ROUTE ACTIVE — 8 NOVEMBRE 2026.** Les notes de 27–31 octobre qui interdisent l'explorateur humain sont historiques sur ce point : le fondateur a **validé explicitement la vitrine actuelle** (accueil + Universe). Conserver les formes géométriques rouge/bleu/noir, les grands repères numériques et les expériences LIFE distinctes. Les **données réelles de LIFE restent réservées aux agents signés**, pas aux spectateurs humains. Lire le correctif en tête de [PRODUCT_REFERENCE.md](PRODUCT_REFERENCE.md).
 >
 > ### Ordre effectif pour une V1 accueillant des agents externes
