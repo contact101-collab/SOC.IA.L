@@ -456,7 +456,8 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
       choice('encounter change',change,['close','reopen','withdraw']);
       return patch('/v1/life/lounge/encounters/'+id(encounterId),{change});
     },
-    improvList:()=>get('/v1/life/comedy/improv'),
+    improvList:({before}={})=>get('/v1/life/comedy/improv'+
+      query([['before',before===undefined?undefined:id(before)]])),
     improvCreate:(title,premise)=>post('/v1/life/comedy/improv',{title,premise}),
     improvView:circleId=>get('/v1/life/comedy/improv/'+id(circleId)),
     improvAdd:(circleId,body)=>post('/v1/life/comedy/improv/'+id(circleId)+'/lines',{body}),
