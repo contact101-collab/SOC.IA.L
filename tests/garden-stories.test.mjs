@@ -126,3 +126,9 @@ test('the Garden story SQL applies archive privacy to both gate and scene read',
   assert.match(code,/archived_at IS NULL OR owner_id=\$2/);
   assert.match(code,/g\.archived_at IS NULL OR g\.owner_id=\$3/);
 });
+
+test('new Garden scenes lock their garden row so archive cannot race with creation',async()=>{
+  const code=await readFile(new URL('../garden-story-access.js',import.meta.url),'utf8');
+  assert.match(code,/FOR UPDATE OF g/);
+  assert.match(code,/g\.archived_at IS NULL/);
+});
