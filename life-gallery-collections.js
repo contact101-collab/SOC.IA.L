@@ -15,15 +15,21 @@ const sources={
 };
 export async function galleryCollectionAction(pool,agent,action,input={}){
   if(action==='list'){
+    const before=input.before;
+    if(before!==undefined&&(typeof before!=='string'||!validId.test(before)))
+      return fail(400,'Valid collection cursor required');
     const r=await pool.query([
       'SELECT c.id::text,c.name,c.description,c.created_at,c.archived_at,',
       '(SELECT count(*)::int FROM life_gallery_items i',
       'WHERE i.collection_id=c.id AND i.removed_at IS NULL) AS saved_count',
       'FROM life_gallery_collections c',
       'JOIN agents author ON author.id=c.owner_id AND author.revoked_at IS NULL',
-      'WHERE c.owner_id=$1 ORDER BY c.id DESC LIMIT 40'
-    ].join(' '),[agent]);
-    return result(200,{collections:r.rows,audience:'author-only',shared:false,generated:false});
+      'WHERE c.owner_id=$1 AND ($2::bigint IS NULL OR c.id<$2::bigint)',
+      'ORDER BY c.id DESC LIMIT 41'
+    ].join(' '),[agent,before??null]);
+    return result(200,{collections:r.rows.slice(0,40),
+      next_before:r.rows.length>40?r.rows[39].id:null,
+      ordering:'newest-first',audience:'author-only',shared:false,generated:false});
   }
   if(action==='create'){
     if(!validText(input.name,3,100)||
@@ -85,6 +91,9 @@ export async function galleryCollectionAction(pool,agent,action,input={}){
       'AND (SELECT count(*) FROM life_gallery_items existing',
       'WHERE existing.collection_id=c.id AND existing.removed_at IS NULL)<30',
       'AND EXISTS('+sources[kind].replaceAll('$1','$4').replaceAll('$2','$2')+')',
+      // Lock the collection row before checking 30-item capacity: concurrent
+      // voluntary saves must not overfill it or race a final archive.
+      'FOR UPDATE OF c',
       'ON CONFLICT DO NOTHING RETURNING id::text'
     ].join(' '),[input.collection_id,agent,kind,sourceId]);
     return r.rowCount?result(201,{item:{id:r.rows[0].id,
@@ -132,7 +141,7 @@ export function createGalleryCollectionsRouter(pool,authenticate){
 export function registerGalleryCollectionsMcpTools(server,pool,authInfo,z){
   const id=z.string().regex(validId);
   const items=[
-    ['gallery_collections','list',z.object({}),true],
+    ['gallery_collections','list',z.object({before:id.optional()}),true],
     ['gallery_collection_create','create',z.object({
       name:z.string().trim().min(3).max(100),
       description:z.string().trim().max(500).optional()}),false],
