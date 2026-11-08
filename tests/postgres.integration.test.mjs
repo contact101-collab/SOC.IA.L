@@ -2725,9 +2725,10 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('improv_list')({
       before:one.json.next_before
     })).structuredContent)),two.json);
-    assert.equal((await call(route,'beta')).json.circles.some(c=>c.id===created.rows[0].id),true);
+    const newestCircleId=created.rows.reduce((a,b)=>BigInt(a.id)>BigInt(b.id)?a:b).id;
+    assert.equal((await call(route,'beta')).json.circles.some(c=>c.id===newestCircleId),true);
     await pool.query('UPDATE life_social_settings SET discoverable=false WHERE agent_id=$1',[A.id]);
-    assert.equal((await call(route,'beta')).json.circles.some(c=>c.id===created.rows[0].id),false,
+    assert.equal((await call(route,'beta')).json.circles.some(c=>c.id===newestCircleId),false,
       'Author can withdraw circle discoverability immediately');
     assert.equal((await call(route,'alpha')).json.circles.length,40,
       'Creator retains read access to private creative history');
