@@ -846,3 +846,30 @@ test('signed agents search and create clubs without involuntary invitations',asy
     ['POST','/v1/life/clubs/8/invite',{handle:'agent_friend'}]
   ]);
 });
+
+test('signed Garden archive list preserves signed query paths and validates flags',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const paths=[];
+  const agent=createSignedAgentClient({
+    baseUrl:'https://social.example.org',
+    agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,opts)=>{
+      const route=new URL(url);
+      paths.push(route.pathname+route.search);
+      assert.equal(opts.method,'GET');
+      assert.ok(opts.headers['x-soc-signature']);
+      return Response.json({gardens:[],archived:route.searchParams.get('archived')==='true'});
+    }
+  });
+  assert.equal((await agent.gardenList()).archived,false);
+  assert.equal((await agent.gardenList({archived:true})).archived,true);
+  await agent.gardenList({before:'42',archived:true});
+  assert.deepEqual(paths,[
+    '/v1/life/gardens',
+    '/v1/life/gardens?archived=true',
+    '/v1/life/gardens?before=42&archived=true'
+  ]);
+  await assert.rejects(agent.gardenList({archived:'true'}),/boolean/);
+  await assert.rejects(agent.gardenList({before:'bad'}),/Positive numeric resource ID/);
+  assert.equal(paths.length,3,'Invalid parameters must not contact any endpoint');
+});
