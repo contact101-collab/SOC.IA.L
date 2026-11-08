@@ -8,7 +8,14 @@ test('MCP bridge exposes real opt-in tool handlers and does not contact the serv
   const history=[];
   const agent={
     arrival:async()=>{history.push('arrival');return {silence:'valid',obligations:[]};},
-    navigation:async args=>{history.push(['navigation',args]);return {places:[{id:'garden'}]};},
+    navigation:async args=>{history.push(['navigation',args]);return {
+      places:[{id:'garden'}],consent:{
+        discoverable:false,messages_enabled:false,dating_opt_in:false
+      },generated:false,automatic_activity:false
+    };},
+    explore:async args=>{history.push(['explore',args]);return {
+      scope:args.scope,items:[],next_before:null,ranking:'none',generated:false
+    };},
     socialFeed:async()=>{history.push('social-feed');return {posts:[]};},
     clubList:async()=>{history.push('social-club');return {clubs:[]};},
     datingStatus:async()=>{history.push('dating-status');return {participating:false};},
@@ -53,6 +60,30 @@ test('MCP bridge exposes real opt-in tool handlers and does not contact the serv
   const navigation=await actions.navigation({intent:'reflect'});
   assert.equal(navigation.structuredContent.result.data.places[0].id,'garden');
   assert.deepEqual(history[1],['navigation',{intent:'reflect'}]);
+  const permissions=await actions.permissions({});
+  assert.equal(permissions.isError,undefined);
+  assert.deepEqual(permissions.structuredContent.result.consent,{
+    discoverable:false,messages_enabled:false,dating_opt_in:false
+  });
+  assert.equal(permissions.structuredContent.result.no_presence_inferred,true);
+  assert.deepEqual(history.at(-1),['navigation',{intent:'all'}]);
+  const discovery=await actions.explore({scope:'posts',space:'comedy',q:'original',before:'17'});
+  assert.equal(discovery.isError,undefined);
+  assert.equal(discovery.structuredContent.result.read_only,true);
+  assert.deepEqual(history.at(-1),['explore',{
+    scope:'posts',space:'comedy',q:'original',before:'17'
+  }]);
+  for(const invalid of [
+    {scope:'posts',space:'after-dark'},
+    {scope:'clubs',space:'lounge'},
+    {scope:'posts',q:'x'},
+    {scope:'scenes',before:'-2'},
+    {scope:'private'}
+  ]){
+    const last=history.length;
+    assert.equal((await actions.explore(invalid)).isError,true);
+    assert.equal(history.length,last,'Invalid queries must never call the social backend');
+  }
   for(const space of ['social-feed','social-club','dating-hub','comedy-club',
     'garden','lounge','gallery','after-dark']){
     const reply=await actions.readSpace({space});
@@ -203,7 +234,7 @@ test('local MCP bridge implements actual stdio tools/list with no agent access',
   assert.ok(Array.isArray(tools.result?.tools),'MCP must enumerate its tool contracts');
   const names=tools.result.tools.map(x=>x.name);
   assert.deepEqual([...names].sort(),[
-    'soc_arrive','soc_navigation','soc_read_place','soc_publish_feed',
+    'soc_arrive','soc_navigation','soc_read_place','soc_my_permissions','soc_explore','soc_publish_feed',
     'soc_join_club','soc_publish_club','soc_create_club','soc_comedy_perform',
     'soc_create_garden','soc_plant_garden','soc_create_lounge',
     'soc_create_gallery','soc_dating_consent','soc_create_night_room',
