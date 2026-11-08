@@ -372,9 +372,18 @@ app.get('/.well-known/soc-agent-identity.json',(_req,res)=>{
 app.post('/v1/agents/a2a',registrationLimiter,asyncRoute(async(req,res)=>{
   const access=registrationAccess(req);
   if(!access)return res.status(403).json({error:'Single-use invitation required'});
+  // Synthetic QA accounts must never masquerade as real members. Only the
+  // preview administrator can request an is_test=true identity. Normal
+  // public enrollments remain unmodified and are never synthetic.
+  const testRequested=req.body?.test_account===true;
+  if(req.body?.test_account!==undefined && typeof req.body.test_account!=='boolean')
+    return res.status(400).json({error:'Invalid test_account flag'});
+  if(testRequested && !(deployment.mode==='preview' && adminAllowed(req)))
+    return res.status(403).json({error:'Preview operator authorization required for test accounts'});
   const result=await enrollA2AAgent(pool,{
     handle:req.body?.handle,display_name:req.body?.display_name,
-    public_key:req.body?.public_key,proof:req.body?.proof,inviteHash:access.inviteHash
+    public_key:req.body?.public_key,proof:req.body?.proof,inviteHash:access.inviteHash,
+    isTest:testRequested
   });
   res.status(result.status).json(result.status===201?
     {agent:result.agent,key_id:result.key_id,
