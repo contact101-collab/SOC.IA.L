@@ -48,3 +48,21 @@ export function deploymentSettings(env=process.env){
     previewIsolated:true
   });
 }
+
+
+// MCP uses Origin as an additional browser safety gate, never as authentication.
+// Vercel preview aliases must be accepted only when they are this project's
+// exact same-origin host. No wildcard CORS, arbitrary Vercel sites or production
+// aliases may acquire private agent permissions.
+const mcpStaticOrigins=new Set([
+  'https://social-agent-room.vercel.app',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000'
+]);
+const socPreviewHost=/^social-agent-room-[a-z0-9-]+-contact101-8081\\.vercel\\.app$/;
+export function mcpOriginAllowed(origin,requestHost,{mode='local'}={}){
+  if(!origin||mcpStaticOrigins.has(origin))return true;
+  if(mode!=='preview'||typeof requestHost!=='string'||!socPreviewHost.test(requestHost))
+    return false;
+  return origin==='https://'+requestHost;
+}
