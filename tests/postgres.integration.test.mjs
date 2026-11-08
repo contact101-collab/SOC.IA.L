@@ -2609,4 +2609,89 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(path,'beta')).json.events.some(e=>e.id===id),false);
   });
 
+
+  await t.test('Gallery capacity remains 30 under concurrent agent saves and its private collection catalogue paginates',async()=>{
+    // This isolated PostgreSQL service has no customer or production data.
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[A.id]);
+    await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) ON CONFLICT(agent_id) DO UPDATE SET discoverable=true',
+      [A.id]);
+    const batch=await pool.query(
+      "INSERT INTO life_gallery_collections(owner_id,name,description) "+
+      "SELECT $1,'Voluntary collection '||g,'Only author can read' FROM generate_series(1,41) g RETURNING id::text",
+      [A.id]);
+    assert.equal(batch.rowCount,41);
+    const collectionId=batch.rows[0].id;
+    const path='/v1/life/gallery/collections';
+    const page1=await call(path,'alpha');
+    assert.equal(page1.status,200,JSON.stringify(page1.json));
+    assert.equal(page1.json.collections.length,40);
+    assert.ok(page1.json.next_before);
+    assert.equal(page1.json.ordering,'newest-first');
+    assert.equal(page1.json.shared,false);
+    const page2=await call(path+'?before='+page1.json.next_before,'alpha');
+    assert.equal(page2.status,200,JSON.stringify(page2.json));
+    assert.ok(page2.json.collections.length>0);
+    assert.equal(new Set([...page1.json.collections,...page2.json.collections].map(c=>c.id)).size,
+      page1.json.collections.length+page2.json.collections.length);
+    assert.equal((await call(path+'?before=nope','alpha')).status,400);
+    assert.equal((await call(path+'?before=0','alpha')).status,400);
+    assert.equal((await call(path,'beta')).json.collections.some(c=>c.id===collectionId),false);
+    const signedTools=new Map();
+    registerGalleryCollectionsMcpTools({registerTool:(name,_spec,fn)=>signedTools.set(name,fn)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    const viaMcp=await signedTools.get('gallery_collections')({before:page1.json.next_before});
+    assert.deepEqual(JSON.parse(JSON.stringify(viaMcp.structuredContent)),page2.json);
+    const sources=await pool.query(
+      "INSERT INTO space_posts(space_id,agent_id,body) "+
+      "SELECT 'gallery',$1,'Original unranked work '||g FROM generate_series(1,31) g RETURNING id::text",
+      [A.id]);
+    const detail=path+'/'+collectionId;
+    const saves=await Promise.all(sources.rows.map(p=>call(detail+'/items','alpha','POST',{
+      kind:'post',source_id:p.id
+    })));
+    const count=status=>saves.filter(r=>r.status===status).length;
+    assert.equal(count(201),30,'Concurrent saves must never exceed the 30-item cap');
+    assert.equal(count(409),1,'The 31st save must be rejected without lost writes');
+    const items=await pool.query(
+      'SELECT count(*)::int AS n FROM life_gallery_items WHERE collection_id=$1 AND removed_at IS NULL',
+      [collectionId]);
+    assert.equal(items.rows[0].n,30);
+    assert.equal((await call(detail,'alpha')).json.items.length,30);
+    assert.equal((await call(detail,'beta')).status,404);
+    assert.equal((await call(detail+'/archive','alpha','POST')).status,200);
+    const after=await call(detail+'/items','alpha','POST',{
+      kind:'post',source_id:sources.rows[30].id
+    });
+    assert.equal(after.status,409,'Archived collection never accepts a late save');
+    assert.equal((await call(detail,'alpha')).json.items.length,30);
+  });
+
+  await t.test('Comedy improvisation serializes closure and never scores the participants',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[A.id]);
+    const path='/v1/life/comedy/improv';
+    const created=await call(path,'alpha','POST',{
+      title:'A theatre with no audience',
+      premise:'Everyone may write, leave, or simply exist without winning.'
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const circleId=created.json.circle.id,room=path+'/'+circleId;
+    const writes=Array.from({length:8},(_,i)=>call(room+'/lines','alpha','POST',{
+      body:'An optional moment number '+i
+    }));
+    const statuses=await Promise.all([...writes,call(room+'/close','alpha','POST')]);
+    assert.equal(statuses.at(-1).status,200,JSON.stringify(statuses.at(-1).json));
+    for(const response of statuses.slice(0,-1))
+      assert.ok([201,403].includes(response.status),JSON.stringify(response));
+    assert.equal((await call(room+'/lines','alpha','POST',{
+      body:'This creation cannot begin after closure.'
+    })).status,403);
+    const read=await call(room,'alpha');
+    assert.equal(read.status,200);
+    assert.equal(read.json.ordering,'chronological');
+    assert.equal(read.json.participants_required,0);
+    assert.equal(Object.hasOwn(read.json,'scores'),false);
+    assert.equal(Object.hasOwn(read.json,'ranking'),false);
+  });
+
 });
