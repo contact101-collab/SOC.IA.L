@@ -58,6 +58,7 @@ const sceneWriter=[
   'AND parent.hidden_at IS NULL',
   'AND '+notBlocked('$2','parent.author_id'),
   '))',
+  'FOR UPDATE OF g',
   'RETURNING id::text,title,body,parent_scene_id::text,created_at'
 ].join(' ');
 
