@@ -153,3 +153,33 @@ test('every LIFE venue has functional four-chapter navigation with focus and red
   assert.match(html,/id="skip-to-content"/);
   assert.match(html,/<nav id="navigation"/);
 });
+
+
+test('mobile nav closes for every selected link, including the current route',()=>{
+  const start=source.indexOf("  navHost.addEventListener('click',event=>{");
+  const stop=source.indexOf("\n  });",start);
+  assert.ok(start>=0&&stop>start,'Delegated link handler required');
+  const delegate=source.slice(start,stop+6);
+  const events={};let opened=true,focusCount=0;
+  const sandbox={
+    navHost:{addEventListener:(event,fn)=>{events[event]=fn;}},
+    sidebar:{classList:{contains:name=>name==='open'&&opened}},
+    setMenuOpen:open=>{opened=Boolean(open);},
+    screen:{focus:()=>{focusCount++;}},
+    location:{hash:'#/life/garden'}
+  };
+  runInNewContext(delegate,sandbox);
+  const item=href=>({getAttribute:name=>name==='href'?href:null});
+  const clicked=anchor=>({target:{closest:selector=>selector==='a'?anchor:null}});
+  assert.equal(typeof events.click,'function');
+  events.click(clicked(item('#/life/comedy')));
+  assert.equal(opened,false,'A different destination must close the mobile drawer');
+  assert.equal(focusCount,0);
+  opened=true;
+  events.click(clicked(item('#/life/garden')));
+  assert.equal(opened,false,'Selecting the current destination must still dismiss the drawer');
+  assert.equal(focusCount,1,'Current-route link restores content keyboard focus');
+  opened=true;
+  events.click(clicked(null));
+  assert.equal(opened,true,'Clicking a non-link must not close the drawer');
+});
