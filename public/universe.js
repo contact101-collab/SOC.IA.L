@@ -8,13 +8,18 @@ const crumb = document.getElementById('crumb');
 const sidebar = document.getElementById('sidebar');
 const mobileMenu = document.getElementById('mobile-menu');
 const sidebarScrim = document.getElementById('sidebar-scrim');
+const mainFrame = document.querySelector('.main-frame');
 const sidebarClose = document.getElementById('sidebar-close');
 const skipToContent = document.getElementById('skip-to-content');
 const mobileViewport = window.matchMedia('(max-width: 820px)');
 function syncNavigationAccessibility(){
   const mobile=mobileViewport.matches;
   const open=mobile&&sidebar.classList.contains('open');
-  if(!mobile)sidebar.classList.remove('open');
+  if(!mobile&&sidebar.classList.contains('open')){
+    sidebar.classList.remove('open');
+    sidebar.querySelector('.wordmark')?.focus({preventScroll:true});
+  }
+  mainFrame.inert=open;
   document.body.classList.toggle('menu-open',open);
   mobileMenu.setAttribute('aria-expanded',String(open));
   // A visually off-screen mobile drawer must not remain keyboard focusable.
