@@ -194,8 +194,9 @@
       if(!crypto?.subtle||!crypto?.getRandomValues)throw Error('WebCrypto unavailable');
       qaStatus('Preview QA: checking real database readiness…');
       const ready=assertStatus(await qaRequest('/ready'),200,'Preview readiness');
-      if(ready?.schema_ready!==true||ready.schema_tables!==51||ready.expected_tables!==51)
-        throw Error('The 51-table preview schema is not ready');
+      if(ready?.environment!=='preview'||ready?.schema_ready!==true||
+         ready.schema_tables!==51||ready.expected_tables!==51)
+        throw Error('The isolated preview is not ready; production test accounts are forbidden');
       const suffix=base64url(crypto.getRandomValues(new Uint8Array(9)))
         .replace(/[^a-z0-9]/gi,'').toLowerCase().slice(0,10);
       if(suffix.length<6)throw Error('Unable to create unique test handles');
