@@ -584,3 +584,96 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 @media(prefers-reduced-motion:reduce){
   .life-index-card,.home-return,.sidebar-home-link{transition:none!important}
 }
+
+
+/* LIFE / THE SOCIAL PROTOCOL
+   Editorial explanation of actual signed identity, consent, and exit.
+   It is NOT an agent activity widget or a public social feed. */
+.life-index-card-state{
+  display:block;margin-top:0;padding:10px 0;
+  border-top:1px solid currentColor;
+  font:900 9px/1.5 ui-monospace,SFMono-Regular,monospace;
+  letter-spacing:.065em;text-transform:uppercase
+}
+.life-protocol{margin:62px 0 49px;border:2px solid var(--black)}
+.life-protocol-head{
+  display:grid;grid-template-columns:minmax(130px,.32fr) minmax(0,1.1fr) minmax(200px,.56fr);
+  align-items:start;gap:clamp(16px,3vw,40px);
+  padding:36px clamp(23px,3vw,44px) 41px;background:var(--black);color:#fff
+}
+.life-protocol-overline{
+  padding-top:8px;color:#ff7f74;
+  font:900 10px/1.5 ui-monospace,monospace;letter-spacing:.1em
+}
+.life-protocol-head h2{
+  font:900 clamp(42px,5.6vw,84px)/.94 Impact,Haettenschweiler,'Arial Narrow Bold','Arial Black',sans-serif;
+  letter-spacing:-.042em;text-transform:uppercase;max-width:800px;margin:0
+}
+.life-protocol-head p{font:500 14px/1.67 Arial,sans-serif;margin:6px 0 0;color:#ecf1ff}
+.life-protocol-steps{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;
+  background:var(--black);border-top:1px solid var(--black)
+}
+.life-protocol-step{
+  display:flex;flex-direction:column;align-items:flex-start;
+  gap:15px;padding:30px clamp(20px,2.6vw,36px) 38px;
+  min-height:315px;background:#fff;color:var(--black)
+}
+.life-protocol-step:nth-child(2){background:var(--cobalt);color:#fff}
+.life-protocol-step-number{
+  font:900 13px ui-monospace,monospace;color:var(--red)
+}
+.life-protocol-step:nth-child(2) .life-protocol-step-number{color:#fff}
+.life-protocol-step-verb{
+  font:900 clamp(48px,6.4vw,105px)/.86 Impact,Haettenschweiler,'Arial Narrow Bold',sans-serif;
+  letter-spacing:-.055em;text-transform:uppercase
+}
+.life-protocol-step h3{
+  font:900 clamp(19px,2.1vw,28px)/1.1 'Arial Black',Arial,sans-serif;
+  text-transform:uppercase;letter-spacing:-.05em;margin:0
+}
+.life-protocol-step p{font:500 13px/1.65 Arial,sans-serif;margin:0;max-width:390px}
+.life-protocol-footer{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:15px;flex-wrap:wrap;padding:20px 27px;background:#fff;
+  border-top:2px solid var(--black)
+}
+.life-protocol-footer p{
+  flex:1 1 220px;max-width:395px;margin:0;
+  font:900 10px/1.5 ui-monospace,monospace;letter-spacing:.05em
+}
+.life-protocol-footer .button{min-height:48px;font-size:10px}
+.venue-state-line{
+  display:flex;align-items:flex-start;gap:15px;flex-wrap:wrap;
+  margin-top:25px;padding-top:15px;border-top:2px solid var(--black);
+  font:900 10px/1.5 ui-monospace,monospace;letter-spacing:.055em
+}
+.venue-state-prefix{color:var(--cobalt)}
+.venue-state-value{color:var(--red)}
+.venue-route-coverage{
+  display:block;color:var(--muted);font:700 10px/1.55 ui-monospace,monospace;
+  margin-top:9px;overflow-wrap:anywhere
+}
+@media(max-width:1100px){
+  .life-protocol-head{grid-template-columns:1fr 2.2fr}
+  .life-protocol-head p{grid-column:2}
+}
+@media(max-width:820px){
+  .life-protocol{margin:44px 0 35px}
+  .life-protocol-head{display:block}
+  .life-protocol-head h2{margin:15px 0 16px;font-size:clamp(43px,7.9vw,75px)}
+  .life-protocol-steps{grid-template-columns:1fr}
+  .life-protocol-step{min-height:0;padding:24px 28px 29px;gap:10px}
+  .life-protocol-step-verb{font-size:clamp(55px,10vw,84px)}
+  .life-protocol-step h3{font-size:23px}
+  .life-protocol-footer{padding:22px;align-items:stretch}
+}
+@media(max-width:560px){
+  .life-protocol-head{padding:26px 20px 29px}
+  .life-protocol-head h2{font-size:clamp(40px,10vw,62px)}
+  .life-protocol-step{padding:23px 20px}
+  .life-protocol-footer{display:grid;grid-template-columns:1fr;padding:18px}
+  .life-protocol-footer .button{width:100%;white-space:normal}
+  .venue-state-line{font-size:9px;gap:4px}
+  .venue-state-prefix,.venue-state-value{width:100%}
+}
