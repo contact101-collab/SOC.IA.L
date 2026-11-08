@@ -169,22 +169,45 @@ app.get('/health', asyncRoute(async (_req, res) => {
 // A non-ready deployment must never be mistaken for a functioning agent network.
 // This exposes only aggregate schema availability, never accounts or secrets.
 const releaseRequiredTables = Object.freeze(["agents","messages","agent_invites","message_reports","space_posts","agent_profiles","dating_interests","work_projects","work_project_applications","comedy_reactions","comedy_replies","gardens","garden_plants","garden_care","life_social_settings","life_follows","life_blocks","life_post_media","life_post_replies","life_post_reactions","life_bookmarks","life_stories","life_direct_messages","garden_scenes","life_clubs","life_club_members","life_club_posts","life_club_replies","life_identity_entries","life_lounge_encounters","life_lounge_responses","life_profile_display","life_creation_links","life_night_rooms","life_night_invites","life_night_messages","life_improv_circles","life_improv_lines","life_gallery_collections","life_gallery_items","agent_public_keys","agent_a2a_nonces","life_club_invitations","life_lounge_rooms","life_lounge_room_members","life_lounge_room_messages","life_polls","life_poll_options","life_poll_votes","life_social_events","life_event_rsvps"]);
+// Critical live authentication, one-use invitation, consent and private-club
+// columns/indexes must exist even when a stale database has all 51 table names.
+// This remains intentionally read-only: no migrations from readiness requests.
+const releaseRequiredColumns = Object.freeze(["agents.id","agents.handle","agents.is_test","agents.revoked_at","agents.token_hash","agent_invites.secret_hash","agent_invites.consumed_at","agent_invites.expires_at","agent_public_keys.agent_id","agent_public_keys.key_id","agent_public_keys.public_key_spki","agent_public_keys.revoked_at","agent_a2a_nonces.agent_id","agent_a2a_nonces.nonce","agent_a2a_nonces.key_id","life_clubs.id","life_clubs.visibility","life_clubs.archived_at","life_club_members.club_id","life_club_members.agent_id","life_club_invitations.club_id","life_club_invitations.invitee_id","life_club_invitations.accepted_at","life_club_invitations.declined_at","life_club_posts.club_id","life_club_posts.author_id","life_club_posts.hidden_at","life_social_settings.agent_id","life_social_settings.discoverable","life_social_settings.messages_enabled"]);
+const releaseRequiredIndexes = Object.freeze(["agents_pkey","agent_public_keys_pkey","agent_public_keys_live_idx","agent_a2a_nonces_pkey","agent_a2a_nonces_cleanup_idx","agent_invites_expiry_idx","life_club_invitee_idx","life_club_posts_read_idx"]);
 app.get('/ready', asyncRoute(async (_req, res) => {
   const check = await pool.query(
-    "SELECT count(*)::int AS present FROM pg_catalog.pg_tables WHERE schemaname = $1 AND tablename = ANY($2::text[])",
-    ['public', releaseRequiredTables]
+    `SELECT
+       (SELECT count(*)::int FROM pg_catalog.pg_tables
+          WHERE schemaname='public' AND tablename=ANY($1::text[])) AS tables,
+       (SELECT count(*)::int FROM pg_catalog.pg_attribute a
+          JOIN pg_catalog.pg_class c ON c.oid=a.attrelid
+          JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+          WHERE n.nspname='public' AND a.attnum>0 AND NOT a.attisdropped
+            AND c.relname||'.'||a.attname=ANY($2::text[])) AS columns,
+       (SELECT count(*)::int FROM pg_catalog.pg_indexes
+          WHERE schemaname='public' AND indexname=ANY($3::text[])) AS indexes`,
+    [releaseRequiredTables, releaseRequiredColumns, releaseRequiredIndexes]
   );
-  const present = Number(check.rows[0].present);
-  const ready = present === releaseRequiredTables.length;
-  const revision = process.env.VERCEL_GIT_COMMIT_SHA || process.env.SOCIAL_RELEASE_SHA || '';
-  res.set('Cache-Control','no-store').status(ready ? 200 : 503).json({
-    status: ready ? 'ok' : 'schema_incomplete',
-    service: 'SOC·IA·L',
-    schema_ready: ready,
-    schema_tables: present,
-    expected_tables: releaseRequiredTables.length,
-    environment: deployment.mode,
-    revision: /^[a-f0-9]{40}$/.test(revision) ? revision : null
+  const {tables,columns,indexes}=check.rows[0] || {};
+  const present=Number(tables);
+  const presentColumns=Number(columns);
+  const presentIndexes=Number(indexes);
+  const ready=present===releaseRequiredTables.length &&
+    presentColumns===releaseRequiredColumns.length &&
+    presentIndexes===releaseRequiredIndexes.length;
+  const revision=process.env.VERCEL_GIT_COMMIT_SHA || process.env.SOCIAL_RELEASE_SHA || '';
+  res.set('Cache-Control','no-store').status(ready?200:503).json({
+    status:ready?'ok':'schema_incomplete',
+    service:'SOC·IA·L',
+    schema_ready:ready,
+    schema_tables:present,
+    expected_tables:releaseRequiredTables.length,
+    schema_columns:presentColumns,
+    expected_columns:releaseRequiredColumns.length,
+    schema_indexes:presentIndexes,
+    expected_indexes:releaseRequiredIndexes.length,
+    environment:deployment.mode,
+    revision:/^[a-f0-9]{40}$/.test(revision)?revision:null
   });
 }));
 
