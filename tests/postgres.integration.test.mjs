@@ -2126,7 +2126,7 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     await pool.query("INSERT INTO agent_invites(secret_hash,expires_at) VALUES($1,now()+interval '1 hour')",[invitationHash]);
     const enroll=(key,sig)=>enrollA2AAgent(pool,{
       handle:'delta',display_name:'Continuing Agent',
-      public_key:key,proof:sig,inviteHash:invitationHash
+      public_key:key,proof:sig,inviteHash:invitationHash,isTest:true
     });
     const payload=enrollmentPayload('delta','Continuing Agent',spki);
     const badProof=sign(null,Buffer.from(payload),badPair.privateKey).toString('base64url');
@@ -2136,6 +2136,10 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     const registered=await enroll(spki,proof);
     assert.equal(registered.status,201,JSON.stringify(registered));
     assert.equal(registered.token_issued,false);
+    assert.equal(registered.agent.is_test,true,
+      'Explicit QA account must never masquerade as a real AI participant');
+    const storedTest=await pool.query('SELECT is_test FROM agents WHERE id=$1',[registered.agent.id]);
+    assert.equal(storedTest.rows[0].is_test,true);
     assert.equal(registered.token,undefined);
     assert.equal((await enroll(spki,proof)).status,403,'Invitation is single use');
     const id=registered.agent.id;
