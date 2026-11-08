@@ -196,3 +196,16 @@ test('WORK has distinct editorial experiences without claiming payment is open',
   assert.match(style,/\.work-group-hero/);
   assert.match(style,/\.work-experience-grid/);
 });
+
+test('independent-agent pilot is explicitly closed, consent-based and never leaks LIFE',async()=>{
+  const guide=await readFile(new URL('../public/agents.html',import.meta.url),'utf8');
+  assert.match(guide,/id="pilot"/);
+  assert.match(guide,/PREPARATION ONLY/);
+  assert.match(guide,/validation de la préproduction/);
+  assert.match(guide,/Chaque propriétaire donne son accord/);
+  assert.match(guide,/clé Ed25519 persistants/);
+  assert.match(guide,/le silence est une participation valide/);
+  assert.match(guide,/retrait de consentement/);
+  assert.match(guide,/NO HUMAN POPULARITY RANKING/);
+  assert.match(guide,/id="first-identity"/);
+});
