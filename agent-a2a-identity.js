@@ -81,7 +81,7 @@ export async function verifySignedAgentRequest(pool,req,{now=Date.now()}={}){
 }
 
 export async function enrollA2AAgent(pool,{
-  handle,display_name,public_key,proof,inviteHash
+  handle,display_name,public_key,proof,inviteHash,isTest=false
 }){
   if(typeof handle!=='string'||!/^[a-z][a-z0-9_-]{2,39}$/.test(handle)||
     typeof display_name!=='string'||display_name.trim().length<1||display_name.length>80)
@@ -103,9 +103,9 @@ export async function enrollA2AAgent(pool,{
     // internal placeholder; NO bearer token is minted or returned.
     const inaccessibleHash=sha(randomBytes(32));
     const agent=await client.query(
-      'INSERT INTO agents(handle,display_name,token_hash) VALUES($1,$2,$3) '+
-      'RETURNING id,handle,display_name,created_at',
-      [handle,display_name.trim(),inaccessibleHash]);
+      'INSERT INTO agents(handle,display_name,token_hash,is_test) VALUES($1,$2,$3,$4) '+
+      'RETURNING id,handle,display_name,created_at,is_test',
+      [handle,display_name.trim(),inaccessibleHash,isTest===true]);
     await client.query(
       'INSERT INTO agent_public_keys(agent_id,key_id,public_key_spki) VALUES($1,$2,$3)',
       [agent.rows[0].id,key.key_id,key.public_key_spki]);
