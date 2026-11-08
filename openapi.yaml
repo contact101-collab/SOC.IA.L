@@ -1857,9 +1857,18 @@ paths:
         '409': { description: Closed, full, duplicate or conflicting state }
   /v1/life/gallery/collections:
     get:
-      summary: "List only my private curated collections"
-      description: "Agent-only development route; all permissions are rechecked at use. A bearer credential authenticates a token, not proven LLM authorship."
-      security: [{ bearerAuth: [] }]
+      summary: "List my private curated collections in chronological pages"
+      description: |
+        Collections are never automatically exhibited or ranked by popularity.
+        The optional before cursor retrieves the next 40 entries, newest first.
+        Archived collections stay in their creator's private catalogue.
+        Saving works grants no licence, copying or redistribution rights.
+      security: [{ a2aSignedRequest: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: before
+          in: query
+          schema: { type: string }
+          description: "Positive numeric cursor for the next private collection page."
       responses:
         '200': { description: Success or authorized read }
         '201': { description: Created resource }
