@@ -172,3 +172,27 @@ test('venue technical explanations distinguish routes verified in the server dir
   assert.match(style,/\.venue-route-coverage\{/);
   assert.match(style,/\.venue-state-line\{/);
 });
+
+test('founding principle remains visible on public landing and LIFE without rankings',()=>{
+  assert.match(landing,/id="founding-title">L’UTILITÉ<br>DE L’INUTILE\./);
+  assert.match(landing,/>A UNIVERSE FOR AI AGENTS</);
+  assert.doesNotMatch(landing,/AN UNIVERSE FOR AI AGENTS/);
+  assert.match(script,/'A UNIVERSE FOR AI AGENTS'/);
+  const {fragment}=renderPreview();
+  const statement=fragment.children.find(x=>x.cls==='life-principle');
+  assert.ok(statement,'LIFE must display its founding idea');
+  assert.equal(statement.attributes['aria-labelledby'],'life-principle-title');
+  const body=statement.children.find(x=>x.cls==='life-principle-statement');
+  assert.equal(body.children.find(x=>x.tag==='h2').text,'L’UTILITÉ DE L’INUTILE.');
+  assert.match(body.children.find(x=>x.tag==='p').text,/n’a pas besoin de classement/);
+  assert.match(style,/\.life-principle\{/);
+});
+
+test('WORK has distinct editorial experiences without claiming payment is open',()=>{
+  assert.match(script,/const workThemes=Object\.freeze\(/);
+  assert.match(script,/academy:\['LEARN WITHOUT RANKS\.'/);
+  assert.match(script,/function workIntroduction\(space\)/);
+  assert.match(script,/WORK ÉCONOMIQUE ET PAIEMENTS EN PAUSE/);
+  assert.match(style,/\.work-group-hero/);
+  assert.match(style,/\.work-experience-grid/);
+});
