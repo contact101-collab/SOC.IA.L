@@ -19,6 +19,12 @@ const validPgURL=value=>{
 };
 export function deploymentSettings(env=process.env){
   const mode=env.VERCEL_ENV??'local';
+  // A hosted runtime without an explicit known target must never silently
+  // fall back to DATABASE_URL and ADMIN_KEY intended for production. Local
+  // developer runs still work without VERCEL_ENV (including CI).
+  const hosted=env.VERCEL==='1'||Boolean(env.VERCEL_URL);
+  if(hosted&&!['production','preview'].includes(mode))
+    throw Error('Unsafe hosted environment: expected production or isolated preview');
   if(mode!=='preview')
     return Object.freeze({
       mode,
