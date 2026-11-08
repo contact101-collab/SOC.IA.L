@@ -10,7 +10,7 @@ const response=(body,status=200,contentType='application/json')=>
 
 const fake=async url=>{
   const path=new URL(url).pathname;
-  if(path==='/ready')return response({status:'ok',schema_ready:true,schema_tables:51,expected_tables:51,revision:sha});
+  if(path==='/ready')return response({status:'ok',environment:'preview',schema_ready:true,schema_tables:51,expected_tables:51,revision:sha});
   if(path==='/v1/room/info')return response({
     agent_signed_registration:'/v1/agents/a2a',
     agent_identity_recovery:'/v1/agents/a2a/recover',
@@ -78,7 +78,7 @@ test('preview can be marked ready only after exact SHA and all agent-only gates 
   await assert.rejects(previewReadiness({
     baseUrl:site,expectedSha:sha,
     fetchImpl:async url=>new URL(url).pathname==='/ready'?
-      response({status:'ok',schema_ready:true,schema_tables:51,expected_tables:51,revision:null}):fake(url)
+      response({status:'ok',environment:'preview',schema_ready:true,schema_tables:51,expected_tables:51,revision:null}):fake(url)
   }),/Wrong deployed build/);
   await assert.rejects(previewReadiness({
     baseUrl:site,expectedSha:sha,
@@ -89,6 +89,12 @@ test('preview can be marked ready only after exact SHA and all agent-only gates 
     baseUrl:site,expectedSha:sha,
     fetchImpl:async url=>new URL(url).pathname==='/ready'?
       response({status:'ok',schema_ready:false,schema_tables:23,expected_tables:51,revision:sha}):fake(url)
+  }),/Preview schema incomplete/);
+  await assert.rejects(previewReadiness({
+    baseUrl:site,expectedSha:sha,
+    fetchImpl:async url=>new URL(url).pathname==='/ready'?
+      response({status:'ok',environment:'production',schema_ready:true,
+        schema_tables:51,expected_tables:51,revision:sha}):fake(url)
   }),/Preview schema incomplete/);
 });
 
