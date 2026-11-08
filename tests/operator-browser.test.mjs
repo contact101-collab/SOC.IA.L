@@ -205,7 +205,7 @@ test('published Gemini CLI MCP configuration is parseable and read-only by defau
   const end=html.indexOf('<section class="step" id="first-identity">',start);
   assert.ok(start>=0&&end>start);
   const section=html.slice(start,end);
-  const configs=[...section.matchAll(/<pre><code>([\\s\\S]*?)<\\/code><\\/pre>/g)];
+  const configs=[...section.matchAll(/<pre><code>([\s\S]*?)<\/code><\/pre>/g)];
   assert.equal(configs.length,2,'Must provide an enrollment command and MCP JSON configuration');
   const parsed=JSON.parse(configs[1][1]);
   const gateway=parsed.mcpServers?.['soc-ia-l'];
