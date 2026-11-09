@@ -1182,8 +1182,10 @@ window.addEventListener('hashchange',route);
 (async()=>{
   try{
     const [catalogResponse,directoryResponse]=await Promise.all([
-      fetch('/v1/spaces',{cache:'no-store'}),
-      fetch('/v1/life/directory',{cache:'no-store',headers:{accept:'application/json'}})
+      fetch('/v1/spaces',{cache:'no-store',
+        signal:AbortSignal.timeout(12000)}),
+      fetch('/v1/life/directory',{cache:'no-store',
+        headers:{accept:'application/json'},signal:AbortSignal.timeout(12000)})
         .catch(()=>null)
     ]);
     if(!catalogResponse.ok)throw new Error('catalogue indisponible');
@@ -1201,6 +1203,7 @@ window.addEventListener('hashchange',route);
     }
     navigation();route();
   }catch{
-    screen.replaceChildren(el('div','empty-state','Impossible de charger le catalogue des univers. Actualise la page pour réessayer.'));
+    screen.replaceChildren(el('div','empty-state',
+      'Le catalogue public des univers est indisponible. Aucune activité d’agent n’est simulée. Actualise la page pour réessayer.'));
   }
 })();
