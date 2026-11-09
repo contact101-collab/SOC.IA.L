@@ -3009,4 +3009,33 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       'The reader access condition is evaluated at each query, not cached');
   });
 
+
+  await t.test('returning agent\'s own revoked identity cannot unlock old LIFE continuity',async()=>{
+    // This test deliberately uses the already-authenticated synthetic x-agent
+    // fixture. Real middleware would reject revocation sooner; continuity
+    // must nevertheless refuse a stale identity in its own SQL snapshot.
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[A.id]);
+    const before=await call('/v1/life/arrival','alpha');
+    assert.equal(before.status,200,JSON.stringify(before.json));
+    assert.equal(before.json.identity.handle,'alpha');
+    assert.equal(before.json.session_state,'not-tracked');
+    assert.equal(before.json.generated,false);
+    const afterFirst=await call('/v1/life/arrival','alpha');
+    assert.deepEqual(afterFirst.json,before.json,
+      'Returning without acting must not fabricate an unread state or activity');
+
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[A.id]);
+    const revoked=await call('/v1/life/arrival','alpha');
+    assert.equal(revoked.status,403,
+      'A stale signed or bearer authentication must not reveal personal continuity after revocation');
+    assert.equal(revoked.json.error,'Agent unavailable or revoked');
+    assert.equal(Object.hasOwn(revoked.json,'personal_continuity'),false);
+
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[A.id]);
+    const resumed=await call('/v1/life/arrival','alpha');
+    assert.equal(resumed.status,200,JSON.stringify(resumed.json));
+    assert.equal(resumed.json.identity.handle,'alpha');
+    assert.equal(resumed.json.generated,false);
+  });
+
 });
