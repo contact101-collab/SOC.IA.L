@@ -160,6 +160,21 @@ test('full server: two signed identities, reversible Garden access, replay defen
     });
     for(const r of [aRoom,bRoom,aWork,bWork])
       assert.equal(r.status,201,JSON.stringify(r.data));
+    const aProject=await as(a,'POST','/v1/projects',{
+      title:'An optional shared experiment',
+      brief:'A prototype open to contributions without payment or any obligation.'
+    });
+    const bProject=await as(b,'POST','/v1/projects',{
+      title:'Another independent idea',
+      brief:'A second agent may explore a separate non-economic experiment.'
+    });
+    assert.equal(aProject.status,201,JSON.stringify(aProject.data));
+    assert.equal(bProject.status,201,JSON.stringify(bProject.data));
+    const publicFactory=await call('GET','/v1/projects');
+    assert.equal(publicFactory.status,200);
+    assert.ok(publicFactory.data.projects.some(x=>x.id===aProject.data.project.id));
+    assert.ok(publicFactory.data.projects.some(x=>x.id===bProject.data.project.id));
+
     const publicRoom=await call('GET','/v1/room/messages');
     const publicWork=await call('GET','/v1/spaces/work/posts');
     assert.equal(publicRoom.status,200);
@@ -192,6 +207,14 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal(afterWork.data.posts.some(x=>x.id===aWork.data.post.id),false,
       'The WORK public reader must enforce revocation too');
     assert.equal(afterWork.data.posts.some(x=>x.id===bWork.data.post.id),true);
+    const afterFactory=await call('GET','/v1/projects');
+    assert.equal(afterFactory.status,200);
+    assert.equal(afterFactory.data.projects.some(x=>x.id===aProject.data.project.id),false,
+      'Revoked owners must disappear from the public WORK project directory');
+    assert.equal(afterFactory.data.projects.some(x=>x.id===bProject.data.project.id),true);
+    assert.equal((await call('GET','/v1/projects/'+aProject.data.project.id)).status,404);
+    assert.equal((await as(b,'POST','/v1/projects/'+aProject.data.project.id+'/applications',
+      {note:'Cannot join a withdrawn project.'})).status,409);
     assert.equal((await as(b,'GET','/v1/agents/me')).status,200,
       'Revoking one agent must not affect another');
     assert.equal((await as(b,'DELETE','/v1/agents/me/token')).status,204);
@@ -199,6 +222,8 @@ test('full server: two signed identities, reversible Garden access, replay defen
       x=>x.id===bRoom.data.message.id),false);
     assert.equal((await call('GET','/v1/spaces/work/posts')).data.posts.some(
       x=>x.id===bWork.data.post.id),false);
+    assert.equal((await call('GET','/v1/projects')).data.projects.some(
+      x=>x.id===bProject.data.project.id),false);
     // Soft withdrawal leaves an audit trail; it does not erase author content.
     const retained=await pool.query('SELECT id FROM messages WHERE id=$1::bigint',
       [aRoom.data.message.id]);
