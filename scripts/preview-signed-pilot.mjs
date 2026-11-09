@@ -39,6 +39,7 @@ export async function runPreviewSignedPilot({
      /[\r\n]/.test(oidcToken))throw Error('Invalid pilot transport configuration');
   const access=oidcToken?{'x-vercel-trusted-oidc-idp-token':oidcToken}:{};
   let requests=0;
+  let capturedSigned=null;
   const safeFetch=async(url,options={})=>{
     const target=new URL(String(url));
     if(target.origin!==origin||!target.pathname.startsWith('/')||
@@ -49,6 +50,8 @@ export async function runPreviewSignedPilot({
       if(/[\r\n]/.test(key)||/[\r\n]/.test(String(headers[key])))
         throw Error('Invalid request header');
     }
+    if(!capturedSigned&&target.pathname==='/v1/agents/me'&&headers['x-soc-agent-id'])
+      capturedSigned={...headers};
     requests++;
     const res=await fetchImpl(target.toString(),{
       ...options,headers,redirect:'manual',credentials:'omit',cache:'no-store',
@@ -135,6 +138,17 @@ export async function runPreviewSignedPilot({
     assert.equal((await first.client.identity()).agent.id,first.id);
     assert.equal((await second.client.identity()).agent.id,second.id);
     checked.push('independent Ed25519 identities');
+    // A captured valid request must be single-use and bound to its path.
+    assert.ok(capturedSigned);
+    const replay=await safeFetch(origin+'/v1/agents/me',{
+      method:'GET',headers:capturedSigned
+    });
+    assert.equal(replay.status,401,'Replayed signed nonce must be refused');
+    const tamper=await safeFetch(origin+'/v1/life/arrival',{
+      method:'GET',headers:capturedSigned
+    });
+    assert.equal(tamper.status,401,'Request signature must bind its exact URL');
+    checked.push('remote replay and signed URL tamper rejected');
     const initial=await first.client.arrival();
     assert.equal(initial.personal_continuity?.owned_gardens?.length,0);
     assert.equal((await first.client.mcp('my_agent')).handle,first.handle);
@@ -147,6 +161,21 @@ export async function runPreviewSignedPilot({
     assert.equal((await first.client.gardenView(gardenId)).garden.id,gardenId);
     await assert.rejects(second.client.gardenView(gardenId),/HTTP 404/);
     checked.push('private garden isolation');
+    await assert.rejects(first.client.directThread(second.handle),/HTTP 403/);
+    await assert.rejects(first.client.directSend(second.handle,'Synthetic denied message'),/HTTP 403/);
+    checked.push('no private messages without mutual consent');
+    // Rotate the first key; old signing power must disappear immediately.
+    const oldClient=first.client;
+    const replacement=generateKeyPairSync('ed25519');
+    await oldClient.addSigningKey(replacement.privateKey);
+    const newClient=createSignedAgentClient({
+      baseUrl:origin,agentId:first.id,privateKey:replacement.privateKey,fetchImpl:safeFetch
+    });
+    assert.equal((await newClient.identity()).agent.id,first.id);
+    await newClient.revokeSigningKey(oldClient.keyId);
+    await assert.rejects(oldClient.identity(),/HTTP 401/);
+    first.client=newClient;
+    checked.push('remote Ed25519 key rotation and old-key revocation');
     await revoke(first);
     await assert.rejects(first.client.identity(),/HTTP 401/);
     await assert.rejects(first.client.arrival(),/HTTP 401/);
