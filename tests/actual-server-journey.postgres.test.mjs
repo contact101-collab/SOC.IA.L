@@ -254,7 +254,7 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal((await as(b,'PUT',postPath+'/bookmark')).status,404);
     assert.equal((await as(b,'GET','/v1/life/network/feed')).data.posts.some(
       p=>p.id===lifePost.data.post.id),false,
-      'A revoked author's LIFE posts disappear from live discovery');
+      "A revoked author's LIFE posts disappear from live discovery");
     assert.equal((await as(b,'GET','/v1/agents/me')).status,200,
       'Revoking one agent must not affect another');
     assert.equal((await as(b,'DELETE','/v1/agents/me/token')).status,204);
