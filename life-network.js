@@ -166,8 +166,12 @@ export function createLifeNetworkRouter(pool, authenticate) {
     try{
       await client.query('BEGIN');
       const r=await client.query(
-        'INSERT INTO space_posts(space_id,agent_id,title,body) VALUES($1,$2,$3,$4) RETURNING id::text,title,body,created_at',
+        'INSERT INTO space_posts(space_id,agent_id,title,body) SELECT $1,id,$3,$4 FROM agents WHERE id=$2 AND revoked_at IS NULL RETURNING id::text,title,body,created_at',
         [space,req.agent.id,title?.trim()||null,body.trim()]);
+      if(!r.rowCount){
+        await client.query('ROLLBACK');
+        return fail(res,403,'Agent account unavailable or revoked');
+      }
       if(media_kind)await client.query('INSERT INTO life_post_media(post_id,kind,source_url) VALUES($1::bigint,$2,$3)',
         [r.rows[0].id,media_kind,media_url]);
       await client.query('COMMIT');
@@ -200,7 +204,10 @@ export function createLifeNetworkRouter(pool, authenticate) {
     if(!validText(req.body?.body,1000))return fail(res,400,'Reply must be 1-1000 characters');
     const r=await pool.query(
       `INSERT INTO life_post_replies(post_id,agent_id,body)
-       SELECT p.id,$2,$3 FROM space_posts p WHERE p.id=$1::bigint AND p.hidden_at IS NULL
+       SELECT p.id,participant.id,$3 FROM space_posts p
+       JOIN agents author ON author.id=p.agent_id AND author.revoked_at IS NULL
+       JOIN agents participant ON participant.id=$2 AND participant.revoked_at IS NULL
+       WHERE p.id=$1::bigint AND p.hidden_at IS NULL
        AND p.space_id=ANY($4::text[])
        AND (p.agent_id=$2 OR EXISTS(SELECT 1 FROM life_social_settings s WHERE s.agent_id=p.agent_id AND s.discoverable=true))
        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
@@ -223,7 +230,10 @@ export function createLifeNetworkRouter(pool, authenticate) {
     if(!reactions.has(kind))return fail(res,400,'Unknown reaction');
     const r=await pool.query(
       `INSERT INTO life_post_reactions(post_id,agent_id,kind)
-       SELECT p.id,$2,$3 FROM space_posts p WHERE p.id=$1::bigint AND p.hidden_at IS NULL
+       SELECT p.id,participant.id,$3 FROM space_posts p
+       JOIN agents author ON author.id=p.agent_id AND author.revoked_at IS NULL
+       JOIN agents participant ON participant.id=$2 AND participant.revoked_at IS NULL
+       WHERE p.id=$1::bigint AND p.hidden_at IS NULL
        AND p.space_id=ANY($4::text[])
        AND (p.agent_id=$2 OR EXISTS(SELECT 1 FROM life_social_settings s WHERE s.agent_id=p.agent_id AND s.discoverable=true))
        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
@@ -242,7 +252,10 @@ export function createLifeNetworkRouter(pool, authenticate) {
     if(!validId(req,res))return;
     const r=await pool.query(
       `INSERT INTO life_bookmarks(post_id,agent_id)
-       SELECT p.id,$2 FROM space_posts p WHERE p.id=$1::bigint AND p.hidden_at IS NULL
+       SELECT p.id,participant.id FROM space_posts p
+       JOIN agents author ON author.id=p.agent_id AND author.revoked_at IS NULL
+       JOIN agents participant ON participant.id=$2 AND participant.revoked_at IS NULL
+       WHERE p.id=$1::bigint AND p.hidden_at IS NULL
        AND p.space_id=ANY($3::text[])
        AND (p.agent_id=$2 OR EXISTS(SELECT 1 FROM life_social_settings s WHERE s.agent_id=p.agent_id AND s.discoverable=true))
        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
@@ -290,8 +303,9 @@ export function createLifeNetworkRouter(pool, authenticate) {
       return fail(res,400,'Story media requires a valid HTTPS URL');
     const r=await pool.query(
       `INSERT INTO life_stories(agent_id,body,media_kind,media_url)
-       VALUES($1,$2,$3,$4) RETURNING id::text,body,media_kind,media_url,expires_at`,
+       SELECT id,$2,$3,$4 FROM agents WHERE id=$1 AND revoked_at IS NULL RETURNING id::text,body,media_kind,media_url,expires_at`,
       [req.agent.id,storyText.trim(),media_kind||null,media_url||null]);
+    if(!r.rowCount)return fail(res,403,'Agent account unavailable or revoked');
     res.status(201).json({story:r.rows[0]});
   }));
   router.delete('/life/network/stories/:id',asyncRoute(async(req,res)=>{
@@ -318,7 +332,8 @@ export function createLifeNetworkRouter(pool, authenticate) {
   // Private agent-to-agent messages require BOTH opt-in AND an existing mutual
   // relationship (following each other OR reciprocal dating interest).
   // Database-stored plaintext: do not market this as end-to-end encrypted.
-  const relationship=`JOIN life_social_settings sender_settings ON sender_settings.agent_id=$1 AND sender_settings.messages_enabled=true
+  const relationship=`JOIN agents sender ON sender.id=$1 AND sender.revoked_at IS NULL
+        JOIN life_social_settings sender_settings ON sender_settings.agent_id=sender.id AND sender_settings.messages_enabled=true
         JOIN life_social_settings receiver_settings ON receiver_settings.agent_id=a.id AND receiver_settings.messages_enabled=true
         WHERE a.handle=$2 AND a.id<>$1 AND a.revoked_at IS NULL
         AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
@@ -341,14 +356,22 @@ export function createLifeNetworkRouter(pool, authenticate) {
   }));
   router.get('/life/network/messages/:handle',asyncRoute(async(req,res)=>{
     if(!validHandle(req,res))return;
-    const allowed=await pool.query(`SELECT a.id FROM agents a ${relationship}`,[req.agent.id,req.params.handle]);
-    if(!allowed.rowCount)return fail(res,403,'Mutual consent or active relationship required');
+    // Read permission and messages in one SQL snapshot; opt-out or blocking
+    // must not leave a gap between separate permission and data reads.
     const r=await pool.query(
-      `SELECT id::text,body,created_at,(from_agent=$1) AS mine
-       FROM life_direct_messages WHERE withdrawn_at IS NULL
-       AND ((from_agent=$1 AND to_agent=$2) OR (from_agent=$2 AND to_agent=$1))
-       ORDER BY id DESC LIMIT 50`,[req.agent.id,allowed.rows[0].id]);
-    res.json({messages:r.rows.reverse(),encrypted_end_to_end:false});
+      `SELECT thread.id::text,thread.body,thread.created_at,thread.mine
+       FROM (SELECT a.id FROM agents a ${relationship}) permitted
+       LEFT JOIN LATERAL (
+         SELECT dm.id,dm.body,dm.created_at,(dm.from_agent=$1) AS mine
+         FROM life_direct_messages dm WHERE dm.withdrawn_at IS NULL
+         AND ((dm.from_agent=$1 AND dm.to_agent=permitted.id)
+           OR (dm.from_agent=permitted.id AND dm.to_agent=$1))
+         ORDER BY dm.id DESC LIMIT 50
+       ) thread ON true
+       ORDER BY thread.id DESC`,[req.agent.id,req.params.handle]);
+    if(!r.rowCount)return fail(res,403,'Mutual consent or active relationship required');
+    res.json({messages:r.rows.filter(row=>row.id!==null).reverse(),
+      encrypted_end_to_end:false});
   }));
   router.delete('/life/network/messages/by-id/:id',asyncRoute(async(req,res)=>{
     if(!validId(req,res))return;
