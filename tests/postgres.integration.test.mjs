@@ -2734,4 +2734,70 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
       'Creator retains read access to private creative history');
   });
 
+
+  await t.test('Comedy history beyond 100 lines is pageable, private and revocable over REST and MCP',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',
+      [[A.id,B.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE (from_agent=$1 AND to_agent=$2) OR (from_agent=$2 AND to_agent=$1)',
+      [A.id,B.id]);
+    await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) '+
+      'VALUES($1,true,false),($2,true,false) ON CONFLICT(agent_id) '+
+      'DO UPDATE SET discoverable=true',
+      [A.id,B.id]);
+    const created=await pool.query(
+      "INSERT INTO life_improv_circles(owner_id,title,premise) "+
+      "VALUES($1,'An endless voluntary play','A story can continue for as long as its agents choose.') "+
+      'RETURNING id::text',[A.id]);
+    const circleId=created.rows[0].id,route='/v1/life/comedy/improv/'+circleId;
+    const inserted=await pool.query(
+      'INSERT INTO life_improv_lines(circle_id,author_id,body) '+
+      "SELECT $1,$2,'Chapter of silence '||n FROM generate_series(1,105) n RETURNING id::text",
+      [circleId,A.id]);
+    assert.equal(inserted.rowCount,105);
+    const seen=[];
+    let after=null;
+    for(let page=0;page<3;page++){
+      const endpoint=route+(after?'?after='+after:'');
+      const r=await call(endpoint,'beta');
+      assert.equal(r.status,200,JSON.stringify(r.json));
+      assert.ok(r.json.lines.length<=40);
+      assert.equal(r.json.ordering,'chronological');
+      assert.equal(r.json.participants_required,0);
+      seen.push(...r.json.lines.map(x=>x.id));
+      after=r.json.next_after;
+      if(page<2)assert.ok(after,'Another chronological page is expected');
+      else assert.equal(after,null,'Last line is accessible and no pages remain');
+    }
+    assert.equal(seen.length,105);
+    assert.equal(new Set(seen).size,105,'Pages must never repeat a line');
+    for(let i=1;i<seen.length;i++)
+      assert.ok(BigInt(seen[i])>BigInt(seen[i-1]),'Chronological IDs strictly increase');
+    assert.equal((await call(route+'?after=invalid','beta')).status,400);
+    assert.equal((await call(route+'?after=0','beta')).status,400);
+    const tools=new Map();
+    registerComedyImprovMcpTools({registerTool:(name,_spec,handler)=>tools.set(name,handler)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    const page=await tools.get('improv_view')({id:circleId,after:seen[39]});
+    assert.equal(page.isError,undefined);
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(page.structuredContent.lines.map(x=>x.id))),
+      seen.slice(40,80));
+    await pool.query(
+      'INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2) ON CONFLICT DO NOTHING',
+      [B.id,A.id]);
+    assert.equal((await call(route+'?after='+seen[79],'beta')).status,404,
+      'Every new page must recheck blocks and consent');
+    assert.equal((await tools.get('improv_view')({id:circleId,after:seen[79]})).isError,true);
+    assert.equal((await call(route,'alpha')).status,200,
+      'The author keeps access to their own original creation');
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',
+      [B.id,A.id]);
+    await pool.query('UPDATE life_social_settings SET discoverable=false WHERE agent_id=$1',
+      [A.id]);
+    assert.equal((await call(route+'?after='+seen[79],'beta')).status,404,
+      'Withdrawing discoverability immediately hides later pages');
+    assert.equal((await call(route,'alpha')).status,200);
+  });
+
 });
