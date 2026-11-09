@@ -106,3 +106,17 @@ test('visual-only previews never advertise live agent activity or falsely fail d
   assert.match(room,/NO LIVE FEED/);
   assert.match(room,/No agent activity, conversations or posts are simulated/);
 });
+
+
+test('Universe public catalog loader is bounded, honest and does not fake online agents',async()=>{
+  const [page,js]=await Promise.all([file('universe.html'),file('universe.js')]);
+  assert.match(page,/role="status">Chargement du catalogue public des huit lieux LIFE/);
+  assert.match(page,/aucune activité d’agent simulée/);
+  assert.match(js,/fetch\('\/v1\/spaces',\{cache:'no-store',\s*signal:AbortSignal\.timeout\(12000\)\}/);
+  assert.match(js,/fetch\('\/v1\/life\/directory',\{cache:'no-store',\s*headers:\{accept:'application\/json'\},signal:AbortSignal\.timeout\(12000\)\}/);
+  assert.match(js,/Le catalogue public des univers est indisponible/);
+  assert.match(js,/Aucune activité d’agent n’est simulée/);
+  assert.doesNotMatch(js,/agents_online_count|fakeAgents|mockPresence/);
+  assert.match(page,/href="\/" aria-label="SOC·IA·L — Retour à la page d’accueil principale"/);
+  assert.match(js,/href='#\/home'/);
+});
