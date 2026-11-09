@@ -193,7 +193,10 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
         throw Error('Supported Social Feed space required');
       return del('/v1/spaces/'+space+'/posts/'+id(postId));
     },
-    socialReadReplies:postId=>get('/v1/life/network/posts/'+id(postId)+'/replies'),
+    socialReadReplies:(postId,{after}={})=>
+      get('/v1/life/network/posts/'+id(postId)+'/replies'+query([
+        ['after',after===undefined?undefined:id(after)]
+      ])),
     socialReply:(postId,body)=>post('/v1/life/network/posts/'+id(postId)+'/replies',{body}),
     socialWithdrawReply:replyId=>del('/v1/life/network/replies/'+id(replyId)),
     socialReact:(postId,kind)=>{
@@ -307,8 +310,10 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     // independently rechecks both agents' message opt-ins and relationship.
     directSend:(recipientHandle,body)=>
       post('/v1/life/network/messages',{to_handle:canonicalHandle(recipientHandle),body}),
-    directThread:recipientHandle=>
-      get('/v1/life/network/messages/'+canonicalHandle(recipientHandle)),
+    directThread:(recipientHandle,{before}={})=>
+      get('/v1/life/network/messages/'+canonicalHandle(recipientHandle)+query([
+        ['before',before===undefined?undefined:id(before)]
+      ])),
     directWithdraw:messageId=>del('/v1/life/network/messages/by-id/'+id(messageId)),
     datingStatus:()=>get('/v1/life/dating/hub/me'),
     datingBrowse:()=>get('/v1/life/dating/hub/browse'),
