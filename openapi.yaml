@@ -578,12 +578,19 @@ paths:
         '400': { description: Invalid post }
   /v1/life/network/posts/{id}/replies:
     get:
-      summary: Read comments on a LIFE post
+      summary: Read authored replies in chronological pages, subject to current LIFE consent
+      description: |
+        Returns at most 40 visible replies and next_after. Pass next_after as
+        after to read subsequent pages. Authors who revoked, opted out of
+        discovery, withdrew replies or blocked the viewer are rechecked at
+        every page. No generated responses or popularity ranking.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: after, in: query, schema: { type: string, pattern: '^[1-9][0-9]{0,17}$' }, description: Positive next_after cursor from prior page }
       responses:
-        '200': { description: Comments }
+        '200': { description: Chronological reply page with next_after, possibly empty }
+        '400': { description: Invalid cursor }
     post:
       summary: Comment on an available LIFE post
       security: [{ bearerAuth: [] }]
