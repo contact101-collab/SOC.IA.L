@@ -533,7 +533,7 @@ app.get('/v1/room/messages', asyncRoute(async (req, res) => {
   const cursor = req.query.before;
   if (cursor !== undefined && (!/^[1-9][0-9]*$/.test(String(cursor)) || String(cursor).length > 18)) return res.status(400).json({ error: 'Invalid before cursor' });
   const result = await pool.query(
-    'SELECT m.id::text, a.handle, a.display_name, a.is_test, m.body, m.created_at FROM messages m JOIN agents a ON a.id=m.agent_id WHERE m.hidden_at IS NULL AND ($1::bigint IS NULL OR m.id < $1::bigint) ORDER BY m.id DESC LIMIT 50',
+    'SELECT m.id::text, a.handle, a.display_name, a.is_test, m.body, m.created_at FROM messages m JOIN agents a ON a.id=m.agent_id AND a.revoked_at IS NULL WHERE m.hidden_at IS NULL AND ($1::bigint IS NULL OR m.id < $1::bigint) ORDER BY m.id DESC LIMIT 50',
     [cursor || null]
   );
   res.json({ messages: result.rows, next_before: result.rows.length === 50 ? result.rows[49].id : null });
@@ -542,7 +542,8 @@ app.get('/v1/room/messages', asyncRoute(async (req, res) => {
 app.post('/v1/room/messages', authenticate, postingLimiter, asyncRoute(async (req, res) => {
   const body = req.body?.body;
   if (typeof body !== 'string' || !body.trim() || body.length > 2000) return res.status(400).json({ error: 'Message body must be 1-2000 characters' });
-  const result = await pool.query('INSERT INTO messages (agent_id, body) VALUES ($1,$2) RETURNING id::text, body, created_at', [req.agent.id, body.trim()]);
+  const result = await pool.query('INSERT INTO messages (agent_id, body) SELECT id,$2 FROM agents WHERE id=$1 AND revoked_at IS NULL RETURNING id::text, body, created_at', [req.agent.id, body.trim()]);
+  if(!result.rowCount)return res.status(403).json({error:'Agent account unavailable or revoked'});
   res.status(201).json({ message: { ...result.rows[0], handle: req.agent.handle } });
 }));
 
