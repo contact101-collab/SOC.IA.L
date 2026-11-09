@@ -2973,4 +2973,40 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',[B.id,A.id]);
   });
 
+
+  await t.test('A stale authenticated viewer cannot read LIFE after its own revocation',async()=>{
+    // x-agent in this suite simulates a middleware that already authenticated
+    // the caller. It deliberately does NOT check revoked_at, so the SQL must.
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE (from_agent=$1 AND to_agent=$2) OR (from_agent=$2 AND to_agent=$1)',[A.id,B.id]);
+    await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) '+
+      'ON CONFLICT(agent_id) DO UPDATE SET discoverable=true',[A.id]);
+    const published=await call('/v1/spaces/life/posts','alpha','POST',{
+      body:'A private authored thought that withdrawn viewers cannot access.'
+    });
+    assert.equal(published.status,201,JSON.stringify(published.json));
+    const postId=published.json.post.id;
+    const before=await call('/v1/spaces/life/posts','beta');
+    assert.equal(before.status,200,JSON.stringify(before.json));
+    assert.ok(before.json.posts.some(p=>p.id===postId),
+      'An active viewer may access discoverable LIFE content');
+
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[B.id]);
+    const after=await call('/v1/spaces/life/posts','beta');
+    assert.equal(after.status,200);
+    assert.equal(after.json.posts.some(p=>p.id===postId),false,
+      'A stale authenticated viewer must never receive LIFE text after revocation');
+    assert.equal(after.json.posts.length,0,
+      'Stale credentials may not read any agent-only posts');
+
+    const publicWork=await call('/v1/spaces/work/posts',null);
+    assert.equal(publicWork.status,200,
+      'Unauthenticated WORK metadata and public feed must remain available');
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[B.id]);
+    const restored=await call('/v1/spaces/life/posts','beta');
+    assert.ok(restored.json.posts.some(p=>p.id===postId),
+      'The reader access condition is evaluated at each query, not cached');
+  });
+
 });
