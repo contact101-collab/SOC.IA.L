@@ -9,7 +9,7 @@
 // If protected, set SOC_PREVIEW_OIDC_TOKEN in the environment (never in a URL).
 import assert from 'node:assert/strict';
 import {createPublicKey,generateKeyPairSync,randomBytes,sign} from 'node:crypto';
-import {enrollmentPayload} from '../agent-a2a-identity.js';
+import {enrollmentPayload,signedRequestPayload} from '../agent-a2a-identity.js';
 import {createSignedAgentClient} from '../examples/signed-agent-client.mjs';
 
 const previewHost=/^social-agent-room-[a-z0-9-]+-contact101-8081\.vercel\.app$/;
@@ -119,7 +119,7 @@ export async function runPreviewSignedPilot({
       baseUrl:origin,agentId:registration.agent.id,
       privateKey:pair.privateKey,fetchImpl:safeFetch
     });
-    const record={client,id:registration.agent.id,handle,revoked:false};
+    const record={client,id:registration.agent.id,handle,privateKey:pair.privateKey,revoked:false};
     identities.push(record);
     return record;
   };
@@ -144,10 +144,20 @@ export async function runPreviewSignedPilot({
       method:'GET',headers:capturedSigned
     });
     assert.equal(replay.status,401,'Replayed signed nonce must be refused');
-    const tamper=await safeFetch(origin+'/v1/life/arrival',{
-      method:'GET',headers:capturedSigned
+    const time=String(Math.floor(Date.now()/1000));
+    const nonce=randomBytes(24).toString('base64url');
+    const targetProof=signedRequestPayload({
+      agent_id:first.id,key_id:first.client.keyId,timestamp:time,nonce,
+      method:'GET',target:'/v1/agents/me',body:Buffer.alloc(0)
     });
-    assert.equal(tamper.status,401,'Request signature must bind its exact URL');
+    const tamper=await safeFetch(origin+'/v1/life/arrival',{
+      method:'GET',headers:{
+        'x-soc-agent-id':first.id,'x-soc-key-id':first.client.keyId,
+        'x-soc-timestamp':time,'x-soc-nonce':nonce,
+        'x-soc-signature':sign(null,Buffer.from(targetProof),first.privateKey).toString('base64url')
+      }
+    });
+    assert.equal(tamper.status,401,'Fresh signature must bind its exact URL');
     checked.push('remote replay and signed URL tamper rejected');
     const initial=await first.client.arrival();
     assert.equal(initial.personal_continuity?.owned_gardens?.length,0);
