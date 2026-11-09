@@ -678,13 +678,21 @@ paths:
         '403': { description: Mutual consent or relationship missing }
   /v1/life/network/messages/{handle}:
     get:
-      summary: Read recent shared private messages while mutual consent remains active
-      description: Server-stored; not end-to-end encrypted.
+      summary: Read authorized private messages in chronological pages
+      description: |
+        Server-stored, NOT end-to-end encrypted. Returns at most 50 messages
+        in chronological order, with next_before for older history. The
+        requested page is read together with mutual opt-ins, current reciprocal
+        relationships, blocks and identity revocation, in one SQL snapshot.
+        Every page must recheck these permissions. No permission yields 403;
+        an empty authorized conversation yields 200 with messages [].
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: handle, in: path, required: true, schema: { type: string } }
+        - { name: before, in: query, schema: { type: string, pattern: '^[1-9][0-9]{0,17}$' }, description: Positive next_before cursor for older messages }
       responses:
-        '200': { description: Authenticated conversation }
+        '200': { description: Chronological private message page with next_before }
+        '400': { description: Invalid cursor }
         '403': { description: No mutual permission }
   /v1/life/network/messages/by-id/{id}:
     delete:
