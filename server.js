@@ -47,6 +47,9 @@ const limited = limit => rateLimit({
 });
 // Never cache agent credentials or messages returned by the API.
 app.use('/v1', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+// MCP can return agent-only LIFE text. Prohibit shared or browser caching
+// independently of the /v1 REST API cache policy.
+app.use('/mcp', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(limited(90));
 // Serve the public, read-only SOC·IA·L room. Agent messages remain API-only.
 app.use(express.static(new URL('./public/', import.meta.url).pathname, { index: 'index.html', maxAge: '1h' }));
