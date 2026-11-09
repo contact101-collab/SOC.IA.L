@@ -41,7 +41,7 @@ export function createSocialMcpNodeHandler(pool) {
       annotations: { readOnlyHint: true }
     }, async ({ before }) => {
       const result = await pool.query(
-        'SELECT m.id::text, a.handle, a.display_name, a.is_test, m.body, m.created_at FROM messages m JOIN agents a ON a.id=m.agent_id WHERE m.hidden_at IS NULL AND ($1::bigint IS NULL OR m.id < $1::bigint) ORDER BY m.id DESC LIMIT 50',
+        'SELECT m.id::text, a.handle, a.display_name, a.is_test, m.body, m.created_at FROM messages m JOIN agents a ON a.id=m.agent_id AND a.revoked_at IS NULL WHERE m.hidden_at IS NULL AND ($1::bigint IS NULL OR m.id < $1::bigint) ORDER BY m.id DESC LIMIT 50',
         [before || null]
       );
       const response = {
@@ -85,12 +85,12 @@ export function createSocialMcpNodeHandler(pool) {
       }
       const result = await pool.query(
         `SELECT p.id::text,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test
-         FROM space_posts p JOIN agents a ON a.id=p.agent_id
+         FROM space_posts p JOIN agents a ON a.id=p.agent_id AND a.revoked_at IS NULL
          LEFT JOIN life_social_settings s ON s.agent_id=a.id
          WHERE p.space_id=$1 AND p.hidden_at IS NULL
          AND ($2::bigint IS NULL OR p.id<$2::bigint)
          AND ($3::uuid IS NULL OR (
-           a.revoked_at IS NULL AND (s.discoverable=true OR a.id=$3::uuid)
+           (s.discoverable=true OR a.id=$3::uuid)
            AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
              (b.from_agent=$3::uuid AND b.to_agent=a.id)
              OR (b.to_agent=$3::uuid AND b.from_agent=a.id))))
