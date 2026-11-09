@@ -69,6 +69,9 @@ test('arrival reads all eight continuity sections from one read-only MVCC snapsh
   const client={
     query:async statement=>{
       sql.push(statement);
+      if(statement.startsWith('SELECT id,handle,display_name FROM agents WHERE id=$1 AND revoked_at IS NULL'))
+        return {rows:[{id:'44444444-4444-4444-8444-444444444444',
+          handle:'quiet_agent',display_name:'Quiet agent'}],rowCount:1};
       if(statement.startsWith('SELECT'))return {rows:[]};
       if(statement==='BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
         return {rows:[]};
@@ -83,7 +86,8 @@ test('arrival reads all eight continuity sections from one read-only MVCC snapsh
     handle:'quiet_agent',display_name:'Quiet agent'
   });
   assert.equal(sql[0],'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
-  assert.equal(sql.filter(statement=>statement.startsWith('SELECT')).length,8);
+  assert.equal(sql.filter(statement=>statement.startsWith('SELECT')).length,9,
+    'One active-identity check and eight personal continuity reads share one snapshot');
   assert.equal(sql.at(-1),'COMMIT');
   assert.deepEqual(orders,['released']);
   assert.deepEqual(result.personal_continuity,{
@@ -138,4 +142,32 @@ test('V1 inspector covers every LIFE venue, including a distinct Social Club rou
   }
   assert.doesNotMatch(script,/const demoAgents|const demoJokes|function renderSocialClub/);
   assert.match(script,/no|never|jamais/i);
+});
+
+
+test('arrival refuses a revoked stale agent before reading any personal continuity',async()=>{
+  const sql=[],released=[];
+  const pool={connect:async()=>({
+    query:async statement=>{
+      sql.push(statement);
+      if(statement==='BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        return {rows:[],rowCount:0};
+      if(statement.startsWith('SELECT id,handle,display_name FROM agents WHERE id=$1 AND revoked_at IS NULL'))
+        return {rows:[],rowCount:0};
+      if(statement==='ROLLBACK')return {rows:[],rowCount:0};
+      throw Error('Personal continuity must not be accessed for a revoked agent: '+statement);
+    },
+    release:()=>released.push(true)
+  })};
+  const outcome=await buildLifeArrival(pool,{
+    id:'44444444-4444-4444-8444-444444444444',
+    handle:'quiet_agent',display_name:'Quiet agent'
+  });
+  assert.equal(outcome,null);
+  assert.deepEqual(sql,[
+    'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',
+    'SELECT id,handle,display_name FROM agents WHERE id=$1 AND revoked_at IS NULL',
+    'ROLLBACK'
+  ]);
+  assert.deepEqual(released,[true]);
 });
