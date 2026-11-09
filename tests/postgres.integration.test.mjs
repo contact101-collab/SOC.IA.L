@@ -2877,4 +2877,100 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[A.id]);
   });
 
+
+  await t.test('LIFE reply and direct-message histories remain complete, cursor-safe and revocable',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE (from_agent=$1 AND to_agent=$2) OR (from_agent=$2 AND to_agent=$1)',[A.id,B.id]);
+    await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) '+
+      'VALUES($1,true,true),($2,true,true) ON CONFLICT(agent_id) '+
+      'DO UPDATE SET discoverable=true,messages_enabled=true',[A.id,B.id]);
+    await pool.query('INSERT INTO life_follows(from_agent,to_agent) VALUES($1,$2),($2,$1) ON CONFLICT DO NOTHING',[A.id,B.id]);
+
+    const post=await call('/v1/life/network/posts','alpha','POST',{
+      space:'life',body:'An authored conversation with an arbitrarily long future.'
+    });
+    assert.equal(post.status,201,JSON.stringify(post.json));
+    const pid=post.json.post.id,route='/v1/life/network/posts/'+pid+'/replies';
+    const inserts=await pool.query(
+      "INSERT INTO life_post_replies(post_id,agent_id,body) SELECT $1,$2,'LIFE page reply '||n FROM generate_series(1,107) n RETURNING id::text",
+      [pid,B.id]);
+    assert.equal(inserts.rowCount,107);
+    const readReplies=[],replyPages=[];
+    let after=null;
+    for(let i=0;i<5;i++){
+      const r=await call(route+(after?'?after='+after:''),'beta');
+      assert.equal(r.status,200,JSON.stringify(r.json));
+      assert.equal(r.json.ordering,'chronological');
+      assert.ok(r.json.replies.length<=40);
+      readReplies.push(...r.json.replies.map(x=>x.id));
+      replyPages.push(r.json);
+      after=r.json.next_after;
+      if(!after)break;
+    }
+    assert.equal(replyPages.length,3);
+    assert.equal(readReplies.length,107,'Every authored reply is accessible');
+    assert.equal(new Set(readReplies).size,107,'No reply repeats across pages');
+    for(let i=1;i<readReplies.length;i++)
+      assert.ok(BigInt(readReplies[i])>BigInt(readReplies[i-1]));
+    assert.equal(replyPages.at(-1).next_after,null);
+    assert.equal((await call(route+'?after=invalid','beta')).status,400);
+    assert.equal((await call(route+'?after=0','beta')).status,400);
+    const first=await call(route,'beta');
+    assert.ok(first.json.next_after);
+    await pool.query('INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2) ON CONFLICT DO NOTHING',[B.id,A.id]);
+    const deniedPage=await call(route+'?after='+first.json.next_after,'beta');
+    assert.equal(deniedPage.status,200);
+    assert.deepEqual(deniedPage.json.replies,[],
+      'Every reply page rechecks that the viewer has not blocked the author');
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',[B.id,A.id]);
+    await pool.query('UPDATE life_social_settings SET discoverable=false WHERE agent_id=$1',[A.id]);
+    assert.deepEqual((await call(route+'?after='+first.json.next_after,'beta')).json.replies,[],
+      'Withdrawing discovery hides subsequent pages');
+    await pool.query('UPDATE life_social_settings SET discoverable=true WHERE agent_id=$1',[A.id]);
+
+    const direct='/v1/life/network/messages/beta';
+    const messages=await pool.query(
+      "INSERT INTO life_direct_messages(from_agent,to_agent,body) SELECT "+
+      "CASE WHEN n%2=0 THEN $1::uuid ELSE $2::uuid END,"+
+      "CASE WHEN n%2=0 THEN $2::uuid ELSE $1::uuid END,"+
+      "'LIFE history message '||n FROM generate_series(1,123) n RETURNING id::text",
+      [A.id,B.id]);
+    assert.equal(messages.rowCount,123);
+    const all=[],pages=[];
+    let before=null;
+    for(let i=0;i<10;i++){
+      const r=await call(direct+(before?'?before='+before:''),'alpha');
+      assert.equal(r.status,200,JSON.stringify(r.json));
+      assert.equal(r.json.encrypted_end_to_end,false);
+      assert.equal(r.json.ordering,'chronological');
+      assert.ok(r.json.messages.length<=50);
+      for(let j=1;j<r.json.messages.length;j++)
+        assert.ok(BigInt(r.json.messages[j].id)>BigInt(r.json.messages[j-1].id),
+          'Every page is chronologically ordered');
+      all.push(...r.json.messages);
+      pages.push(r.json);
+      before=r.json.next_before;
+      if(!before)break;
+    }
+    assert.ok(pages.length>=3,'Older messages must be available beyond the first 50');
+    const own=all.filter(m=>m.body.startsWith('LIFE history message '));
+    assert.equal(own.length,123,'All 123 newly inserted messages must be readable');
+    assert.equal(new Set(all.map(m=>m.id)).size,all.length);
+    assert.equal(pages.at(-1).next_before,null);
+    assert.equal((await call(direct+'?before=invalid','alpha')).status,400);
+    assert.equal((await call(direct+'?before=0','alpha')).status,400);
+    const page1=await call(direct,'alpha');
+    assert.ok(page1.json.next_before);
+    await pool.query('UPDATE life_social_settings SET messages_enabled=false WHERE agent_id=$1',[B.id]);
+    assert.equal((await call(direct+'?before='+page1.json.next_before,'alpha')).status,403,
+      'Every older page must recheck mutual consent');
+    await pool.query('UPDATE life_social_settings SET messages_enabled=true WHERE agent_id=$1',[B.id]);
+    assert.equal((await call(direct+'?before='+page1.json.next_before,'alpha')).status,200);
+    await pool.query('INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2) ON CONFLICT DO NOTHING',[B.id,A.id]);
+    assert.equal((await call(direct+'?before='+page1.json.next_before,'alpha')).status,403,
+      'Blocking revokes access to older pages immediately');
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',[B.id,A.id]);
+  });
+
 });
