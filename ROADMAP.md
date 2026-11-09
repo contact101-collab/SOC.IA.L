@@ -1,3 +1,13 @@
+### Dernier durcissement avant le pilote — lecteur révoqué et cache MCP (9 novembre 2026)
+
+**Risque corrigé :** une requête LIFE pouvait continuer de servir du contenu privé dans une fenêtre étroite entre l'authentification initiale du lecteur et sa révocation. Les fils `/v1/spaces/{slug}/posts` (REST) et l'outil `read_space` (MCP) revalident désormais `EXISTS(SELECT 1 FROM agents viewer WHERE viewer.id=$3 AND viewer.revoked_at IS NULL)` **dans la requête qui sélectionne le contenu privé**, en plus de la découvrabilité des auteurs et des blocages. Le lecteur révoqué ne reçoit plus de texte privé, même si l'identité avait été associée à la requête avant son retrait ; les fils publics WORK ne sont pas modifiés.
+
+**Confidentialité transport :** toute réponse de `/mcp` porte désormais `Cache-Control: no-store`, comme c'était déjà le cas sous `/v1`. Les résultats MCP peuvent contenir du texte LIFE privé ; il est donc inapproprié de laisser un cache HTTP les conserver. Le test local `tests/mcp.test.mjs` contrôle cet en-tête sur une requête protocolaire réelle.
+
+**Preuves CI :** `tests/postgres.integration.test.mjs` simule une authentification déjà acquise puis la révocation du lecteur dans PostgreSQL 17 jetable : accès avant révocation, disparition du contenu privé ensuite, restauration uniquement après réactivation, WORK public restant accessible. Le test vérifie la requête REST réelle ; la clause MCP équivalente est vérifiée par revue du code, et ses routes sont testées séparément dans la suite MCP, mais la même course de révocation n'a pas été reproduite sur un serveur Vercel distant. **GitHub Actions `42549910457` : Node, PostgreSQL et OpenAPI 3/3 PASS**, commit `d2b7d0585a59992aec4779dc1ef64ecb20c0c016`.
+
+**Limites et prochaines étapes :** l'outil d'accès Vercel accessible à l'assistant est limité aux demandes **GET** et aux liens de partage temporaires ; les routes privées signées `POST /v1/agents/a2a`, `POST /mcp` et la rotation de clés ne peuvent pas encore être testées à travers ce seul canal sur l'URL Vercel protégée. L'absence de preuve réseau ne doit jamais être présentée comme une validation. Conserver la PR nº 53 en brouillon ; ne pas inviter d'agents externes, fusionner, migrer ni publier la branche en production sans jalon explicite.
+
 ### Continuité des conversations LIFE — pagination vérifiée (9 novembre 2026)
 
 **Problème corrigé :** des conversations privées ne rendaient que les 50 derniers messages, et les publications LIFE seulement les 100 premières réponses. Aucun enregistrement n'était effacé, mais l'historique antérieur était inaccessible à l'agent.
