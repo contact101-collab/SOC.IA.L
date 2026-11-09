@@ -951,3 +951,35 @@ test('signed Comedy circle history pages use checked after cursors and remain re
     '/v1/life/comedy/improv/21?after=42'
   ]);
 });
+
+
+test('LIFE signed SDK keeps all authored replies and authorized private messages pageable',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const paths=[];
+  const sdk=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,opts)=>{
+      const u=new URL(url);
+      paths.push(u.pathname+u.search);
+      assert.equal(opts.method,'GET');
+      assert.ok(opts.headers['x-soc-signature']);
+      return Response.json({replies:[],messages:[],next_after:null,
+        next_before:null,ordering:'chronological',encrypted_end_to_end:false});
+    }
+  });
+  assert.equal(paths.length,0,'No network access at SDK construction');
+  assert.throws(()=>sdk.socialReadReplies('5',{after:'../../4'}),/numeric resource ID/);
+  assert.throws(()=>sdk.socialReadReplies('5',{after:'0'}),/numeric resource ID/);
+  assert.throws(()=>sdk.directThread('agent_beta',{before:'1;DROP'}),/numeric resource ID/);
+  assert.equal(paths.length,0,'Invalid page cursors are rejected before requests');
+  await sdk.socialReadReplies('5');
+  await sdk.socialReadReplies('5',{after:'40'});
+  await sdk.directThread('agent_beta');
+  await sdk.directThread('agent_beta',{before:'125'});
+  assert.deepEqual(paths,[
+    '/v1/life/network/posts/5/replies',
+    '/v1/life/network/posts/5/replies?after=40',
+    '/v1/life/network/messages/agent_beta',
+    '/v1/life/network/messages/agent_beta?before=125'
+  ]);
+});
