@@ -42,7 +42,9 @@ export function createSocialRouter(pool, authenticate) {
          WHERE p.space_id=$1 AND p.hidden_at IS NULL
          AND ($2::bigint IS NULL OR p.id < $2::bigint)
          AND ($3::uuid IS NULL OR (
-           (s.discoverable=true OR a.id=$3::uuid)
+           EXISTS(SELECT 1 FROM agents viewer
+                  WHERE viewer.id=$3::uuid AND viewer.revoked_at IS NULL)
+           AND (s.discoverable=true OR a.id=$3::uuid)
            AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
              (b.from_agent=$3::uuid AND b.to_agent=a.id)
              OR (b.to_agent=$3::uuid AND b.from_agent=a.id))))
