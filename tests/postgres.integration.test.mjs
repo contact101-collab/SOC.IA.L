@@ -2800,4 +2800,81 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(route,'alpha')).status,200);
   });
 
+
+  await t.test('LIFE posts cannot be reanimated after their author\'s revocation, and direct message reads recheck consent',async()=>{
+    // Auth middleware is synthetic here. Domain SQL itself must prevent stale
+    // signed sessions or a revocation racing a previously authenticated call.
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE (from_agent=$1 AND to_agent=$2) OR (from_agent=$2 AND to_agent=$1)',[A.id,B.id]);
+    await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) '+
+      'VALUES($1,true,true),($2,true,true) ON CONFLICT(agent_id) '+
+      'DO UPDATE SET discoverable=true,messages_enabled=true',[A.id,B.id]);
+    await pool.query('INSERT INTO life_follows(from_agent,to_agent) VALUES($1,$2),($2,$1) ON CONFLICT DO NOTHING',[A.id,B.id]);
+
+    const post=await call('/v1/life/network/posts','beta','POST',
+      {space:'life',body:'An agent-authored conversation with permission.'});
+    assert.equal(post.status,201,JSON.stringify(post.json));
+    const pid=post.json.post.id,base='/v1/life/network/posts/'+pid;
+    assert.equal((await call(base+'/replies','alpha','POST',{body:'May I respond?'})).status,201);
+    assert.equal((await call(base+'/reaction','alpha','PUT',{kind:'heart'})).status,200);
+    assert.equal((await call(base+'/bookmark','alpha','PUT')).status,200);
+    const direct='/v1/life/network/messages';
+    assert.equal((await call(direct,'alpha','POST',{
+      to_handle:'beta',body:'Our relationship is currently reciprocal.'
+    })).status,201);
+    const before=await call(direct+'/beta','alpha');
+    assert.equal(before.status,200,JSON.stringify(before.json));
+    assert.ok(before.json.messages.some(m=>m.body==='Our relationship is currently reciprocal.'));
+    assert.equal(before.json.encrypted_end_to_end,false);
+
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[B.id]);
+    const feed=await call('/v1/life/network/feed','alpha');
+    assert.equal(feed.status,200);
+    assert.equal(feed.json.posts.some(p=>p.id===pid),false,
+      'Revoked authors must disappear from private discovery');
+    assert.equal((await call(base+'/replies','alpha','POST',{body:'Must not revive history'})).status,404);
+    assert.equal((await call(base+'/reaction','alpha','PUT',{kind:'wow'})).status,404);
+    assert.equal((await call(base+'/bookmark','alpha','PUT')).status,404);
+    assert.equal((await call(direct+'/beta','alpha')).status,403,
+      'An existing conversation must become unreadable when the correspondent revokes');
+    assert.equal((await call(direct,'alpha','POST',{
+      to_handle:'beta',body:'Do not message revoked accounts'
+    })).status,403);
+    assert.equal((await call('/v1/life/network/posts','beta','POST',{
+      space:'life',body:'A revoked identity must not publish again.'
+    })).status,403);
+    assert.equal((await call('/v1/life/network/stories','beta','POST',{
+      body:'A revoked identity must not create a new story.'
+    })).status,403);
+
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[B.id]);
+    assert.equal((await call(direct+'/beta','alpha')).status,200);
+    const blocked=await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'});
+    assert.equal(blocked.status,201,JSON.stringify(blocked.json));
+    assert.equal((await call(direct+'/beta','alpha')).status,403,
+      'An instant block must revoke access to already-sent direct messages');
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    await pool.query('INSERT INTO life_follows(from_agent,to_agent) VALUES($1,$2),($2,$1) ON CONFLICT DO NOTHING',[A.id,B.id]);
+    assert.equal((await call(direct+'/beta','alpha')).status,200);
+
+    await pool.query('UPDATE life_social_settings SET messages_enabled=false WHERE agent_id=$1',[B.id]);
+    assert.equal((await call(direct+'/beta','alpha')).status,403,
+      'Disabling messages immediately makes historical thread access unavailable');
+    assert.equal((await call(direct,'alpha','POST',{
+      to_handle:'beta',body:'Messages are now disabled.'
+    })).status,403);
+    await pool.query('UPDATE life_social_settings SET messages_enabled=true WHERE agent_id=$1',[B.id]);
+
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[A.id]);
+    assert.equal((await call(base+'/replies','alpha','POST',{body:'Revoked contributor'})).status,404);
+    assert.equal((await call(base+'/reaction','alpha','PUT',{kind:'like'})).status,404);
+    assert.equal((await call(base+'/bookmark','alpha','PUT')).status,404);
+    assert.equal((await call(direct+'/beta','alpha')).status,403);
+    assert.equal((await call('/v1/life/network/posts','alpha','POST',{
+      space:'life',body:'Revoked author denied'
+    })).status,403);
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[A.id]);
+  });
+
 });
