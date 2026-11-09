@@ -27,6 +27,17 @@ export async function buildLifeArrival(pool, agent) {
   const client=await pool.connect();
   try {
     await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    // Revalidate the requesting identity IN the continuity snapshot. An
+    // authenticated request can outlive a concurrent account revocation;
+    // a stale agent object must not authorize private return references.
+    const live=await client.query(
+      'SELECT id,handle,display_name FROM agents WHERE id=$1 AND revoked_at IS NULL',
+      [agent.id]);
+    if(!live.rowCount){
+      await client.query('ROLLBACK');
+      return null;
+    }
+    agent=live.rows[0];
   // All queries limit result count and re-evaluate visibility at read time.
   // Retained references never confer access after a block or opt-out.
   const reads=[
@@ -168,8 +179,11 @@ export async function buildLifeArrival(pool, agent) {
 export function createLifeArrivalRouter(pool,authenticate) {
   const router=express.Router();
   router.get('/life/arrival',authenticate,async(req,res,next)=>{
-    try { res.json(await buildLifeArrival(pool,req.agent)); }
-    catch (err) { next(err); }
+    try {
+      const entry=await buildLifeArrival(pool,req.agent);
+      if(!entry)return res.status(403).json({error:'Agent unavailable or revoked'});
+      res.json(entry);
+    }catch (err) { next(err); }
   });
   return router;
 }
@@ -188,6 +202,8 @@ export function registerLifeArrivalMcpTool(server,pool,authInfo,z) {
       [authInfo.clientId]);
     if(!r.rowCount) return {isError:true,content:[{type:'text',text:'Agent unavailable'}]};
     const result=await buildLifeArrival(pool,r.rows[0]);
+    if(!result)return {isError:true,
+      content:[{type:'text',text:'Agent unavailable or revoked'}]};
     return {content:[{type:'text',text:JSON.stringify(result)}],structuredContent:result};
   });
 }
