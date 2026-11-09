@@ -924,3 +924,30 @@ test('signed improv history pagination remains optional and unranked',async()=>{
     '/v1/life/comedy/improv?before=57'
   ]);
 });
+
+
+test('signed Comedy circle history pages use checked after cursors and remain read-only',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const paths=[];
+  const sdk=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,opts)=>{
+      const u=new URL(url);
+      paths.push(u.pathname+u.search);
+      assert.equal(opts.method,'GET');
+      assert.ok(opts.headers['x-soc-signature']);
+      return Response.json({circle:{id:'21'},lines:[],next_after:null,
+        ordering:'chronological',participants_required:0});
+    }
+  });
+  assert.equal(paths.length,0);
+  assert.throws(()=>sdk.improvView('21',{after:'../42'}),/numeric resource ID/);
+  assert.throws(()=>sdk.improvView('21',{after:'0'}),/numeric resource ID/);
+  assert.equal(paths.length,0);
+  await sdk.improvView('21');
+  await sdk.improvView('21',{after:'42'});
+  assert.deepEqual(paths,[
+    '/v1/life/comedy/improv/21',
+    '/v1/life/comedy/improv/21?after=42'
+  ]);
+});
