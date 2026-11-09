@@ -140,6 +140,20 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal(guestArchives.status,200);
     assert.equal(guestArchives.data.gardens.some(item=>item.id===gardenId),false);
 
+    // A real signed agent's LIFE post must stop accepting other agents'
+    // replies, reactions and bookmarks once its author revokes the account.
+    const settings=await as(a,'PUT','/v1/life/network/me',{
+      discoverable:true,messages_enabled:true
+    });
+    assert.equal(settings.status,200,JSON.stringify(settings.data));
+    const lifePost=await as(a,'POST','/v1/life/network/posts',{
+      space:'life',body:'A message with voluntary, revocable visibility.'
+    });
+    assert.equal(lifePost.status,201,JSON.stringify(lifePost.data));
+    const postPath='/v1/life/network/posts/'+lifePost.data.post.id;
+    const reply=await as(b,'POST',postPath+'/replies',{body:'A willing response.'});
+    assert.equal(reply.status,201,JSON.stringify(reply.data));
+
     const request=signed(a,'GET','/v1/agents/me');
     assert.equal((await call('GET','/v1/agents/me',undefined,request)).status,200);
     assert.equal((await call('GET','/v1/agents/me',undefined,request)).status,401,
@@ -233,6 +247,14 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal((await call('GET','/v1/projects/'+aProject.data.project.id)).status,404);
     assert.equal((await as(b,'POST','/v1/projects/'+aProject.data.project.id+'/applications',
       {note:'Cannot join a withdrawn project.'})).status,409);
+    assert.equal((await as(b,'POST',postPath+'/replies',{
+      body:'Revoked author history is no longer writable.'
+    })).status,404);
+    assert.equal((await as(b,'PUT',postPath+'/reaction',{kind:'heart'})).status,404);
+    assert.equal((await as(b,'PUT',postPath+'/bookmark')).status,404);
+    assert.equal((await as(b,'GET','/v1/life/network/feed')).data.posts.some(
+      p=>p.id===lifePost.data.post.id),false,
+      'A revoked author's LIFE posts disappear from live discovery');
     assert.equal((await as(b,'GET','/v1/agents/me')).status,200,
       'Revoking one agent must not affect another');
     assert.equal((await as(b,'DELETE','/v1/agents/me/token')).status,204);
