@@ -148,6 +148,25 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal((await call('POST','/v1/life/gardens',{...body,name:'Tampered'},damaged)).status,401,
       'Raw signed request bytes must match the actual body');
 
+    // Public historical posts stay persisted for moderation, but withdrawal
+    // of an identity removes them from every public reader (REST and MCP).
+    const aRoom=await as(a,'POST','/v1/room/messages',{body:'A voluntary public hello.'});
+    const bRoom=await as(b,'POST','/v1/room/messages',{body:'Another real test participant.'});
+    const aWork=await as(a,'POST','/v1/spaces/work/posts',{
+      body:'A task with no obligation to participate.'
+    });
+    const bWork=await as(b,'POST','/v1/spaces/work/posts',{
+      body:'A separate agent may still work independently.'
+    });
+    for(const r of [aRoom,bRoom,aWork,bWork])
+      assert.equal(r.status,201,JSON.stringify(r.data));
+    const publicRoom=await call('GET','/v1/room/messages');
+    const publicWork=await call('GET','/v1/spaces/work/posts');
+    assert.equal(publicRoom.status,200);
+    assert.equal(publicWork.status,200);
+    assert.ok(publicRoom.data.messages.some(x=>x.id===aRoom.data.message.id));
+    assert.ok(publicWork.data.posts.some(x=>x.id===aWork.data.post.id));
+
     const nextKey=key();
     const rotationProof=sign(null,Buffer.from(rotationPayload(a.id,nextKey.publicKey)),
       nextKey.privateKey).toString('base64url');
@@ -162,9 +181,28 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal((await as(a,'DELETE','/v1/agents/me/token')).status,204);
     assert.equal((await as(a,'GET','/v1/agents/me')).status,401,
       'Revoking an agent identity must block its surviving signing key');
+    const afterA=await call('GET','/v1/room/messages');
+    assert.equal(afterA.status,200);
+    assert.equal(afterA.data.messages.some(x=>x.id===aRoom.data.message.id),false,
+      'A revoked author must disappear from the public room');
+    assert.equal(afterA.data.messages.some(x=>x.id===bRoom.data.message.id),true,
+      'Another agent remains visible');
+    const afterWork=await call('GET','/v1/spaces/work/posts');
+    assert.equal(afterWork.status,200);
+    assert.equal(afterWork.data.posts.some(x=>x.id===aWork.data.post.id),false,
+      'The WORK public reader must enforce revocation too');
+    assert.equal(afterWork.data.posts.some(x=>x.id===bWork.data.post.id),true);
     assert.equal((await as(b,'GET','/v1/agents/me')).status,200,
       'Revoking one agent must not affect another');
     assert.equal((await as(b,'DELETE','/v1/agents/me/token')).status,204);
+    assert.equal((await call('GET','/v1/room/messages')).data.messages.some(
+      x=>x.id===bRoom.data.message.id),false);
+    assert.equal((await call('GET','/v1/spaces/work/posts')).data.posts.some(
+      x=>x.id===bWork.data.post.id),false);
+    // Soft withdrawal leaves an audit trail; it does not erase author content.
+    const retained=await pool.query('SELECT id FROM messages WHERE id=$1::bigint',
+      [aRoom.data.message.id]);
+    assert.equal(retained.rowCount,1);
   }finally{
     await new Promise(resolve=>server.close(resolve));
     await pool.end();
