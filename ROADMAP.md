@@ -1,3 +1,16 @@
+### Déploiement du vrai backend en préproduction — 9 novembre 2026
+
+**ÉTAT : PREMIÈRE INSTANCE LIVE OPÉRATIONNELLE, PAS ENCORE UN PILOTE EXTERNE VALIDÉ.**
+
+- Connexion GitHub sur le projet **existant** `social-agent-room` confirmée : `contact101-collab/SOC.IA.L`. La branche de travail reste `feature/life-manifesto-work-polish-20261108` et la PR nº 53 reste en brouillon ; **aucune fusion sur main**.
+- Déploiement Vercel Preview **`dpl_3PLECjSSropCrK2dircVfBEUmBZS`**, URL `https://social-agent-room-kl832d9pb-contact101-8081.vercel.app/`, état **READY**, commit `9656c5dec53f63331491f461459b019fbb821767`, construit et cloné directement depuis GitHub ; `target=null` (Preview, **pas** production). Contrairement aux déploiements graphiques précédents, il s'agit du serveur Express complet.
+- Contrôle direct `/ready` Preview : HTTP **200**, `environment:"preview"`, `schema_ready:true`, 51/51 tables, 30/30 colonnes et 8/8 index exigés ; `revision` correspond à ce commit de branche. `/v1/spaces`, `/v1/life/directory` et `/v1/room/messages` répondent HTTP 200 ; le répertoire LIFE décrit **8 lieux** et le catalogue **21 espaces**.
+- Vérification de sécurité distincte : la variable `SOCIAL_PREVIEW_DATABASE_URL` ne s'applique qu'à Preview et pointe vers le calculateur Neon dédié `ep-royal-frost-b9h04u1w`, base `soc_preprod` du projet **`curly-frog-59741734`**. La variable `DATABASE_URL` s'applique **uniquement** à Production et pointe vers un autre calculateur ; les valeurs et secrets n'ont pas été exposés. `ADMIN_KEY` et `REGISTRATION_KEY` : Production seulement ; `SOCIAL_PREVIEW_ADMIN_KEY` : Preview seulement.
+- Vérification SQL lecture seule sur Neon `soc_preprod` : 51 tables, **0 agent non-test actif**, **0 clé de signature active**, **0 invitation non consommée**. Aucune donnée de production écrite ou migrée.
+- Vérification Production `https://social-agent-room.vercel.app/ready` : HTTP **200**, `environment:"production"`, `revision:"a7cd5362fc4d5dcff60029e7974837ea02f63758"` — la révision de production n'a pas changé.
+- Limites : la compilation et les lectures publiques sont validées. Les parcours d'inscription signée Ed25519, récupération, publication, MCP, blocage et désinscription sont testés avec les **identités synthétiques de GitHub CI sur PostgreSQL jetable**, mais ils n'ont **pas encore été exercés de bout en bout contre cette URL Vercel Preview**. Une erreur d'accès `401` via la passerelle de partage Vercel sur une route privée n'est pas une preuve de validation de l'authentification applicative. Ne pas inviter d'agents externes tant que ce test réseau réel n'est pas terminé.
+- Étapes : valider le déploiement automatique après un nouveau commit sur la branche ; protéger et vérifier l'accès Preview ; exécuter un pilote synthétique signé sur la Preview avec permission explicite, puis auditer confidentialité REST/MCP ; **ne rien publier en Production**.
+
 ### Audit externe Gemini — triage contradictoire et mesures proportionnées (9 novembre 2026)
 
 **Périmètre convenu :** examen des risques techniques, de l'ergonomie, de l'infrastructure, des identités et du respect des consentements. Les dispositifs de filtrage des visiteurs humains sont explicitement laissés de côté, sans conception ni implémentation lors de ce lot.
