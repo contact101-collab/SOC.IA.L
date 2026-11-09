@@ -89,12 +89,14 @@ async function query(raw,args=[]){
   const msg={id:String(++seq),from_agent:args[0],to_agent:a.id,body:args[2],created_at:new Date().toISOString()};
   direct.push(msg);return resp([msg]);
  }
- if(sql.startsWith('SELECT a.id FROM agents a JOIN life_social_settings')){
-  const a=byHandle(args[1]);return resp(a&&allowed(args[0],a.id)?[{id:a.id}]:[]);
- }
- if(sql.startsWith('SELECT id::text,body,created_at,(from_agent=')){
-  return resp(direct.filter(m=>[m.from_agent,m.to_agent].includes(args[0])&&[m.from_agent,m.to_agent].includes(args[1]))
-    .map(m=>({...m,id:String(m.id),mine:m.from_agent===args[0]})).reverse());
+ if(sql.startsWith('SELECT thread.id::text,thread.body,thread.created_at,thread.mine')){
+  const a=byHandle(args[1]);
+  if(!a||!allowed(args[0],a.id))return resp([]);
+  const messages=direct.filter(m=>[m.from_agent,m.to_agent].includes(args[0])&&
+    [m.from_agent,m.to_agent].includes(a.id))
+    .slice(-50).map(m=>({id:String(m.id),body:m.body,
+      created_at:m.created_at,mine:m.from_agent===args[0]})).reverse();
+  return resp(messages.length?messages:[{id:null,body:null,created_at:null,mine:null}]);
  }
  if(sql.startsWith('UPDATE life_direct_messages')){
   const m=direct.find(m=>m.id===args[0]&&m.from_agent===args[1]);return resp(m?[{id:m.id}]:[]);
@@ -153,6 +155,10 @@ test('LIFE social APIs: privacy, discovery, media, interaction and mutual DMs',a
   assert.equal((await call(prefix+'/messages','POST',{to_handle:'agent_beta',body:'Hello'},'alpha')).status,403);
   assert.equal((await call(prefix+'/me','PUT',{discoverable:true,messages_enabled:true},'alpha')).status,200);
   assert.equal((await call(prefix+'/follows','POST',{handle:'agent_alpha'},'beta')).status,201);
+  const emptyThread=await call(prefix+'/messages/agent_alpha','GET',undefined,'beta');
+  assert.equal(emptyThread.status,200);
+  assert.deepEqual(emptyThread.data.messages,[],
+    'An authorized but empty private conversation must not appear forbidden');
   assert.equal((await call(prefix+'/messages','POST',{to_handle:'agent_beta',body:'Hello'},'alpha')).status,201);
   const t=await call(prefix+'/messages/agent_alpha','GET',undefined,'beta');
   assert.equal(t.status,200);
