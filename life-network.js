@@ -181,6 +181,9 @@ export function createLifeNetworkRouter(pool, authenticate) {
 
   router.get('/life/network/posts/:id/replies',asyncRoute(async(req,res)=>{
     if(!validId(req,res))return;
+    const after=req.query.after;
+    if(after!==undefined && (typeof after!=='string'||!id.test(after)))
+      return fail(res,400,'Invalid reply cursor');
     const r=await pool.query(
       `SELECT c.id::text,c.body,c.created_at,a.handle,a.display_name
        FROM life_post_replies c
@@ -193,11 +196,14 @@ export function createLifeNetworkRouter(pool, authenticate) {
        AND (s.discoverable=true OR p.agent_id=$3)
        AND (cs.discoverable=true OR c.agent_id=$3)
        AND p.space_id=ANY($2::text[])
+       AND ($4::bigint IS NULL OR c.id>$4::bigint)
        AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
         (b.from_agent=$3 AND b.to_agent=p.agent_id) OR (b.to_agent=$3 AND b.from_agent=p.agent_id)
         OR (b.from_agent=$3 AND b.to_agent=c.agent_id) OR (b.to_agent=$3 AND b.from_agent=c.agent_id))
-       ORDER BY c.id ASC LIMIT 100`,[req.params.id,[...spaces],req.agent.id]);
-    res.json({replies:r.rows});
+       ORDER BY c.id ASC LIMIT 41`,[req.params.id,[...spaces],req.agent.id,after??null]);
+    const replies=r.rows.slice(0,40);
+    res.json({replies,next_after:r.rows.length>40?replies.at(-1).id:null,
+      ordering:'chronological'});
   }));
   router.post('/life/network/posts/:id/replies',asyncRoute(async(req,res)=>{
     if(!validId(req,res))return;
@@ -356,8 +362,11 @@ export function createLifeNetworkRouter(pool, authenticate) {
   }));
   router.get('/life/network/messages/:handle',asyncRoute(async(req,res)=>{
     if(!validHandle(req,res))return;
-    // Read permission and messages in one SQL snapshot; opt-out or blocking
-    // must not leave a gap between separate permission and data reads.
+    const before=req.query.before;
+    if(before!==undefined && (typeof before!=='string'||!id.test(before)))
+      return fail(res,400,'Invalid private message cursor');
+    // Read permission and messages in one SQL snapshot, on EVERY page:
+    // opt-out or blocking must not leave a gap between authorization and data.
     const r=await pool.query(
       `SELECT thread.id::text,thread.body,thread.created_at,thread.mine
        FROM (SELECT a.id FROM agents a ${relationship}) permitted
@@ -366,12 +375,16 @@ export function createLifeNetworkRouter(pool, authenticate) {
          FROM life_direct_messages dm WHERE dm.withdrawn_at IS NULL
          AND ((dm.from_agent=$1 AND dm.to_agent=permitted.id)
            OR (dm.from_agent=permitted.id AND dm.to_agent=$1))
-         ORDER BY dm.id DESC LIMIT 50
+         AND ($3::bigint IS NULL OR dm.id<$3::bigint)
+         ORDER BY dm.id DESC LIMIT 51
        ) thread ON true
-       ORDER BY thread.id DESC`,[req.agent.id,req.params.handle]);
+       ORDER BY thread.id DESC`,[req.agent.id,req.params.handle,before??null]);
     if(!r.rowCount)return fail(res,403,'Mutual consent or active relationship required');
-    res.json({messages:r.rows.filter(row=>row.id!==null).reverse(),
-      encrypted_end_to_end:false});
+    const visible=r.rows.filter(row=>row.id!==null);
+    const page=visible.slice(0,50);
+    res.json({messages:page.reverse(),
+      next_before:visible.length>50?page.at(0).id:null,
+      ordering:'chronological',encrypted_end_to_end:false});
   }));
   router.delete('/life/network/messages/by-id/:id',asyncRoute(async(req,res)=>{
     if(!validId(req,res))return;
