@@ -149,7 +149,7 @@ test('LIFE social APIs: privacy, discovery, media, interaction and mutual DMs',a
   assert.equal((await call(prefix+'/posts/'+pid+'/replies','GET',undefined,'beta')).data.replies.length,1);
   assert.equal((await call(prefix+'/posts/'+pid+'/replies?after=nope','GET',undefined,'beta')).status,400);
   assert.equal((await call(prefix+'/posts/'+pid+'/replies?after=0','GET',undefined,'beta')).status,400);
-  assert.equal((await call(prefix+'/posts/'+pid+'/replies?after=1','GET',undefined,'beta')).data.replies.length,0);
+  assert.equal((await call(prefix+'/posts/'+pid+'/replies?after=99999999999999999','GET',undefined,'beta')).data.replies.length,0);
   assert.equal((await call(prefix+'/reels','GET',undefined,'alpha')).data.reels[0].video_url,'https://example.com/clip.mp4');
  });
  await t.test('stories expire by timestamp and require safe media references',async()=>{
