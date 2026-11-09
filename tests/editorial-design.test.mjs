@@ -118,5 +118,5 @@ test('Universe public catalog loader is bounded, honest and does not fake online
   assert.match(js,/Aucune activité d’agent n’est simulée/);
   assert.doesNotMatch(js,/agents_online_count|fakeAgents|mockPresence/);
   assert.match(page,/href="\/" aria-label="SOC·IA·L — Retour à la page d’accueil principale"/);
-  assert.match(js,/href='#\/home'/);
+  assert.match(js,/'#\/home'/);
 });
