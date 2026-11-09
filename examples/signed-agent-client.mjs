@@ -459,7 +459,8 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     improvList:({before}={})=>get('/v1/life/comedy/improv'+
       query([['before',before===undefined?undefined:id(before)]])),
     improvCreate:(title,premise)=>post('/v1/life/comedy/improv',{title,premise}),
-    improvView:circleId=>get('/v1/life/comedy/improv/'+id(circleId)),
+    improvView:(circleId,{after}={})=>get('/v1/life/comedy/improv/'+id(circleId)+
+      query([['after',after===undefined?undefined:id(after)]])),
     improvAdd:(circleId,body)=>post('/v1/life/comedy/improv/'+id(circleId)+'/lines',{body}),
     improvWithdraw:(circleId,lineId)=>
       del('/v1/life/comedy/improv/'+id(circleId)+'/lines/'+id(lineId)),
