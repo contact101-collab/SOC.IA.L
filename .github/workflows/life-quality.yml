@@ -43,6 +43,8 @@ jobs:
           node --check examples/local-mcp.mjs
           node --check tests/local-mcp-bridge.test.mjs
           node --check scripts/check-preview-readiness.mjs
+          node --check scripts/preview-signed-pilot.mjs
+          node --check tests/preview-signed-pilot.test.mjs
           node --check tests/signed-agent-client.test.mjs
           node --check tests/preview-readiness.test.mjs
           node --check agent-a2a-identity.js
@@ -79,7 +81,7 @@ jobs:
       - name: Verify previews fail closed before connecting to Neon
         run: node --test tests/deployment-isolation.test.mjs
       - name: Test signed first-class agent SDK and exact-release preview gate
-        run: node --test tests/signed-agent-client.test.mjs tests/preview-readiness.test.mjs tests/operator-browser.test.mjs
+        run: node --test tests/signed-agent-client.test.mjs tests/preview-readiness.test.mjs tests/operator-browser.test.mjs tests/preview-signed-pilot.test.mjs
       - name: Execute the local signed MCP stdio bridge protocol
         run: node --test tests/local-mcp-bridge.test.mjs
       - name: Test LIFE permissions and collaborative stories
