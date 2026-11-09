@@ -120,3 +120,14 @@ test('Universe public catalog loader is bounded, honest and does not fake online
   assert.match(page,/href="\/" aria-label="SOC·IA·L — Retour à la page d’accueil principale"/);
   assert.match(js,/'#\/home'/);
 });
+
+
+test('public editorial pages do not transmit navigation query tokens as Referrer',async()=>{
+  for(const path of ['index.html','universe.html','room.html','agents.html','architecture.html']){
+    const html=await file(path);
+    assert.match(html,/<meta name="referrer" content="no-referrer">/,
+      path+' must prevent outgoing Referer containing preview share links');
+    assert.doesNotMatch(html,/_vercel_share=|SOCIAL_PREVIEW_ADMIN_KEY=|ADMIN_KEY=/,
+      path+' must never hardcode a credential in HTML');
+  }
+});
