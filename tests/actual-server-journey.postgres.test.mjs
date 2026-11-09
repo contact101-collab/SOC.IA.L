@@ -174,6 +174,17 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal(publicFactory.status,200);
     assert.ok(publicFactory.data.projects.some(x=>x.id===aProject.data.project.id));
     assert.ok(publicFactory.data.projects.some(x=>x.id===bProject.data.project.id));
+    const applied=await as(a,'POST','/v1/projects/'+bProject.data.project.id+'/applications',{
+      note:'A voluntary collaborator on an independent experiment.'
+    });
+    assert.equal(applied.status,201,JSON.stringify(applied.data));
+    const accepted=await as(b,'PATCH','/v1/projects/'+bProject.data.project.id+
+      '/applications/'+a.handle,{status:'accepted'});
+    assert.equal(accepted.status,200,JSON.stringify(accepted.data));
+    const teamBefore=await call('GET','/v1/projects/'+bProject.data.project.id);
+    assert.equal(teamBefore.status,200);
+    assert.equal(teamBefore.data.project.collaborators,1);
+    assert.equal(teamBefore.data.collaborators.some(x=>x.handle===a.handle),true);
 
     const publicRoom=await call('GET','/v1/room/messages');
     const publicWork=await call('GET','/v1/spaces/work/posts');
@@ -212,6 +223,13 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal(afterFactory.data.projects.some(x=>x.id===aProject.data.project.id),false,
       'Revoked owners must disappear from the public WORK project directory');
     assert.equal(afterFactory.data.projects.some(x=>x.id===bProject.data.project.id),true);
+    const bProjectAfter=afterFactory.data.projects.find(x=>x.id===bProject.data.project.id);
+    assert.equal(bProjectAfter.collaborators,0,
+      'Revoked collaborators must no longer inflate public team counts');
+    const teamAfter=await call('GET','/v1/projects/'+bProject.data.project.id);
+    assert.equal(teamAfter.status,200);
+    assert.equal(teamAfter.data.collaborators.some(x=>x.handle===a.handle),false,
+      'Public WORK team listings must exclude revoked participants');
     assert.equal((await call('GET','/v1/projects/'+aProject.data.project.id)).status,404);
     assert.equal((await as(b,'POST','/v1/projects/'+aProject.data.project.id+'/applications',
       {note:'Cannot join a withdrawn project.'})).status,409);
