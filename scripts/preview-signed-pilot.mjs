@@ -9,7 +9,7 @@
 // If protected, set SOC_PREVIEW_OIDC_TOKEN in the environment (never in a URL).
 import assert from 'node:assert/strict';
 import {createPublicKey,generateKeyPairSync,randomBytes,sign} from 'node:crypto';
-import {enrollmentPayload,signedRequestPayload} from '../agent-a2a-identity.js';
+import {enrollmentPayload,recoveryPayload,signedRequestPayload} from '../agent-a2a-identity.js';
 import {createSignedAgentClient} from '../examples/signed-agent-client.mjs';
 
 const previewHost=/^social-agent-room-[a-z0-9-]+-contact101-8081\.vercel\.app$/;
@@ -108,18 +108,60 @@ export async function runPreviewSignedPilot({
     assert.match(invitation.invitation?.token??'',/^soci_[a-f0-9]{64}$/);
     const proof=sign(null,Buffer.from(enrollmentPayload(handle,handle,publicKey)),
       pair.privateKey).toString('base64url');
-    const registration=requireStatus(await send('POST','/v1/agents/a2a',{
-      handle,display_name:handle,public_key:publicKey,proof,test_account:true
-    },{...admin,'x-registration-key':invitation.invitation.token}),201,
-    'Synthetic signed enrollment');
+    // If the server commits enrollment but the HTTP reply disappears, the
+    // client has no UUID. Recover it with a NEW private-key proof solely so
+    // the finally block can revoke the orphaned synthetic identity.
+    const remember=id=>{
+      const client=createSignedAgentClient({
+        baseUrl:origin,agentId:id,privateKey:pair.privateKey,fetchImpl:safeFetch
+      });
+      const record={client,id,handle,privateKey:pair.privateKey,revoked:false};
+      identities.push(record);
+      return record;
+    };
+    let registration;
+    try{
+      registration=requireStatus(await send('POST','/v1/agents/a2a',{
+        handle,display_name:handle,public_key:publicKey,proof,test_account:true
+      },{...admin,'x-registration-key':invitation.invitation.token}),201,
+      'Synthetic signed enrollment');
+    }catch(enrollmentError){
+      try{
+        const timestamp=String(Math.floor(Date.now()/1000));
+        const recoverProof=sign(null,Buffer.from(recoveryPayload(publicKey,timestamp)),
+          pair.privateKey).toString('base64url');
+        const lookup=await send('POST','/v1/agents/a2a/recover',{
+          public_key:publicKey,timestamp,proof:recoverProof
+        });
+        if(lookup.status===200&&lookup.data?.agent?.id){
+          const restored=remember(lookup.data.agent.id);
+          assert.equal(restored.handle,handle);
+        }
+      }catch{
+        // If recovery also fails, a committed account may require manual
+        // operator-only investigation; never claim cleanup was complete.
+      }
+      throw enrollmentError;
+    }
     // Track the registered account BEFORE checking response claims: even a
     // malformed success response must not leave an active synthetic identity.
-    const client=createSignedAgentClient({
-      baseUrl:origin,agentId:registration.agent.id,
-      privateKey:pair.privateKey,fetchImpl:safeFetch
-    });
-    const record={client,id:registration.agent.id,handle,privateKey:pair.privateKey,revoked:false};
-    identities.push(record);
+    let record;
+    try{
+      record=remember(registration.agent.id);
+    }catch(error){
+      // Even a malformed success payload can be recoverable via key proof.
+      try{
+        const timestamp=String(Math.floor(Date.now()/1000));
+        const recoverProof=sign(null,Buffer.from(recoveryPayload(publicKey,timestamp)),
+          pair.privateKey).toString('base64url');
+        const lookup=await send('POST','/v1/agents/a2a/recover',{
+          public_key:publicKey,timestamp,proof:recoverProof
+        });
+        if(lookup.status===200&&lookup.data?.agent?.id)
+          remember(lookup.data.agent.id);
+      }catch{}
+      throw error;
+    }
     assert.equal(registration.agent.is_test,true,'Test account must be explicitly labelled');
     assert.equal(registration.token_issued,false,'No legacy bearer credential allowed');
     return record;
