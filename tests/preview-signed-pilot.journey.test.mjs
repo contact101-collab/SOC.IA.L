@@ -2,13 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash,createPublicKey,verify} from 'node:crypto';
 import {runPreviewSignedPilot} from '../scripts/preview-signed-pilot.mjs';
-import {signedRequestPayload,rotationPayload} from '../agent-a2a-identity.js';
+import {signedRequestPayload,rotationPayload,recoveryPayload} from '../agent-a2a-identity.js';
 
 const site='https://social-agent-room-test-contact101-8081.vercel.app/';
 const sha='a'.repeat(40),adminKey='preview-only-admin-test-secret';
 const asJSON=(data,status=200)=>Response.json(data,{status});
 
-function isolatedFakeServer({failAfterOldKeyRevocation=false,malformedRegistration=false}={}){
+function isolatedFakeServer({failAfterOldKeyRevocation=false,malformedRegistration=false,
+  loseEnrollmentResponse=false}={}){
   const accounts=new Map(),invitations=new Set(),nonces=new Set();
   const calls=[],gardens=new Map();
   let invitationIndex=0,oldKeyErrorInjected=false;
@@ -68,8 +69,20 @@ function isolatedFakeServer({failAfterOldKeyRevocation=false,malformedRegistrati
       const agent={id,handle:body.handle,is_test:true,revoked:false,
         keys:new Map([[keyId,{publicKey:body.public_key,revoked:false}]])};
       accounts.set(id,agent);
+      if(loseEnrollmentResponse)throw Error('Simulated lost enrollment response after commit');
       return asJSON({agent:{id,handle:agent.handle,
         is_test:!malformedRegistration},token_issued:false},201);
+    }
+    if(path==='/v1/agents/a2a/recover'&&method==='POST'){
+      const account=[...accounts.values()].find(a=>
+        [...a.keys.values()].some(k=>k.publicKey===body.public_key&&!k.revoked));
+      if(!account||account.revoked)return asJSON({error:'Not registered'},404);
+      const payload=recoveryPayload(body.public_key,body.timestamp);
+      const valid=verify(null,Buffer.from(payload),
+        createPublicKey({key:Buffer.from(body.public_key,'base64url'),
+          format:'der',type:'spki'}),Buffer.from(body.proof,'base64url'));
+      if(!valid)return asJSON({error:'Invalid proof'},403);
+      return asJSON({agent:{id:account.id,handle:account.handle},token_issued:false});
     }
     const account=verifyAgent(headers,method,path,options.body);
     if(!account)return asJSON({error:'No valid signed identity'},401);
@@ -162,4 +175,15 @@ test('pilot revokes malformed successful registrations instead of leaving active
   }),/Test account must be explicitly labelled/);
   assert.equal(fake.accounts.size,1);
   assert.equal(fake.live().length,0);
+});
+
+
+test('pilot recovers lost enrollment response using Ed25519 and revokes committed orphan',async()=>{
+  const fake=isolatedFakeServer({loseEnrollmentResponse:true});
+  await assert.rejects(runPreviewSignedPilot({
+    baseUrl:site,expectedSha:sha,adminKey,fetchImpl:fake.fetchImpl
+  }),/Simulated lost enrollment response/);
+  assert.equal(fake.accounts.size,1);
+  assert.equal(fake.live().length,0,'Recovered orphan test identity must be revoked');
+  assert.equal(fake.calls.filter(x=>x.path==='/v1/agents/a2a/recover').length,1);
 });
