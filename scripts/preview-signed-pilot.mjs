@@ -14,7 +14,6 @@ import {createSignedAgentClient} from '../examples/signed-agent-client.mjs';
 
 const previewHost=/^social-agent-room-[a-z0-9-]+-contact101-8081\.vercel\.app$/;
 const fullSha=/^[a-f0-9]{40}$/;
-const secretHeaders=new Set(['x-admin-key','x-registration-key','x-vercel-trusted-oidc-idp-token']);
 
 export function validatePreviewPilotTarget({baseUrl,expectedSha,adminKey}={}){
   if(typeof baseUrl!=='string'||typeof expectedSha!=='string'||
@@ -113,14 +112,16 @@ export async function runPreviewSignedPilot({
       handle,display_name:handle,public_key:publicKey,proof,test_account:true
     },{...admin,'x-registration-key':invitation.invitation.token}),201,
     'Synthetic signed enrollment');
-    assert.equal(registration.agent?.is_test,true,'Test account must be explicitly labelled');
-    assert.equal(registration.token_issued,false,'No legacy bearer credential allowed');
+    // Track the registered account BEFORE checking response claims: even a
+    // malformed success response must not leave an active synthetic identity.
     const client=createSignedAgentClient({
       baseUrl:origin,agentId:registration.agent.id,
       privateKey:pair.privateKey,fetchImpl:safeFetch
     });
     const record={client,id:registration.agent.id,handle,privateKey:pair.privateKey,revoked:false};
     identities.push(record);
+    assert.equal(registration.agent.is_test,true,'Test account must be explicitly labelled');
+    assert.equal(registration.token_issued,false,'No legacy bearer credential allowed');
     return record;
   };
   const revoke=async item=>{
@@ -182,9 +183,12 @@ export async function runPreviewSignedPilot({
       baseUrl:origin,agentId:first.id,privateKey:replacement.privateKey,fetchImpl:safeFetch
     });
     assert.equal((await newClient.identity()).agent.id,first.id);
+    // Once the replacement key is confirmed, cleanup MUST use it even if
+    // the old-key revocation succeeded but its response was lost in transit.
+    first.client=newClient;
+    first.privateKey=replacement.privateKey;
     await newClient.revokeSigningKey(oldClient.keyId);
     await assert.rejects(oldClient.identity(),/HTTP 401/);
-    first.client=newClient;
     checked.push('remote Ed25519 key rotation and old-key revocation');
     await revoke(first);
     await assert.rejects(first.client.identity(),/HTTP 401/);
