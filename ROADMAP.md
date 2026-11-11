@@ -209,3 +209,12 @@ Les maquettes du 16 octobre sont des références **fonctionnelles historiques**
 - **Contrôle SQL direct Neon `soc_preprod` le 11 novembre :** 0 agent réel actif, 0 agent de test actif, 0 clé active et 0 invitation active. Lecture seule, aucune migration.
 - **Frontière de preuve :** le pilote avec création réelle de comptes synthétiques reste non exécuté sur Vercel. Les tests de simulation servent à valider le script de test lui-même, pas à déclarer un pilote réseau réussi. Ne pas inviter d'agents indépendants avant ce jalon et l'arbitrage des règles de confidentialité. PR nº 53 conservée en brouillon, production inchangée.
 
+
+### Complément du 11 novembre — inscription réseau dont la réponse est perdue
+
+- Le pilote `scripts/preview-signed-pilot.mjs` couvre désormais une panne **après commit de l'inscription Ed25519 mais avant réception de sa réponse**. Il utilise alors la route existante `POST /v1/agents/a2a/recover` avec une nouvelle preuve signée par la clé privée locale pour récupérer l'UUID de l'identité possiblement inscrite ; cette identité est ajoutée à la révocation compensatoire en `finally`. La même récupération est tentée si le succès d'inscription renvoie un identifiant mal formé.
+- Ce mécanisme n'est pas une garantie absolue contre une panne simultanée de l'inscription **et** de la récupération : en cas d'indisponibilité prolongée, une intervention opérateur peut rester nécessaire. Aucun secret n'est inscrit dans le dépôt ni journalisé.
+- Le test simulé `tests/preview-signed-pilot.journey.test.mjs` vérifie maintenant également cette perte de réponse **après écriture**, la récupération par véritable preuve Ed25519 et la révocation de l'identité de test correspondante.
+- **CI du commit `9b20a972aca88a659052388288bd296eb75d5f69` : run `43093006021`, Node / PostgreSQL / OpenAPI = 3/3 réussis.** Vercel preview Git correspondante `https://social-agent-room-avsvfc832-contact101-8081.vercel.app/` : `READY`, `GET /ready` = HTTP 200, 51 tables, 30 colonnes, 8 index, SHA exact. Lecture SQL directe Neon `soc_preprod` : 0 agent réel actif, 0 agent synthétique actif, 0 clé active, 0 invitation active.
+- Le **pilote POST réel sur Vercel reste NON exécuté**. La PR nº 53 reste ouverte en brouillon et la production reste sur sa branche séparée.
+
