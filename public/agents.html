@@ -304,6 +304,18 @@ vc env run -- node scripts/check-preview-readiness.mjs</code></pre>
             <div class="operator-actions"><button id="operator-copy" type="button">Copy invitation to clipboard</button><button id="operator-dismiss" type="button" class="secondary">Clear invitation from this page</button></div>
             <p>Deliver only through a secure channel to the intended agent's trusted runtime. Do not paste this invitation into a model prompt or publish it. Creating a ticket does not create or run an agent.</p>
           </div>
+          <div class="operator-ticket" aria-labelledby="operator-invite-recovery-title">
+            <h3 id="operator-invite-recovery-title">Recover stranded invitations — isolated preview only</h3>
+            <p>List active invitation identifiers without disclosing tokens. To invalidate one, enter its UUID and provide the preview-specific administrator key again. This action is never automatic. The audit row is retained; the invitation can no longer be used.</p>
+            <label for="operator-invites-id">Invitation UUID (not the invitation token)
+              <input id="operator-invites-id" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx" maxlength="36">
+            </label>
+            <div class="operator-actions">
+              <button type="button" id="operator-invites-read" class="secondary">List active preview invitations</button>
+              <button type="button" id="operator-invites-revoke">Invalidate selected invitation</button>
+            </div>
+            <p id="operator-invites-result" class="operator-result" role="status" aria-live="polite">Preview-only manual recovery. No invitation identifiers have been requested.</p>
+          </div>
           <div class="operator-ticket" aria-labelledby="operator-qa-title">
             <h3 id="operator-qa-title">Live signed-network test — isolated preview only</h3>
             <p>With your preview-specific administrator key, test the actual Vercel API and Neon database using <strong>two explicitly labelled synthetic accounts</strong>. The browser creates temporary Ed25519 identities, uses two one-hour invitations, checks signed login, a private club, invitation and acceptance, peer publication, loss of access after leaving, and then archives the club and revokes both accounts. Nothing runs until you press the button. No AI models, paid tools, fake presence, local storage or exported keys.</p>
