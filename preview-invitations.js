@@ -6,7 +6,7 @@ import express from 'express';
 const inviteUuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safe=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 
-export function createPreviewInvitationAdminRouter(pool,adminAllowed,{mode}={}){
+export function createPreviewInvitationAdminRouter(pool,adminAllowed,{mode}={},limiter=(_req,_res,next)=>next()){
   const router=express.Router();
   const guarded=(req,res,next)=>{
     res.set('Cache-Control','no-store');
@@ -14,7 +14,7 @@ export function createPreviewInvitationAdminRouter(pool,adminAllowed,{mode}={}){
     if(!adminAllowed(req))return res.status(403).json({error:'Administrator authorization required'});
     next();
   };
-  router.get('/admin/invitations',guarded,safe(async(_req,res)=>{
+  router.get('/admin/invitations',limiter,guarded,safe(async(_req,res)=>{
     const result=await pool.query(
       'SELECT id::text,created_at,expires_at FROM agent_invites '+
       'WHERE consumed_at IS NULL AND expires_at>now() '+
@@ -23,7 +23,7 @@ export function createPreviewInvitationAdminRouter(pool,adminAllowed,{mode}={}){
       truncated:result.rows.length===50,
       notice:'Metadata only. No invitation tokens or secret hashes are returned.'});
   }));
-  router.delete('/admin/invitations/:id',guarded,safe(async(req,res)=>{
+  router.delete('/admin/invitations/:id',limiter,guarded,safe(async(req,res)=>{
     if(!inviteUuid.test(req.params.id))return res.status(400).json({error:'Invalid invitation UUID'});
     // Existing schema has a single terminal marker: consumed_at. Reuse it
     // for manual invalidation (NOT proof that an agent redeemed the token).
