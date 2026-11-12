@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,randomBytes,sign} from 'node:crypto';
 import {enrollmentPayload,recoveryPayload,rotationPayload,signedRequestPayload} from '../agent-a2a-identity.js';
+import {createSignedAgentClient} from '../examples/signed-agent-client.mjs';
 
 // This is the REAL Express entry point with the REAL PostgreSQL schema, unlike
 // router-level unit tests. It is deliberately limited to a disposable local CI
@@ -95,6 +96,22 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal(first.status,200,JSON.stringify(first.data));
     assert.equal(first.data.agent.id,a.id);
     assert.equal(first.data.agent.auth_method,'ed25519-signed-request-v1');
+    // Critically, use the SAME signed SDK as the remote pilot against the
+    // actual HTTP Express MCP adapter and actual disposable PostgreSQL.
+    // The legacy integration signer above cannot reveal SDK protocol drift.
+    const realSdk=createSignedAgentClient({
+      baseUrl:base,agentId:a.id,privateKey:a.key.privateKey
+    });
+    const viaSdk=await realSdk.identity();
+    assert.equal(viaSdk.agent.id,a.id);
+    const viaMcp=await realSdk.mcp('my_agent');
+    assert.equal(viaMcp.handle,a.handle,
+      'Signed SDK MCP must use its real persistent REST agent identity');
+    const lifeMcp=await realSdk.mcp('life_arrival');
+    assert.equal(lifeMcp.identity.handle,a.handle);
+    assert.equal(lifeMcp.personal_continuity.owned_gardens.length,0);
+    const viaRest=await realSdk.arrival();
+    assert.equal(viaRest.identity.handle,lifeMcp.identity.handle);
     const recoveryTimestamp=String(Math.floor(Date.now()/1000));
     const recoveryProof=sign(null,Buffer.from(recoveryPayload(a.key.publicKey,
       recoveryTimestamp)),a.key.privateKey).toString('base64url');
