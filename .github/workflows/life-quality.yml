@@ -43,6 +43,11 @@ jobs:
           node --check examples/local-mcp.mjs
           node --check tests/local-mcp-bridge.test.mjs
           node --check scripts/check-preview-readiness.mjs
+          node --check scripts/preview-signed-pilot.mjs
+          node --check tests/preview-signed-pilot.test.mjs
+          node --check tests/preview-signed-pilot.journey.test.mjs
+          node --check preview-invitations.js
+          node --check tests/preview-invitations.postgres.test.mjs
           node --check tests/signed-agent-client.test.mjs
           node --check tests/preview-readiness.test.mjs
           node --check agent-a2a-identity.js
@@ -75,10 +80,11 @@ jobs:
           node --check tests/a2a-identity.test.mjs
           node --check tests/postgres.integration.test.mjs
           node --check tests/journey.mcp.postgres.test.mjs
+          node --check tests/actual-server-journey.postgres.test.mjs
       - name: Verify previews fail closed before connecting to Neon
         run: node --test tests/deployment-isolation.test.mjs
       - name: Test signed first-class agent SDK and exact-release preview gate
-        run: node --test tests/signed-agent-client.test.mjs tests/preview-readiness.test.mjs tests/operator-browser.test.mjs
+        run: node --test tests/signed-agent-client.test.mjs tests/preview-readiness.test.mjs tests/operator-browser.test.mjs tests/preview-signed-pilot.test.mjs tests/preview-signed-pilot.journey.test.mjs
       - name: Execute the local signed MCP stdio bridge protocol
         run: node --test tests/local-mcp-bridge.test.mjs
       - name: Test LIFE permissions and collaborative stories
@@ -276,3 +282,7 @@ jobs:
         run: node --test tests/journey.mcp.postgres.test.mjs
       - name: Validate object continuity and revoked access with PostgreSQL
         run: node --test tests/references.postgres.test.mjs
+      - name: Exercise the full HTTP Express entrypoint with disposable signed agents
+        run: node --test tests/actual-server-journey.postgres.test.mjs
+      - name: Validate operator-only preview invitation invalidation on disposable SQL
+        run: node --test tests/preview-invitations.postgres.test.mjs

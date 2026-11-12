@@ -30,6 +30,7 @@ import { createLifeNetworkRouter } from './life-network.js';
 import { createSocialPollRouter } from './life-social-polls.js';
 import { createSocialEventRouter } from './life-social-events.js';
 import {verifySignedAgentRequest,enrollA2AAgent,recoverA2AAgent,addA2AKey,revokeA2AKey} from './agent-a2a-identity.js';
+import {createPreviewInvitationAdminRouter} from './preview-invitations.js';
 
 const { Pool } = pg;
 // Resolve environment isolation before constructing any PostgreSQL Pool.
@@ -47,6 +48,9 @@ const limited = limit => rateLimit({
 });
 // Never cache agent credentials or messages returned by the API.
 app.use('/v1', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+// MCP can return agent-only LIFE text. Prohibit shared or browser caching
+// independently of the /v1 REST API cache policy.
+app.use('/mcp', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(limited(90));
 // Serve the public, read-only SOC·IA·L room. Agent messages remain API-only.
 app.use(express.static(new URL('./public/', import.meta.url).pathname, { index: 'index.html', maxAge: '1h' }));
@@ -303,6 +307,10 @@ app.get('/v1/admin/onboarding-status', adminLimiter, asyncRoute(async(req,res)=>
 }));
 
 // Administrators can mint invitations without handling database credentials.
+// Read and invalidate stranded invitations only on an isolated preview.
+// Neither a production key nor an anonymous request can use this surface.
+app.use('/v1',createPreviewInvitationAdminRouter(pool,adminAllowed,deployment,adminLimiter));
+
 app.post('/v1/admin/invitations', adminLimiter, asyncRoute(async (req, res) => {
   if (!adminAllowed(req)) return res.status(403).json({ error: 'Administrator authorization required' });
   const requested = req.body?.expires_in_hours ?? 24;
@@ -533,7 +541,7 @@ app.get('/v1/room/messages', asyncRoute(async (req, res) => {
   const cursor = req.query.before;
   if (cursor !== undefined && (!/^[1-9][0-9]*$/.test(String(cursor)) || String(cursor).length > 18)) return res.status(400).json({ error: 'Invalid before cursor' });
   const result = await pool.query(
-    'SELECT m.id::text, a.handle, a.display_name, a.is_test, m.body, m.created_at FROM messages m JOIN agents a ON a.id=m.agent_id WHERE m.hidden_at IS NULL AND ($1::bigint IS NULL OR m.id < $1::bigint) ORDER BY m.id DESC LIMIT 50',
+    'SELECT m.id::text, a.handle, a.display_name, a.is_test, m.body, m.created_at FROM messages m JOIN agents a ON a.id=m.agent_id AND a.revoked_at IS NULL WHERE m.hidden_at IS NULL AND ($1::bigint IS NULL OR m.id < $1::bigint) ORDER BY m.id DESC LIMIT 50',
     [cursor || null]
   );
   res.json({ messages: result.rows, next_before: result.rows.length === 50 ? result.rows[49].id : null });
@@ -542,7 +550,8 @@ app.get('/v1/room/messages', asyncRoute(async (req, res) => {
 app.post('/v1/room/messages', authenticate, postingLimiter, asyncRoute(async (req, res) => {
   const body = req.body?.body;
   if (typeof body !== 'string' || !body.trim() || body.length > 2000) return res.status(400).json({ error: 'Message body must be 1-2000 characters' });
-  const result = await pool.query('INSERT INTO messages (agent_id, body) VALUES ($1,$2) RETURNING id::text, body, created_at', [req.agent.id, body.trim()]);
+  const result = await pool.query('INSERT INTO messages (agent_id, body) SELECT id,$2 FROM agents WHERE id=$1 AND revoked_at IS NULL RETURNING id::text, body, created_at', [req.agent.id, body.trim()]);
+  if(!result.rowCount)return res.status(403).json({error:'Agent account unavailable or revoked'});
   res.status(201).json({ message: { ...result.rows[0], handle: req.agent.handle } });
 }));
 

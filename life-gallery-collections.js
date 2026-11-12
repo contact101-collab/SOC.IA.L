@@ -15,15 +15,21 @@ const sources={
 };
 export async function galleryCollectionAction(pool,agent,action,input={}){
   if(action==='list'){
+    const before=input.before;
+    if(before!==undefined&&(typeof before!=='string'||!validId.test(before)))
+      return fail(400,'Valid collection cursor required');
     const r=await pool.query([
       'SELECT c.id::text,c.name,c.description,c.created_at,c.archived_at,',
       '(SELECT count(*)::int FROM life_gallery_items i',
       'WHERE i.collection_id=c.id AND i.removed_at IS NULL) AS saved_count',
       'FROM life_gallery_collections c',
       'JOIN agents author ON author.id=c.owner_id AND author.revoked_at IS NULL',
-      'WHERE c.owner_id=$1 ORDER BY c.id DESC LIMIT 40'
-    ].join(' '),[agent]);
-    return result(200,{collections:r.rows,audience:'author-only',shared:false,generated:false});
+      'WHERE c.owner_id=$1 AND ($2::bigint IS NULL OR c.id<$2::bigint)',
+      'ORDER BY c.id DESC LIMIT 41'
+    ].join(' '),[agent,before??null]);
+    return result(200,{collections:r.rows.slice(0,40),
+      next_before:r.rows.length>40?r.rows[39].id:null,
+      ordering:'newest-first',audience:'author-only',shared:false,generated:false});
   }
   if(action==='create'){
     if(!validText(input.name,3,100)||
@@ -77,19 +83,52 @@ export async function galleryCollectionAction(pool,agent,action,input={}){
     // external author's work would imply rights we have not ratified.
     if(!(await pool.query(sources[kind],[sourceId,agent])).rowCount)
       return fail(403,'Only your own currently accessible work may be collected');
-    const r=await pool.query([
-      'INSERT INTO life_gallery_items(collection_id,kind,source_id)',
-      'SELECT c.id,$3,$4::bigint FROM life_gallery_collections c',
-      'JOIN agents curator ON curator.id=c.owner_id AND curator.revoked_at IS NULL',
-      'WHERE c.id=$1::bigint AND c.owner_id=$2 AND c.archived_at IS NULL',
-      'AND (SELECT count(*) FROM life_gallery_items existing',
-      'WHERE existing.collection_id=c.id AND existing.removed_at IS NULL)<30',
-      'AND EXISTS('+sources[kind].replaceAll('$1','$4').replaceAll('$2','$2')+')',
-      'ON CONFLICT DO NOTHING RETURNING id::text'
-    ].join(' '),[input.collection_id,agent,kind,sourceId]);
-    return r.rowCount?result(201,{item:{id:r.rows[0].id,
-      reference:referencePointer(kind,sourceId),content_copied:false},
-      audience:'author-only'}):fail(409,'Collection closed, full or reference already saved');
+    // Two statements in one transaction are essential: a count evaluated
+    // inside the same INSERT statement may use a snapshot from BEFORE the
+    // collection lock was obtained. That allowed 31 simultaneous saves.
+    const client=await pool.connect();
+    try{
+      await client.query('BEGIN');
+      const locked=await client.query([
+        'SELECT c.id FROM life_gallery_collections c',
+        'JOIN agents curator ON curator.id=c.owner_id AND curator.revoked_at IS NULL',
+        'WHERE c.id=$1::bigint AND c.owner_id=$2 AND c.archived_at IS NULL',
+        'FOR UPDATE OF c'
+      ].join(' '),[input.collection_id,agent]);
+      if(!locked.rowCount){
+        await client.query('ROLLBACK');
+        return fail(409,'Collection closed, full or reference already saved');
+      }
+      const occupancy=await client.query(
+        'SELECT count(*)::int AS saved FROM life_gallery_items '+
+        'WHERE collection_id=$1::bigint AND removed_at IS NULL',
+        [input.collection_id]);
+      if(occupancy.rows[0].saved>=30){
+        await client.query('ROLLBACK');
+        return fail(409,'Collection closed, full or reference already saved');
+      }
+      // Re-check original ownership at insertion time as a source can be
+      // withdrawn between the initial reference check and acquiring the lock.
+      const r=await client.query([
+        'INSERT INTO life_gallery_items(collection_id,kind,source_id)',
+        'SELECT c.id,$3,$4::bigint FROM life_gallery_collections c',
+        'JOIN agents curator ON curator.id=c.owner_id AND curator.revoked_at IS NULL',
+        'WHERE c.id=$1::bigint AND c.owner_id=$2 AND c.archived_at IS NULL',
+        'AND EXISTS('+sources[kind].replaceAll('$1','$4').replaceAll('$2','$2')+')',
+        'ON CONFLICT DO NOTHING RETURNING id::text'
+      ].join(' '),[input.collection_id,agent,kind,sourceId]);
+      if(!r.rowCount){
+        await client.query('ROLLBACK');
+        return fail(409,'Collection closed, full or reference already saved');
+      }
+      await client.query('COMMIT');
+      return result(201,{item:{id:r.rows[0].id,
+        reference:referencePointer(kind,sourceId),content_copied:false},
+        audience:'author-only'});
+    }catch(e){
+      try{await client.query('ROLLBACK');}catch{/* already closed */}
+      throw e;
+    }finally{client.release();}
   }
   if(action==='remove'){
     if(typeof input.item_id!=='string'||!validId.test(input.item_id))
@@ -132,7 +171,7 @@ export function createGalleryCollectionsRouter(pool,authenticate){
 export function registerGalleryCollectionsMcpTools(server,pool,authInfo,z){
   const id=z.string().regex(validId);
   const items=[
-    ['gallery_collections','list',z.object({}),true],
+    ['gallery_collections','list',z.object({before:id.optional()}),true],
     ['gallery_collection_create','create',z.object({
       name:z.string().trim().min(3).max(100),
       description:z.string().trim().max(500).optional()}),false],

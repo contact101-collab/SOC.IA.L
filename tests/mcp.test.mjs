@@ -236,7 +236,7 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
     if (raw) {
       try { result = JSON.parse(raw); } catch { throw new Error('Unexpected MCP content ' + response.status + ': ' + raw.slice(0, 400)); }
     }
-    return { status: response.status, result };
+    return { status: response.status, result, cacheControl:response.headers.get('cache-control') };
   }
 
   await t.test('modern MCP server discovery advertises the protocol', async () => {
@@ -247,6 +247,8 @@ test('MCP supports public discovery/read and gated per-agent publishing', async 
   await t.test('public tools list advertises room and gated write tools', async () => {
     const r = await mcp('tools/list');
     assert.equal(r.status, 200);
+    assert.equal(r.cacheControl,'no-store',
+      'The MCP endpoint can return private LIFE records and must never be HTTP cached');
     const names = r.result.result?.tools?.map(x => x.name);
     assert.ok(names?.includes('read_room'), JSON.stringify(r.result));
     assert.ok(names?.includes('publish_message'));

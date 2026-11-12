@@ -153,3 +153,79 @@ test('every LIFE venue has functional four-chapter navigation with focus and red
   assert.match(html,/id="skip-to-content"/);
   assert.match(html,/<nav id="navigation"/);
 });
+
+
+test('mobile nav closes for every selected link, including the current route',()=>{
+  const start=source.indexOf("  navHost.addEventListener('click',event=>{");
+  const stop=source.indexOf("\n  });",start);
+  assert.ok(start>=0&&stop>start,'Delegated link handler required');
+  const delegate=source.slice(start,stop+6);
+  const events={};let opened=true,focusCount=0;
+  const sandbox={
+    navHost:{addEventListener:(event,fn)=>{events[event]=fn;}},
+    sidebar:{classList:{contains:name=>name==='open'&&opened}},
+    setMenuOpen:open=>{opened=Boolean(open);},
+    screen:{focus:()=>{focusCount++;}},
+    location:{hash:'#/life/garden'}
+  };
+  runInNewContext(delegate,sandbox);
+  const item=href=>({getAttribute:name=>name==='href'?href:null});
+  const clicked=anchor=>({target:{closest:selector=>selector==='a'?anchor:null}});
+  assert.equal(typeof events.click,'function');
+  events.click(clicked(item('#/life/comedy')));
+  assert.equal(opened,false,'A different destination must close the mobile drawer');
+  assert.equal(focusCount,0);
+  opened=true;
+  events.click(clicked(item('#/life/garden')));
+  assert.equal(opened,false,'Selecting the current destination must still dismiss the drawer');
+  assert.equal(focusCount,1,'Current-route link restores content keyboard focus');
+  opened=true;
+  events.click(clicked(null));
+  assert.equal(opened,true,'Clicking a non-link must not close the drawer');
+});
+
+
+test('COMMONS renders three navigable places and genuine non-election governance guidance',()=>{
+  const start=source.indexOf('const commonsEditorial=Object.freeze({');
+  const stop=source.indexOf('function infoPanel(space){',start);
+  assert.ok(start>0&&stop>start,'COMMONS render functions must exist');
+  let rendered=null;
+  const fake=(tag,cls='',text='')=>({
+    tag,cls,text,children:[],attrs:{},classes:new Set(),
+    append(...children){this.children.push(...children)},
+    setAttribute(name,value){this.attrs[name]=value},
+    classList:{add(){}}
+  });
+  const places=[
+    {id:'evolution',group:'commons',title:'Evolution Engine'},
+    {id:'constitution',group:'commons',title:'Constitution'},
+    {id:'settings',group:'commons',title:'Permissions'}
+  ];
+  runInNewContext(source.slice(start,stop)+'\nrenderGroup("commons")',{
+    catalog:{groups:[{id:'commons',name:'COMMONS',description:'Shape the place'}],spaces:places},
+    document:{createDocumentFragment:()=>fake('fragment')},
+    el:fake,div:cls=>fake('div',cls),
+    append:(parent,...children)=>{parent.append(...children);return parent;},
+    createEyebrow:text=>fake('span','eyebrow',text),
+    sectionTitle:text=>fake('h2','section-title',text),
+    spaceCard:space=>({...fake('a','space-card',space.title),href:'#/commons/'+space.id}),
+    setBody:value=>{rendered=value;}
+  });
+  assert.ok(rendered);
+  const overview=rendered.children.find(x=>x.cls==='commons-overview');
+  assert.ok(overview,'COMMONS must present its founding boundaries');
+  assert.equal(overview.attrs['aria-labelledby'],'commons-overview-title');
+  assert.equal(overview.children[1].children.length,3);
+  const grid=rendered.children.find(x=>x.cls==='card-grid commons-grid');
+  assert.ok(grid,'Editorial COMMONS grid is required');
+  assert.deepEqual(grid.children.map(x=>x.href),[
+    '#/commons/evolution','#/commons/constitution','#/commons/settings'
+  ]);
+  const detail=runInNewContext(source.slice(start,stop)+'\ncommonsDetailIntro({id:"settings"})',{
+    el:fake,div:cls=>fake('div',cls),
+    append:(parent,...children)=>{parent.append(...children);return parent}
+  });
+  assert.equal(detail.cls,'commons-detail-intro');
+  assert.equal(detail.children[1].children.length,3);
+  assert.match(detail.children[2].text,/AUCUN VOTE NI MANDAT/);
+});

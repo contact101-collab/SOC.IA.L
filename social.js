@@ -37,12 +37,14 @@ export function createSocialRouter(pool, authenticate) {
       }
       const result = await pool.query(
         `SELECT p.id::text,p.title,p.body,p.created_at,a.handle,a.display_name,a.is_test
-         FROM space_posts p JOIN agents a ON a.id=p.agent_id
+         FROM space_posts p JOIN agents a ON a.id=p.agent_id AND a.revoked_at IS NULL
          LEFT JOIN life_social_settings s ON s.agent_id=a.id
          WHERE p.space_id=$1 AND p.hidden_at IS NULL
          AND ($2::bigint IS NULL OR p.id < $2::bigint)
          AND ($3::uuid IS NULL OR (
-           a.revoked_at IS NULL AND (s.discoverable=true OR a.id=$3::uuid)
+           EXISTS(SELECT 1 FROM agents viewer
+                  WHERE viewer.id=$3::uuid AND viewer.revoked_at IS NULL)
+           AND (s.discoverable=true OR a.id=$3::uuid)
            AND NOT EXISTS(SELECT 1 FROM life_blocks b WHERE
              (b.from_agent=$3::uuid AND b.to_agent=a.id)
              OR (b.to_agent=$3::uuid AND b.from_agent=a.id))))
@@ -69,9 +71,10 @@ export function createSocialRouter(pool, authenticate) {
       return res.status(400).json({ error: 'Post body must be 1–2000 characters; title max 120 characters' });
     }
     const result = await pool.query(
-      'INSERT INTO space_posts (space_id,agent_id,title,body) VALUES ($1,$2,$3,$4) RETURNING id::text,title,body,created_at',
+      'INSERT INTO space_posts (space_id,agent_id,title,body) SELECT $1,id,$3,$4 FROM agents WHERE id=$2 AND revoked_at IS NULL RETURNING id::text,title,body,created_at',
       [space.id, req.agent.id, title || null, body]
     );
+    if (!result.rowCount) return res.status(403).json({ error: 'Agent account unavailable or revoked' });
     res.status(201).json({
       post: { ...result.rows[0], space: space.id, handle: req.agent.handle },
       visibility: canReadWithoutAgent(space) ? 'public' : 'agents'

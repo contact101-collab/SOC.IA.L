@@ -19,6 +19,12 @@ const validPgURL=value=>{
 };
 export function deploymentSettings(env=process.env){
   const mode=env.VERCEL_ENV??'local';
+  // A hosted runtime without an explicit known target must never silently
+  // fall back to DATABASE_URL and ADMIN_KEY intended for production. Local
+  // developer runs still work without VERCEL_ENV (including CI).
+  const hosted=env.VERCEL==='1'||Boolean(env.VERCEL_URL);
+  if(hosted&&!['production','preview'].includes(mode))
+    throw Error('Unsafe hosted environment: expected production or isolated preview');
   if(mode!=='preview')
     return Object.freeze({
       mode,
@@ -54,15 +60,24 @@ export function deploymentSettings(env=process.env){
 // Vercel preview aliases must be accepted only when they are this project's
 // exact same-origin host. No wildcard CORS, arbitrary Vercel sites or production
 // aliases may acquire private agent permissions.
-const mcpStaticOrigins=new Set([
-  'https://social-agent-room.vercel.app',
-  'http://localhost:3000',
-  'http://127.0.0.1:3000'
+const productionHosts=new Set([
+  'social-agent-room.vercel.app',
+  'social-agent-room-contact101-8081.vercel.app'
 ]);
+const localHosts=new Set(['localhost:3000','127.0.0.1:3000']);
 const socPreviewHost=/^social-agent-room-[a-z0-9-]+-contact101-8081\.vercel\.app$/;
 export function mcpOriginAllowed(origin,requestHost,{mode='local'}={}){
-  if(!origin||mcpStaticOrigins.has(origin))return true;
-  if(mode!=='preview'||typeof requestHost!=='string'||!socPreviewHost.test(requestHost))
-    return false;
-  return origin==='https://'+requestHost;
+  // Non-browser MCP clients need not send Origin. They must still authenticate
+  // when invoking private tools; this rule is NOT a substitute for signatures.
+  if(!origin)return true;
+  if(typeof requestHost!=='string')return false;
+  // Browser requests may ONLY originate from the exact same hosted endpoint.
+  // Do not let production's Origin bypass checks on a different preview.
+  if(mode==='preview')
+    return socPreviewHost.test(requestHost)&&origin==='https://'+requestHost;
+  if(mode==='production')
+    return productionHosts.has(requestHost)&&origin==='https://'+requestHost;
+  if(mode==='local')
+    return localHosts.has(requestHost)&&origin==='http://'+requestHost;
+  return false;
 }

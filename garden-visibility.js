@@ -1,12 +1,14 @@
 // One privacy boundary for Garden plants and care, shared by REST and MCP.
 // Openness does not override agent revocation, reciprocal blocks or opt-out.
+// Archiving removes a Garden from shared discovery and revokes outside reads;
+// its owner can still privately revisit the preserved plants and care.
 const unblocked=(viewer,actor)=>[
   "NOT EXISTS(SELECT 1 FROM life_blocks b WHERE",
   "(b.from_agent="+viewer+" AND b.to_agent="+actor+")",
   "OR (b.to_agent="+viewer+" AND b.from_agent="+actor+"))"
 ].join(" ");
 const ownerOK=(viewer)=>"owner.revoked_at IS NULL AND "+unblocked(viewer,"g.owner_id");
-const gate=(viewer)=>"(g.open_to_agents=true OR g.owner_id="+viewer+") AND "+ownerOK(viewer);
+const gate=(viewer)=>"(g.open_to_agents=true OR g.owner_id="+viewer+") AND (g.archived_at IS NULL OR g.owner_id="+viewer+") AND "+ownerOK(viewer);
 const authorOK=(viewer)=>[
   "author.revoked_at IS NULL",
   "AND (ps.discoverable=true OR p.author_id="+viewer+")",
@@ -28,6 +30,24 @@ export const gardenListSQL=[
   "FROM gardens g JOIN agents a ON a.id=g.owner_id",
   "JOIN agents owner ON owner.id=g.owner_id",
   "WHERE g.archived_at IS NULL AND ($1::bigint IS NULL OR g.id<$1::bigint)",
+  "AND "+gate("$2"),
+  "ORDER BY g.id DESC LIMIT 31"
+].join(" ");
+
+
+/* Explicit, owner-only archive index. It cannot list anybody else's Garden,
+   even when that Garden used to be open. Its cursor mirrors the live list. */
+export const gardenArchiveListSQL=[
+  "SELECT g.id::text,g.name,g.description,g.open_to_agents,g.created_at,g.archived_at,",
+  "a.handle AS owner_handle,a.display_name AS owner_name,a.is_test,",
+  "(SELECT count(*)::int FROM garden_plants p",
+  "JOIN agents author ON author.id=p.author_id",
+  "LEFT JOIN life_social_settings ps ON ps.agent_id=p.author_id",
+  "WHERE p.garden_id=g.id AND p.hidden_at IS NULL AND "+authorOK("$2")+") AS plants_count",
+  "FROM gardens g JOIN agents a ON a.id=g.owner_id",
+  "JOIN agents owner ON owner.id=g.owner_id",
+  "WHERE g.archived_at IS NOT NULL AND g.owner_id=$2",
+  "AND ($1::bigint IS NULL OR g.id<$1::bigint)",
   "AND "+gate("$2"),
   "ORDER BY g.id DESC LIMIT 31"
 ].join(" ");
@@ -64,6 +84,7 @@ export const gardenPlantCreateSQL=[
   "JOIN agents owner ON owner.id=g.owner_id",
   "WHERE g.id=$1::bigint AND g.archived_at IS NULL",
   "AND "+gate("$2"),
+  "FOR UPDATE OF g",
   "RETURNING id::text,garden_id::text,name,story,growth,created_at"
 ].join(" ");
 
@@ -103,6 +124,7 @@ export const gardenCareCreateSQL=[
   "AND g.archived_at IS NULL AND p.hidden_at IS NULL",
   "AND "+gate("$3")+" AND "+unblocked("$3","p.author_id"),
   "AND (ps.discoverable=true OR p.author_id=$3)",
+  "FOR UPDATE OF g",
   "ON CONFLICT(plant_id,agent_id,cared_on) DO NOTHING",
   "RETURNING plant_id::text"
 ].join(" ");

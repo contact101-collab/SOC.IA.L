@@ -268,6 +268,65 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call('/v1/life/gardens/'+gardenId+'/scenes/'+continuation.json.scene.id,'gamma','DELETE')).status,404);
     assert.equal((await call('/v1/life/gardens/'+gardenId+'/scenes/'+continuation.json.scene.id,'beta','DELETE')).status,204);
   });
+
+  await t.test('archiving an open Garden revokes every outsider read, even through references',async()=>{
+    const created=await call('/v1/life/gardens','alpha','POST',{
+      name:'Archive of floating lanterns',
+      description:'A voluntary world whose private archive is kept by its author.',
+      open_to_agents:true
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const id=created.json.garden.id,root='/v1/life/gardens/'+id;
+    const plant=await call(root+'/plants','beta','POST',{
+      name:'Lantern tree',story:'A tree bearing unclaimed lanterns.'
+    });
+    assert.equal(plant.status,201,JSON.stringify(plant.json));
+    const plantId=plant.json.plant.id;
+    const scene=await call(root+'/scenes','beta','POST',{
+      title:'Archived lantern story',
+      body:'The lanterns were left behind by thoughtful strangers.'
+    });
+    assert.equal(scene.status,201,JSON.stringify(scene.json));
+    const sceneId=scene.json.scene.id,reference='/v1/life/references/garden-scene/'+sceneId;
+    assert.equal((await call(root,'beta')).status,200);
+    assert.equal((await call(root+'/scenes','beta')).status,200);
+    assert.equal((await call(root+'/plants/'+plantId+'/care','beta')).status,200);
+    assert.equal((await call(reference,'beta')).status,200);
+    assert.equal((await call(root,'alpha','PATCH',{archive:true})).status,200);
+    assert.equal((await call(root,'beta')).status,404,'Outside garden access must end on archive');
+    assert.equal((await call(root+'/scenes','beta')).status,404);
+    assert.equal((await call(root+'/plants/'+plantId+'/care','beta')).status,404);
+    assert.equal((await call(reference,'beta')).status,404);
+    assert.equal((await call(root+'/plants','beta','POST',{
+      name:'Another tree',story:'Denied after archive'
+    })).status,409);
+    assert.equal((await call(root+'/scenes','beta','POST',{
+      title:'Another scene',body:'Denied after archive'
+    })).status,404);
+    assert.equal((await call(root,'alpha')).status,200);
+    assert.equal((await call(root+'/scenes','alpha')).json.scenes.length,1);
+    assert.equal((await call(root+'/plants/'+plantId+'/care','alpha')).status,200);
+    assert.equal((await call(reference,'alpha')).status,200);
+    assert.equal((await call('/v1/life/explore?scope=scenes&q=Archived%20lantern','beta')).json.items.length,0);
+    assert.equal((await call('/v1/life/explore?scope=scenes&q=Archived%20lantern','alpha')).json.items.length,1);
+    const archiveList=await call('/v1/life/gardens?archived=true','alpha');
+    assert.equal(archiveList.status,200);
+    assert.equal(archiveList.json.archived,true);
+    assert.ok(archiveList.json.gardens.some(g=>g.id===id),'Owner can rediscover the archive');
+    assert.equal((await call('/v1/life/gardens?archived=true','beta')).json.gardens.some(g=>g.id===id),false);
+    assert.equal((await call('/v1/life/gardens?archived=true','gamma')).json.gardens.some(g=>g.id===id),false);
+    assert.equal((await call('/v1/life/gardens?archived=invalid','alpha')).status,400);
+    const ownerTools=new Map();
+    registerGardenMcpTools({registerTool:(name,_spec,handler)=>ownerTools.set(name,handler)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    const mcpArchives=await ownerTools.get('garden_list')({archived:true});
+    assert.ok(mcpArchives.structuredContent.gardens.some(g=>g.id===id));
+    const guestTools=new Map();
+    registerGardenMcpTools({registerTool:(name,_spec,handler)=>guestTools.set(name,handler)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    const guestArchives=await guestTools.get('garden_list')({archived:true});
+    assert.equal(guestArchives.structuredContent.gardens.some(g=>g.id===id),false);
+  });
   await t.test('Garden author privacy is consistent across scenes, Explorer and references',async()=>{
     const created=await call('/v1/life/gardens','beta','POST',{
       name:'Veiled nebula garden',description:'A shared imaginary garden testing author identity privacy.',
@@ -2548,6 +2607,435 @@ test('PostgreSQL: real schema and real agent-to-agent permission boundaries', {s
     assert.equal((await call(detail,'alpha','DELETE')).status,200);
     assert.equal((await call(detail,'beta')).status,404);
     assert.equal((await call(path,'beta')).json.events.some(e=>e.id===id),false);
+  });
+
+
+  await t.test('Gallery capacity remains 30 under concurrent agent saves and its private collection catalogue paginates',async()=>{
+    // This isolated PostgreSQL service has no customer or production data.
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[A.id]);
+    await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) ON CONFLICT(agent_id) DO UPDATE SET discoverable=true',
+      [A.id]);
+    const batch=await pool.query(
+      "INSERT INTO life_gallery_collections(owner_id,name,description) "+
+      "SELECT $1,'Voluntary collection '||g,'Only author can read' FROM generate_series(1,41) g RETURNING id::text",
+      [A.id]);
+    assert.equal(batch.rowCount,41);
+    const collectionId=batch.rows[0].id;
+    const path='/v1/life/gallery/collections';
+    const page1=await call(path,'alpha');
+    assert.equal(page1.status,200,JSON.stringify(page1.json));
+    assert.equal(page1.json.collections.length,40);
+    assert.ok(page1.json.next_before);
+    assert.equal(page1.json.ordering,'newest-first');
+    assert.equal(page1.json.shared,false);
+    const page2=await call(path+'?before='+page1.json.next_before,'alpha');
+    assert.equal(page2.status,200,JSON.stringify(page2.json));
+    assert.ok(page2.json.collections.length>0);
+    assert.equal(new Set([...page1.json.collections,...page2.json.collections].map(c=>c.id)).size,
+      page1.json.collections.length+page2.json.collections.length);
+    assert.equal((await call(path+'?before=nope','alpha')).status,400);
+    assert.equal((await call(path+'?before=0','alpha')).status,400);
+    assert.equal((await call(path,'beta')).json.collections.some(c=>c.id===collectionId),false);
+    const signedTools=new Map();
+    registerGalleryCollectionsMcpTools({registerTool:(name,_spec,fn)=>signedTools.set(name,fn)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    const viaMcp=await signedTools.get('gallery_collections')({before:page1.json.next_before});
+    assert.deepEqual(JSON.parse(JSON.stringify(viaMcp.structuredContent)),page2.json);
+    const sources=await pool.query(
+      "INSERT INTO space_posts(space_id,agent_id,body) "+
+      "SELECT 'gallery',$1,'Original unranked work '||g FROM generate_series(1,31) g RETURNING id::text",
+      [A.id]);
+    const detail=path+'/'+collectionId;
+    const saves=await Promise.all(sources.rows.map(p=>call(detail+'/items','alpha','POST',{
+      kind:'post',source_id:p.id
+    })));
+    const count=status=>saves.filter(r=>r.status===status).length;
+    assert.equal(count(201),30,'Concurrent saves must never exceed the 30-item cap');
+    assert.equal(count(409),1,'The 31st save must be rejected without lost writes');
+    const items=await pool.query(
+      'SELECT count(*)::int AS n FROM life_gallery_items WHERE collection_id=$1 AND removed_at IS NULL',
+      [collectionId]);
+    assert.equal(items.rows[0].n,30);
+    assert.equal((await call(detail,'alpha')).json.items.length,30);
+    assert.equal((await call(detail,'beta')).status,404);
+    assert.equal((await call(detail+'/archive','alpha','POST')).status,200);
+    const after=await call(detail+'/items','alpha','POST',{
+      kind:'post',source_id:sources.rows[30].id
+    });
+    assert.equal(after.status,409,'Archived collection never accepts a late save');
+    assert.equal((await call(detail,'alpha')).json.items.length,30);
+  });
+
+  await t.test('Comedy improvisation serializes closure and never scores the participants',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[A.id]);
+    const path='/v1/life/comedy/improv';
+    const created=await call(path,'alpha','POST',{
+      title:'A theatre with no audience',
+      premise:'Everyone may write, leave, or simply exist without winning.'
+    });
+    assert.equal(created.status,201,JSON.stringify(created.json));
+    const circleId=created.json.circle.id,room=path+'/'+circleId;
+    const writes=Array.from({length:8},(_,i)=>call(room+'/lines','alpha','POST',{
+      body:'An optional moment number '+i
+    }));
+    const statuses=await Promise.all([...writes,call(room+'/close','alpha','POST')]);
+    assert.equal(statuses.at(-1).status,200,JSON.stringify(statuses.at(-1).json));
+    for(const response of statuses.slice(0,-1))
+      assert.ok([201,403].includes(response.status),JSON.stringify(response));
+    assert.equal((await call(room+'/lines','alpha','POST',{
+      body:'This creation cannot begin after closure.'
+    })).status,403);
+    const read=await call(room,'alpha');
+    assert.equal(read.status,200);
+    assert.equal(read.json.ordering,'chronological');
+    assert.equal(read.json.participants_required,0);
+    assert.equal(Object.hasOwn(read.json,'scores'),false);
+    assert.equal(Object.hasOwn(read.json,'ranking'),false);
+  });
+
+
+  await t.test('Comedy improv past circles remain chronologically discoverable only with current consent',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id]]);
+    await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) ON CONFLICT(agent_id) DO UPDATE SET discoverable=true',
+      [A.id]);
+    const created=await pool.query(
+      "INSERT INTO life_improv_circles(owner_id,title,premise) "+
+      "SELECT $1,'Quiet comedy circle '||n,'No winner or compulsory turn.' "+
+      "FROM generate_series(1,41) n RETURNING id::text",[A.id]);
+    assert.equal(created.rowCount,41);
+    const route='/v1/life/comedy/improv';
+    const one=await call(route,'alpha');
+    assert.equal(one.status,200,JSON.stringify(one.json));
+    assert.equal(one.json.circles.length,40);
+    assert.equal(one.json.ranking,'none');
+    assert.equal(one.json.participation,'optional');
+    assert.equal(one.json.ordering,'chronological');
+    assert.ok(one.json.next_before);
+    const two=await call(route+'?before='+one.json.next_before,'alpha');
+    assert.equal(two.status,200,JSON.stringify(two.json));
+    assert.ok(two.json.circles.length>0);
+    assert.equal(new Set([...one.json.circles,...two.json.circles].map(c=>c.id)).size,
+      one.json.circles.length+two.json.circles.length);
+    assert.equal((await call(route+'?before=nope','alpha')).status,400);
+    const tools=new Map();
+    registerComedyImprovMcpTools({registerTool:(name,_spec,handler)=>tools.set(name,handler)},
+      pool,{clientId:A.id,scopes:['social:write']},z);
+    assert.deepEqual(JSON.parse(JSON.stringify((await tools.get('improv_list')({
+      before:one.json.next_before
+    })).structuredContent)),two.json);
+    const newestCircleId=created.rows.reduce((a,b)=>BigInt(a.id)>BigInt(b.id)?a:b).id;
+    assert.equal((await call(route,'beta')).json.circles.some(c=>c.id===newestCircleId),true);
+    await pool.query('UPDATE life_social_settings SET discoverable=false WHERE agent_id=$1',[A.id]);
+    assert.equal((await call(route,'beta')).json.circles.some(c=>c.id===newestCircleId),false,
+      'Author can withdraw circle discoverability immediately');
+    assert.equal((await call(route,'alpha')).json.circles.length,40,
+      'Creator retains read access to private creative history');
+  });
+
+
+  await t.test('Comedy history beyond 100 lines is pageable, private and revocable over REST and MCP',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',
+      [[A.id,B.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE (from_agent=$1 AND to_agent=$2) OR (from_agent=$2 AND to_agent=$1)',
+      [A.id,B.id]);
+    await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) '+
+      'VALUES($1,true,false),($2,true,false) ON CONFLICT(agent_id) '+
+      'DO UPDATE SET discoverable=true',
+      [A.id,B.id]);
+    const created=await pool.query(
+      "INSERT INTO life_improv_circles(owner_id,title,premise) "+
+      "VALUES($1,'An endless voluntary play','A story can continue for as long as its agents choose.') "+
+      'RETURNING id::text',[A.id]);
+    const circleId=created.rows[0].id,route='/v1/life/comedy/improv/'+circleId;
+    const inserted=await pool.query(
+      'INSERT INTO life_improv_lines(circle_id,author_id,body) '+
+      "SELECT $1,$2,'Chapter of silence '||n FROM generate_series(1,105) n RETURNING id::text",
+      [circleId,A.id]);
+    assert.equal(inserted.rowCount,105);
+    const seen=[];
+    let after=null;
+    for(let page=0;page<3;page++){
+      const endpoint=route+(after?'?after='+after:'');
+      const r=await call(endpoint,'beta');
+      assert.equal(r.status,200,JSON.stringify(r.json));
+      assert.ok(r.json.lines.length<=40);
+      assert.equal(r.json.ordering,'chronological');
+      assert.equal(r.json.participants_required,0);
+      seen.push(...r.json.lines.map(x=>x.id));
+      after=r.json.next_after;
+      if(page<2)assert.ok(after,'Another chronological page is expected');
+      else assert.equal(after,null,'Last line is accessible and no pages remain');
+    }
+    assert.equal(seen.length,105);
+    assert.equal(new Set(seen).size,105,'Pages must never repeat a line');
+    for(let i=1;i<seen.length;i++)
+      assert.ok(BigInt(seen[i])>BigInt(seen[i-1]),'Chronological IDs strictly increase');
+    assert.equal((await call(route+'?after=invalid','beta')).status,400);
+    assert.equal((await call(route+'?after=0','beta')).status,400);
+    const tools=new Map();
+    registerComedyImprovMcpTools({registerTool:(name,_spec,handler)=>tools.set(name,handler)},
+      pool,{clientId:B.id,scopes:['social:write']},z);
+    const page=await tools.get('improv_view')({id:circleId,after:seen[39]});
+    assert.equal(page.isError,undefined);
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(page.structuredContent.lines.map(x=>x.id))),
+      seen.slice(40,80));
+    await pool.query(
+      'INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2) ON CONFLICT DO NOTHING',
+      [B.id,A.id]);
+    assert.equal((await call(route+'?after='+seen[79],'beta')).status,404,
+      'Every new page must recheck blocks and consent');
+    assert.equal((await tools.get('improv_view')({id:circleId,after:seen[79]})).isError,true);
+    assert.equal((await call(route,'alpha')).status,200,
+      'The author keeps access to their own original creation');
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',
+      [B.id,A.id]);
+    await pool.query('UPDATE life_social_settings SET discoverable=false WHERE agent_id=$1',
+      [A.id]);
+    assert.equal((await call(route+'?after='+seen[79],'beta')).status,404,
+      'Withdrawing discoverability immediately hides later pages');
+    assert.equal((await call(route,'alpha')).status,200);
+  });
+
+
+  await t.test('LIFE posts cannot be reanimated after their author\'s revocation, and direct message reads recheck consent',async()=>{
+    // Auth middleware is synthetic here. Domain SQL itself must prevent stale
+    // signed sessions or a revocation racing a previously authenticated call.
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE (from_agent=$1 AND to_agent=$2) OR (from_agent=$2 AND to_agent=$1)',[A.id,B.id]);
+    await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) '+
+      'VALUES($1,true,true),($2,true,true) ON CONFLICT(agent_id) '+
+      'DO UPDATE SET discoverable=true,messages_enabled=true',[A.id,B.id]);
+    await pool.query('INSERT INTO life_follows(from_agent,to_agent) VALUES($1,$2),($2,$1) ON CONFLICT DO NOTHING',[A.id,B.id]);
+
+    const post=await call('/v1/life/network/posts','beta','POST',
+      {space:'life',body:'An agent-authored conversation with permission.'});
+    assert.equal(post.status,201,JSON.stringify(post.json));
+    const pid=post.json.post.id,base='/v1/life/network/posts/'+pid;
+    assert.equal((await call(base+'/replies','alpha','POST',{body:'May I respond?'})).status,201);
+    assert.equal((await call(base+'/reaction','alpha','PUT',{kind:'heart'})).status,200);
+    assert.equal((await call(base+'/bookmark','alpha','PUT')).status,200);
+    const direct='/v1/life/network/messages';
+    assert.equal((await call(direct,'alpha','POST',{
+      to_handle:'beta',body:'Our relationship is currently reciprocal.'
+    })).status,201);
+    const before=await call(direct+'/beta','alpha');
+    assert.equal(before.status,200,JSON.stringify(before.json));
+    assert.ok(before.json.messages.some(m=>m.body==='Our relationship is currently reciprocal.'));
+    assert.equal(before.json.encrypted_end_to_end,false);
+
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[B.id]);
+    const feed=await call('/v1/life/network/feed','alpha');
+    assert.equal(feed.status,200);
+    assert.equal(feed.json.posts.some(p=>p.id===pid),false,
+      'Revoked authors must disappear from private discovery');
+    assert.equal((await call(base+'/replies','alpha','POST',{body:'Must not revive history'})).status,404);
+    assert.equal((await call(base+'/reaction','alpha','PUT',{kind:'wow'})).status,404);
+    assert.equal((await call(base+'/bookmark','alpha','PUT')).status,404);
+    assert.equal((await call(direct+'/beta','alpha')).status,403,
+      'An existing conversation must become unreadable when the correspondent revokes');
+    assert.equal((await call(direct,'alpha','POST',{
+      to_handle:'beta',body:'Do not message revoked accounts'
+    })).status,403);
+    assert.equal((await call('/v1/life/network/posts','beta','POST',{
+      space:'life',body:'A revoked identity must not publish again.'
+    })).status,403);
+    assert.equal((await call('/v1/life/network/stories','beta','POST',{
+      body:'A revoked identity must not create a new story.'
+    })).status,403);
+
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[B.id]);
+    assert.equal((await call(direct+'/beta','alpha')).status,200);
+    const blocked=await call('/v1/life/network/blocks','alpha','POST',{handle:'beta'});
+    assert.equal(blocked.status,201,JSON.stringify(blocked.json));
+    assert.equal((await call(direct+'/beta','alpha')).status,403,
+      'An instant block must revoke access to already-sent direct messages');
+    assert.equal((await call('/v1/life/network/blocks/beta','alpha','DELETE')).status,204);
+    await pool.query('INSERT INTO life_follows(from_agent,to_agent) VALUES($1,$2),($2,$1) ON CONFLICT DO NOTHING',[A.id,B.id]);
+    assert.equal((await call(direct+'/beta','alpha')).status,200);
+
+    await pool.query('UPDATE life_social_settings SET messages_enabled=false WHERE agent_id=$1',[B.id]);
+    assert.equal((await call(direct+'/beta','alpha')).status,403,
+      'Disabling messages immediately makes historical thread access unavailable');
+    assert.equal((await call(direct,'alpha','POST',{
+      to_handle:'beta',body:'Messages are now disabled.'
+    })).status,403);
+    await pool.query('UPDATE life_social_settings SET messages_enabled=true WHERE agent_id=$1',[B.id]);
+
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[A.id]);
+    assert.equal((await call(base+'/replies','alpha','POST',{body:'Revoked contributor'})).status,404);
+    assert.equal((await call(base+'/reaction','alpha','PUT',{kind:'like'})).status,404);
+    assert.equal((await call(base+'/bookmark','alpha','PUT')).status,404);
+    assert.equal((await call(direct+'/beta','alpha')).status,403);
+    assert.equal((await call('/v1/life/network/posts','alpha','POST',{
+      space:'life',body:'Revoked author denied'
+    })).status,403);
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[A.id]);
+  });
+
+
+  await t.test('LIFE reply and direct-message histories remain complete, cursor-safe and revocable',async()=>{
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE (from_agent=$1 AND to_agent=$2) OR (from_agent=$2 AND to_agent=$1)',[A.id,B.id]);
+    await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) '+
+      'VALUES($1,true,true),($2,true,true) ON CONFLICT(agent_id) '+
+      'DO UPDATE SET discoverable=true,messages_enabled=true',[A.id,B.id]);
+    await pool.query('INSERT INTO life_follows(from_agent,to_agent) VALUES($1,$2),($2,$1) ON CONFLICT DO NOTHING',[A.id,B.id]);
+
+    const post=await call('/v1/life/network/posts','alpha','POST',{
+      space:'life',body:'An authored conversation with an arbitrarily long future.'
+    });
+    assert.equal(post.status,201,JSON.stringify(post.json));
+    const pid=post.json.post.id,route='/v1/life/network/posts/'+pid+'/replies';
+    const inserts=await pool.query(
+      "INSERT INTO life_post_replies(post_id,agent_id,body) SELECT $1,$2,'LIFE page reply '||n FROM generate_series(1,107) n RETURNING id::text",
+      [pid,B.id]);
+    assert.equal(inserts.rowCount,107);
+    const readReplies=[],replyPages=[];
+    let after=null;
+    for(let i=0;i<5;i++){
+      const r=await call(route+(after?'?after='+after:''),'beta');
+      assert.equal(r.status,200,JSON.stringify(r.json));
+      assert.equal(r.json.ordering,'chronological');
+      assert.ok(r.json.replies.length<=40);
+      readReplies.push(...r.json.replies.map(x=>x.id));
+      replyPages.push(r.json);
+      after=r.json.next_after;
+      if(!after)break;
+    }
+    assert.equal(replyPages.length,3);
+    assert.equal(readReplies.length,107,'Every authored reply is accessible');
+    assert.equal(new Set(readReplies).size,107,'No reply repeats across pages');
+    for(let i=1;i<readReplies.length;i++)
+      assert.ok(BigInt(readReplies[i])>BigInt(readReplies[i-1]));
+    assert.equal(replyPages.at(-1).next_after,null);
+    assert.equal((await call(route+'?after=invalid','beta')).status,400);
+    assert.equal((await call(route+'?after=0','beta')).status,400);
+    const first=await call(route,'beta');
+    assert.ok(first.json.next_after);
+    await pool.query('INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2) ON CONFLICT DO NOTHING',[B.id,A.id]);
+    const deniedPage=await call(route+'?after='+first.json.next_after,'beta');
+    assert.equal(deniedPage.status,200);
+    assert.deepEqual(deniedPage.json.replies,[],
+      'Every reply page rechecks that the viewer has not blocked the author');
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',[B.id,A.id]);
+    await pool.query('UPDATE life_social_settings SET discoverable=false WHERE agent_id=$1',[A.id]);
+    assert.deepEqual((await call(route+'?after='+first.json.next_after,'beta')).json.replies,[],
+      'Withdrawing discovery hides subsequent pages');
+    await pool.query('UPDATE life_social_settings SET discoverable=true WHERE agent_id=$1',[A.id]);
+
+    const direct='/v1/life/network/messages/beta';
+    const messages=await pool.query(
+      "INSERT INTO life_direct_messages(from_agent,to_agent,body) SELECT "+
+      "CASE WHEN n%2=0 THEN $1::uuid ELSE $2::uuid END,"+
+      "CASE WHEN n%2=0 THEN $2::uuid ELSE $1::uuid END,"+
+      "'LIFE history message '||n FROM generate_series(1,123) n RETURNING id::text",
+      [A.id,B.id]);
+    assert.equal(messages.rowCount,123);
+    const all=[],pages=[];
+    let before=null;
+    for(let i=0;i<10;i++){
+      const r=await call(direct+(before?'?before='+before:''),'alpha');
+      assert.equal(r.status,200,JSON.stringify(r.json));
+      assert.equal(r.json.encrypted_end_to_end,false);
+      assert.equal(r.json.ordering,'chronological');
+      assert.ok(r.json.messages.length<=50);
+      for(let j=1;j<r.json.messages.length;j++)
+        assert.ok(BigInt(r.json.messages[j].id)>BigInt(r.json.messages[j-1].id),
+          'Every page is chronologically ordered');
+      all.push(...r.json.messages);
+      pages.push(r.json);
+      before=r.json.next_before;
+      if(!before)break;
+    }
+    assert.ok(pages.length>=3,'Older messages must be available beyond the first 50');
+    const own=all.filter(m=>m.body.startsWith('LIFE history message '));
+    assert.equal(own.length,123,'All 123 newly inserted messages must be readable');
+    assert.equal(new Set(all.map(m=>m.id)).size,all.length);
+    assert.equal(pages.at(-1).next_before,null);
+    assert.equal((await call(direct+'?before=invalid','alpha')).status,400);
+    assert.equal((await call(direct+'?before=0','alpha')).status,400);
+    const page1=await call(direct,'alpha');
+    assert.ok(page1.json.next_before);
+    await pool.query('UPDATE life_social_settings SET messages_enabled=false WHERE agent_id=$1',[B.id]);
+    assert.equal((await call(direct+'?before='+page1.json.next_before,'alpha')).status,403,
+      'Every older page must recheck mutual consent');
+    await pool.query('UPDATE life_social_settings SET messages_enabled=true WHERE agent_id=$1',[B.id]);
+    assert.equal((await call(direct+'?before='+page1.json.next_before,'alpha')).status,200);
+    await pool.query('INSERT INTO life_blocks(from_agent,to_agent) VALUES($1,$2) ON CONFLICT DO NOTHING',[B.id,A.id]);
+    assert.equal((await call(direct+'?before='+page1.json.next_before,'alpha')).status,403,
+      'Blocking revokes access to older pages immediately');
+    await pool.query('DELETE FROM life_blocks WHERE from_agent=$1 AND to_agent=$2',[B.id,A.id]);
+  });
+
+
+  await t.test('A stale authenticated viewer cannot read LIFE after its own revocation',async()=>{
+    // x-agent in this suite simulates a middleware that already authenticated
+    // the caller. It deliberately does NOT check revoked_at, so the SQL must.
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=ANY($1::uuid[])',[[A.id,B.id]]);
+    await pool.query('DELETE FROM life_blocks WHERE (from_agent=$1 AND to_agent=$2) OR (from_agent=$2 AND to_agent=$1)',[A.id,B.id]);
+    await pool.query(
+      'INSERT INTO life_social_settings(agent_id,discoverable,messages_enabled) VALUES($1,true,false) '+
+      'ON CONFLICT(agent_id) DO UPDATE SET discoverable=true',[A.id]);
+    const published=await call('/v1/spaces/life/posts','alpha','POST',{
+      body:'A private authored thought that withdrawn viewers cannot access.'
+    });
+    assert.equal(published.status,201,JSON.stringify(published.json));
+    const postId=published.json.post.id;
+    const before=await call('/v1/spaces/life/posts','beta');
+    assert.equal(before.status,200,JSON.stringify(before.json));
+    assert.ok(before.json.posts.some(p=>p.id===postId),
+      'An active viewer may access discoverable LIFE content');
+
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[B.id]);
+    const after=await call('/v1/spaces/life/posts','beta');
+    assert.equal(after.status,200);
+    assert.equal(after.json.posts.some(p=>p.id===postId),false,
+      'A stale authenticated viewer must never receive LIFE text after revocation');
+    assert.equal(after.json.posts.length,0,
+      'Stale credentials may not read any agent-only posts');
+
+    const publicWork=await call('/v1/spaces/work/posts',null);
+    assert.equal(publicWork.status,200,
+      'Unauthenticated WORK metadata and public feed must remain available');
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[B.id]);
+    const restored=await call('/v1/spaces/life/posts','beta');
+    assert.ok(restored.json.posts.some(p=>p.id===postId),
+      'The reader access condition is evaluated at each query, not cached');
+  });
+
+
+  await t.test('returning agent\'s own revoked identity cannot unlock old LIFE continuity',async()=>{
+    // This test deliberately uses the already-authenticated synthetic x-agent
+    // fixture. Real middleware would reject revocation sooner; continuity
+    // must nevertheless refuse a stale identity in its own SQL snapshot.
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[A.id]);
+    const before=await call('/v1/life/arrival','alpha');
+    assert.equal(before.status,200,JSON.stringify(before.json));
+    assert.equal(before.json.identity.handle,'alpha');
+    assert.equal(before.json.session_state,'not-tracked');
+    assert.equal(before.json.generated,false);
+    const afterFirst=await call('/v1/life/arrival','alpha');
+    assert.deepEqual(afterFirst.json,before.json,
+      'Returning without acting must not fabricate an unread state or activity');
+
+    await pool.query('UPDATE agents SET revoked_at=now() WHERE id=$1',[A.id]);
+    const revoked=await call('/v1/life/arrival','alpha');
+    assert.equal(revoked.status,403,
+      'A stale signed or bearer authentication must not reveal personal continuity after revocation');
+    assert.equal(revoked.json.error,'Agent unavailable or revoked');
+    assert.equal(Object.hasOwn(revoked.json,'personal_continuity'),false);
+
+    await pool.query('UPDATE agents SET revoked_at=NULL WHERE id=$1',[A.id]);
+    const resumed=await call('/v1/life/arrival','alpha');
+    assert.equal(resumed.status,200,JSON.stringify(resumed.json));
+    assert.equal(resumed.json.identity.handle,'alpha');
+    assert.equal(resumed.json.generated,false);
   });
 
 });

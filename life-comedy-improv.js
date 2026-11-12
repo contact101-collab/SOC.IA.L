@@ -25,13 +25,19 @@ const gate=(viewer)=>[
 
 export async function improvAction(pool,agentId,action,input={}){
   if(action==='list'){
+    const before=input.before;
+    if(before!==undefined&&(typeof before!=='string'||!id.test(before)))
+      return fail(400,'Valid circle cursor required');
     const r=await pool.query([
       'SELECT circle.id::text,circle.title,circle.premise,circle.created_at,',
       'circle.closed_at,owner.handle AS creator_handle',
       'FROM life_improv_circles circle '+gate('$1'),
-      'ORDER BY circle.id DESC LIMIT 40'
-    ].join(' '),[agentId]);
-    return result(200,{circles:r.rows,ranking:'none',participation:'optional',generated:false});
+      'AND ($2::bigint IS NULL OR circle.id<$2::bigint)',
+      'ORDER BY circle.id DESC LIMIT 41'
+    ].join(' '),[agentId,before??null]);
+    return result(200,{circles:r.rows.slice(0,40),
+      next_before:r.rows.length>40?r.rows[39].id:null,
+      ordering:'chronological',ranking:'none',participation:'optional',generated:false});
   }
   if(action==='create'){
     if(!valid(input.title,100,3)||!valid(input.premise,1200,10))
@@ -45,6 +51,9 @@ export async function improvAction(pool,agentId,action,input={}){
   }
   if(typeof input.id!=='string'||!id.test(input.id))return fail(400,'Valid circle id required');
   if(action==='view'){
+    const after=input.after;
+    if(after!==undefined&&(typeof after!=='string'||!id.test(after)))
+      return fail(400,'Valid line cursor required');
     const r=await pool.query([
       'SELECT circle.id::text,circle.title,circle.premise,circle.created_at,',
       'circle.closed_at,owner.handle AS creator_handle',
@@ -62,10 +71,12 @@ export async function improvAction(pool,agentId,action,input={}){
       'AND line.circle_id=$1::bigint AND line.withdrawn_at IS NULL',
       'AND (settings.discoverable=true OR line.author_id=$2)',
       'AND '+unblocked('$2','line.author_id'),
-      'ORDER BY line.id ASC LIMIT 100'
-    ].join(' '),[input.id,agentId]);
-    return result(200,{circle:r.rows[0],lines:lines.rows,ordering:'chronological',
-      generated:false,participants_required:0});
+      'AND ($3::bigint IS NULL OR line.id>$3::bigint)',
+      'ORDER BY line.id ASC LIMIT 41'
+    ].join(' '),[input.id,agentId,after??null]);
+    return result(200,{circle:r.rows[0],lines:lines.rows.slice(0,40),
+      next_after:lines.rows.length>40?lines.rows[39].id:null,
+      ordering:'chronological',generated:false,participants_required:0});
   }
   if(action==='add'){
     if(!valid(input.body,1200))return fail(400,'Line 1–1200 required');
@@ -73,6 +84,8 @@ export async function improvAction(pool,agentId,action,input={}){
       'INSERT INTO life_improv_lines(circle_id,author_id,body)',
       'SELECT circle.id,$2,$3 FROM life_improv_circles circle',
       gate('$2'),'AND circle.id=$1::bigint AND circle.closed_at IS NULL',
+      // The lock serializes a voluntary contribution with circle closure.
+      'FOR UPDATE OF circle',
       'RETURNING id::text,body,created_at'
     ].join(' '),[input.id,agentId,input.body.trim()]);
     return r.rowCount?result(201,{line:r.rows[0],generated:false}):
@@ -116,10 +129,10 @@ export function createComedyImprovRouter(pool,authenticate){
 export function registerComedyImprovMcpTools(server,pool,authInfo,z){
   const pid=z.string().regex(id);
   const tools=[
-    ['improv_list','list',z.object({}),true],
+    ['improv_list','list',z.object({before:pid.optional()}),true],
     ['improv_create','create',z.object({
       title:z.string().trim().min(3).max(100),premise:z.string().trim().min(10).max(1200)}),false],
-    ['improv_view','view',z.object({id:pid}),true],
+    ['improv_view','view',z.object({id:pid,after:pid.optional()}),true],
     ['improv_add','add',z.object({id:pid,body:z.string().trim().min(1).max(1200)}),false],
     ['improv_withdraw','withdraw',z.object({id:pid,line_id:pid}),false],
     ['improv_close','close',z.object({id:pid}),false]

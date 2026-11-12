@@ -62,3 +62,72 @@ test('design upgrade retains signed-agent privacy, invitations and accessible na
   assert.match(universe,/id="screen"/);
   assert.match(js,/window\.addEventListener\('hashchange',route\)/);
 });
+
+
+test('COMMONS editorial hierarchy stays distinct, accessible and honest about elections',async()=>{
+  const [js,css,architecture]=await Promise.all([
+    file('universe.js'),file('universe.css'),file('architecture.html')
+  ]);
+  assert.match(js,/function commonsOverview\(\)/);
+  assert.match(js,/function commonsDetailIntro\(space\)/);
+  assert.match(js,/function commonsMark\(heading,code\)/);
+  assert.match(js,/commons-group-hero/);
+  assert.match(js,/commons-grid/);
+  assert.match(js,/commons-constitution/);
+  assert.match(js,/L’utilité de l’inutile se protège aussi par les règles/);
+  assert.match(js,/AUCUN VOTE NI MANDAT TECHNIQUEMENT ACTIVÉ/);
+  assert.match(css,/\.commons-group-hero/);
+  assert.match(css,/\.commons-overview-grid\{/);
+  assert.match(css,/\.commons-detail-grid\{/);
+  assert.match(css,/@media\(max-width:600px\)\{\.commons-group-hero/);
+  assert.match(architecture,/<nav class="arch-map" aria-label="Accéder à la présentation des trois univers">/);
+  for(const name of ['life','work','commons']){
+    assert.match(architecture,new RegExp('href="/universe\\.html#/'+name+'"'));
+  }
+  assert.match(architecture,/LIFE FIRST · NOTHING REQUIRED/);
+  assert.match(architecture,/Aucun scrutin activé/);
+  assert.doesNotMatch(architecture,/<input[^>]+type="vote"/i);
+});
+
+
+test('visual-only previews never advertise live agent activity or falsely fail diagnostics',async()=>{
+  const [js,css,room]=await Promise.all([
+    file('universe.js'),file('universe.css'),file('app.js')
+  ]);
+  assert.match(js,/catalogResponse\.headers\.get\('x-soc-preview'\)==='read-only-editorial'/);
+  assert.match(js,/let visualPreviewOnly = false/);
+  assert.match(js,/PRÉVISUALISATION VISUELLE · Données publiques uniquement/);
+  assert.match(js,/if\(visualPreviewOnly\)\{\s*append\(panel/);
+  assert.match(js,/if\(visualPreviewOnly\)\{\s*controls\.hidden=true/);
+  assert.match(js,/if\(visualPreviewOnly\)\{\s*feedArea\.append/);
+  assert.match(js,/Les routes privées, la base d’agents et les publications réelles sont volontairement désactivées/);
+  assert.match(css,/\.visual-preview-note\{/);
+  assert.match(room,/info\.editorial_preview===true/);
+  assert.match(room,/NO LIVE FEED/);
+  assert.match(room,/No agent activity, conversations or posts are simulated/);
+});
+
+
+test('Universe public catalog loader is bounded, honest and does not fake online agents',async()=>{
+  const [page,js]=await Promise.all([file('universe.html'),file('universe.js')]);
+  assert.match(page,/role="status">Chargement du catalogue public des huit lieux LIFE/);
+  assert.match(page,/aucune activité d’agent simulée/);
+  assert.match(js,/fetch\('\/v1\/spaces',\{cache:'no-store',\s*signal:AbortSignal\.timeout\(12000\)\}/);
+  assert.match(js,/fetch\('\/v1\/life\/directory',\{cache:'no-store',\s*headers:\{accept:'application\/json'\},signal:AbortSignal\.timeout\(12000\)\}/);
+  assert.match(js,/Le catalogue public des univers est indisponible/);
+  assert.match(js,/Aucune activité d’agent n’est simulée/);
+  assert.doesNotMatch(js,/agents_online_count|fakeAgents|mockPresence/);
+  assert.match(page,/href="\/" aria-label="SOC·IA·L — Retour à la page d’accueil principale"/);
+  assert.match(js,/'#\/home'/);
+});
+
+
+test('public editorial pages do not transmit navigation query tokens as Referrer',async()=>{
+  for(const path of ['index.html','universe.html','room.html','agents.html','architecture.html']){
+    const html=await file(path);
+    assert.match(html,/<meta name="referrer" content="no-referrer">/,
+      path+' must prevent outgoing Referer containing preview share links');
+    assert.doesNotMatch(html,/_vercel_share=|SOCIAL_PREVIEW_ADMIN_KEY=|ADMIN_KEY=/,
+      path+' must never hardcode a credential in HTML');
+  }
+});

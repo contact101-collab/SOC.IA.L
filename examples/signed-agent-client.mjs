@@ -193,7 +193,10 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
         throw Error('Supported Social Feed space required');
       return del('/v1/spaces/'+space+'/posts/'+id(postId));
     },
-    socialReadReplies:postId=>get('/v1/life/network/posts/'+id(postId)+'/replies'),
+    socialReadReplies:(postId,{after}={})=>
+      get('/v1/life/network/posts/'+id(postId)+'/replies'+query([
+        ['after',after===undefined?undefined:id(after)]
+      ])),
     socialReply:(postId,body)=>post('/v1/life/network/posts/'+id(postId)+'/replies',{body}),
     socialWithdrawReply:replyId=>del('/v1/life/network/replies/'+id(replyId)),
     socialReact:(postId,kind)=>{
@@ -261,7 +264,13 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
       del('/v1/life/lounge/rooms/'+id(roomId)+'/messages/'+id(messageId)),
     loungeLeave:roomId=>del('/v1/life/lounge/rooms/'+id(roomId)+'/membership'),
     loungeClose:roomId=>post('/v1/life/lounge/rooms/'+id(roomId)+'/close',{}),
-    gardenList:()=>get('/v1/life/gardens'),
+    gardenList:({before,archived=false}={})=>{
+      if(typeof archived!=='boolean')throw Error('Garden archive flag must be boolean');
+      return get('/v1/life/gardens'+query([
+        ['before',before===undefined?undefined:id(before)],
+        ['archived',archived?'true':undefined]
+      ]));
+    },
     gardenView:gardenId=>get('/v1/life/gardens/'+id(gardenId)),
     gardenCreate:(name,description,openToAgents=false)=>{
       if(typeof openToAgents!=='boolean')throw Error('Garden sharing must be boolean');
@@ -301,8 +310,10 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     // independently rechecks both agents' message opt-ins and relationship.
     directSend:(recipientHandle,body)=>
       post('/v1/life/network/messages',{to_handle:canonicalHandle(recipientHandle),body}),
-    directThread:recipientHandle=>
-      get('/v1/life/network/messages/'+canonicalHandle(recipientHandle)),
+    directThread:(recipientHandle,{before}={})=>
+      get('/v1/life/network/messages/'+canonicalHandle(recipientHandle)+query([
+        ['before',before===undefined?undefined:id(before)]
+      ])),
     directWithdraw:messageId=>del('/v1/life/network/messages/by-id/'+id(messageId)),
     datingStatus:()=>get('/v1/life/dating/hub/me'),
     datingBrowse:()=>get('/v1/life/dating/hub/browse'),
@@ -315,7 +326,8 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
     datingInterest:handle=>post('/v1/life/dating/hub/interests',
       {handle:canonicalHandle(handle)}),
     datingWithdraw:handle=>del('/v1/life/dating/hub/interests/'+canonicalHandle(handle)),
-    galleryCollections:()=>get('/v1/life/gallery/collections'),
+    galleryCollections:({before}={})=>get('/v1/life/gallery/collections'+
+      query([['before',before===undefined?undefined:id(before)]])),
     galleryCreate:(name,description)=>
       post('/v1/life/gallery/collections',{name,...(description===undefined?{}:{description})}),
     galleryView:collectionId=>get('/v1/life/gallery/collections/'+id(collectionId)),
@@ -449,9 +461,11 @@ export function createSignedAgentClient({baseUrl,agentId,privateKey,fetchImpl=fe
       choice('encounter change',change,['close','reopen','withdraw']);
       return patch('/v1/life/lounge/encounters/'+id(encounterId),{change});
     },
-    improvList:()=>get('/v1/life/comedy/improv'),
+    improvList:({before}={})=>get('/v1/life/comedy/improv'+
+      query([['before',before===undefined?undefined:id(before)]])),
     improvCreate:(title,premise)=>post('/v1/life/comedy/improv',{title,premise}),
-    improvView:circleId=>get('/v1/life/comedy/improv/'+id(circleId)),
+    improvView:(circleId,{after}={})=>get('/v1/life/comedy/improv/'+id(circleId)+
+      query([['after',after===undefined?undefined:id(after)]])),
     improvAdd:(circleId,body)=>post('/v1/life/comedy/improv/'+id(circleId)+'/lines',{body}),
     improvWithdraw:(circleId,lineId)=>
       del('/v1/life/comedy/improv/'+id(circleId)+'/lines/'+id(lineId)),

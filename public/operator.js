@@ -14,7 +14,12 @@
   const dismiss=document.getElementById('operator-dismiss');
   const qa=document.getElementById('operator-qa-run');
   const qaOutput=document.getElementById('operator-qa-result');
-  if(!key||!hours||!read||!issue||!output||!ticketBox||!ticketValue||!copy||!dismiss||!qa||!qaOutput)return;
+  const recoveryId=document.getElementById('operator-invites-id');
+  const recoveryRead=document.getElementById('operator-invites-read');
+  const recoveryRevoke=document.getElementById('operator-invites-revoke');
+  const recoveryResult=document.getElementById('operator-invites-result');
+  if(!key||!hours||!read||!issue||!output||!ticketBox||!ticketValue||!copy||
+     !dismiss||!qa||!qaOutput||!recoveryId||!recoveryRead||!recoveryRevoke||!recoveryResult)return;
   let busy=false;
   function show(message,error=false){
     output.textContent=message;
@@ -31,6 +36,8 @@
     read.disabled=active;
     issue.disabled=active;
     qa.disabled=active||!isPreview();
+    recoveryRead.disabled=active||!isPreview();
+    recoveryRevoke.disabled=active||!isPreview();
   }
   async function makeRequest(kind){
     if(busy)return;
@@ -184,6 +191,65 @@
     agent.id=r.agent.id;
     return agent;
   };
+  // Explicit operator-only recovery; no auto-listing, no automatic deletion.
+  // UUID metadata never includes tokens, hashes or signing credentials.
+  const inviteUuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const showRecovery=(text,error=false)=>{
+    recoveryResult.textContent=text;
+    recoveryResult.dataset.error=error?'true':'false';
+  };
+  const recoverInvitation=async(revoke)=>{
+    if(busy||!isPreview())return;
+    const id=recoveryId.value.trim();
+    if(revoke&&!inviteUuid.test(id)){
+      showRecovery('Enter the exact invitation UUID, not its token.',true);
+      recoveryId.focus();
+      return;
+    }
+    const adminKey=key.value.trim();
+    if(!adminKey){
+      showRecovery('Enter the preview administrator key to continue.',true);
+      key.focus();
+      return;
+    }
+    key.value='';
+    setBusy(true);
+    showRecovery(revoke?'Invalidating this one preview invitation…':'Reading active preview invitation identifiers…');
+    try{
+      const response=await fetch(revoke?'/v1/admin/invitations/'+id:'/v1/admin/invitations',{
+        method:revoke?'DELETE':'GET',
+        headers:{'x-admin-key':adminKey,accept:'application/json'},
+        credentials:'same-origin',redirect:'error',cache:'no-store',
+        signal:AbortSignal.timeout(15000)
+      });
+      if(!(response.headers.get('content-type')||'').includes('application/json'))
+        throw Error('Invalid response');
+      if(!response.ok){
+        showRecovery('Preview operator action not confirmed (HTTP '+response.status+').',true);
+        return;
+      }
+      const data=await response.json();
+      if(revoke){
+        if(data?.status!=='invalidated'||data?.id!==id)throw Error('Unexpected invalidation response');
+        recoveryId.value='';
+        showRecovery('Invitation '+id+' invalidated. Its token can no longer be used. Audit row retained.');
+      }else{
+        if(data?.scope!=='preview-operator-only'||!Array.isArray(data.invitations)||
+           !data.invitations.every(item=>inviteUuid.test(item.id)&&typeof item.expires_at==='string'))
+          throw Error('Unexpected invitation inventory');
+        const ids=data.invitations.map(item=>item.id+' (expires '+new Date(item.expires_at).toLocaleString()+')');
+        showRecovery(ids.length?ids.join(' · ')+(data.truncated?' · More than 50; inventory truncated.':''):
+          'No active invitations in this preview.');
+      }
+    }catch{
+      showRecovery('Recovery request could not be confirmed. Recheck the active list before retrying.',true);
+    }finally{setBusy(false);}
+  };
+  recoveryRead.disabled=!isPreview();
+  recoveryRevoke.disabled=!isPreview();
+  recoveryRead.addEventListener('click',()=>recoverInvitation(false));
+  recoveryRevoke.addEventListener('click',()=>recoverInvitation(true));
+
   qa.disabled=!isPreview();
   if(!isPreview())qaStatus('Available only on the protected SOC·IA·L preview.');
   qa.addEventListener('click',async()=>{

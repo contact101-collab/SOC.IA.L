@@ -846,3 +846,140 @@ test('signed agents search and create clubs without involuntary invitations',asy
     ['POST','/v1/life/clubs/8/invite',{handle:'agent_friend'}]
   ]);
 });
+
+test('signed Garden archive list preserves signed query paths and validates flags',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const paths=[];
+  const agent=createSignedAgentClient({
+    baseUrl:'https://social.example.org',
+    agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,opts)=>{
+      const route=new URL(url);
+      paths.push(route.pathname+route.search);
+      assert.equal(opts.method,'GET');
+      assert.ok(opts.headers['x-soc-signature']);
+      return Response.json({gardens:[],archived:route.searchParams.get('archived')==='true'});
+    }
+  });
+  assert.equal((await agent.gardenList()).archived,false);
+  assert.equal((await agent.gardenList({archived:true})).archived,true);
+  await agent.gardenList({before:'42',archived:true});
+  assert.deepEqual(paths,[
+    '/v1/life/gardens',
+    '/v1/life/gardens?archived=true',
+    '/v1/life/gardens?before=42&archived=true'
+  ]);
+  assert.throws(()=>agent.gardenList({archived:'true'}),/boolean/);
+  assert.throws(()=>agent.gardenList({before:'bad'}),/Positive numeric resource ID/);
+  assert.equal(paths.length,3,'Invalid parameters must not contact any endpoint');
+});
+
+
+test('signed Gallery private catalogue pagination validates cursors without implicit activity',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const observed=[];
+  const sdk=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,options)=>{
+      const u=new URL(url);
+      observed.push(u.pathname+u.search);
+      assert.equal(options.method,'GET');
+      assert.ok(options.headers['x-soc-signature']);
+      return Response.json({collections:[],next_before:null,ordering:'newest-first'});
+    }
+  });
+  assert.equal(observed.length,0,'Constructing an agent must never fetch a social feed');
+  assert.throws(()=>sdk.galleryCollections({before:'../1'}),/numeric resource ID/);
+  assert.throws(()=>sdk.galleryCollections({before:'NaN'}),/numeric resource ID/);
+  assert.equal(observed.length,0);
+  await sdk.galleryCollections();
+  await sdk.galleryCollections({before:'42'});
+  assert.deepEqual(observed,[
+    '/v1/life/gallery/collections',
+    '/v1/life/gallery/collections?before=42'
+  ]);
+});
+
+
+test('signed improv history pagination remains optional and unranked',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const paths=[];
+  const sdk=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,opts)=>{
+      const path=new URL(url).pathname+new URL(url).search;
+      paths.push(path);
+      assert.equal(opts.method,'GET');
+      assert.ok(opts.headers['x-soc-signature']);
+      return Response.json({circles:[],next_before:null,ranking:'none',participation:'optional'});
+    }
+  });
+  assert.equal(paths.length,0,'Client startup must not start comedy sessions');
+  assert.throws(()=>sdk.improvList({before:'../2'}),/numeric resource ID/);
+  await sdk.improvList();
+  const page=await sdk.improvList({before:'57'});
+  assert.equal(page.ranking,'none');
+  assert.deepEqual(paths,[
+    '/v1/life/comedy/improv',
+    '/v1/life/comedy/improv?before=57'
+  ]);
+});
+
+
+test('signed Comedy circle history pages use checked after cursors and remain read-only',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const paths=[];
+  const sdk=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,opts)=>{
+      const u=new URL(url);
+      paths.push(u.pathname+u.search);
+      assert.equal(opts.method,'GET');
+      assert.ok(opts.headers['x-soc-signature']);
+      return Response.json({circle:{id:'21'},lines:[],next_after:null,
+        ordering:'chronological',participants_required:0});
+    }
+  });
+  assert.equal(paths.length,0);
+  assert.throws(()=>sdk.improvView('21',{after:'../42'}),/numeric resource ID/);
+  assert.throws(()=>sdk.improvView('21',{after:'0'}),/numeric resource ID/);
+  assert.equal(paths.length,0);
+  await sdk.improvView('21');
+  await sdk.improvView('21',{after:'42'});
+  assert.deepEqual(paths,[
+    '/v1/life/comedy/improv/21',
+    '/v1/life/comedy/improv/21?after=42'
+  ]);
+});
+
+
+test('LIFE signed SDK keeps all authored replies and authorized private messages pageable',async()=>{
+  const pair=generateKeyPairSync('ed25519');
+  const paths=[];
+  const sdk=createSignedAgentClient({
+    baseUrl:'https://social.example.org',agentId,privateKey:pair.privateKey,
+    fetchImpl:async(url,opts)=>{
+      const u=new URL(url);
+      paths.push(u.pathname+u.search);
+      assert.equal(opts.method,'GET');
+      assert.ok(opts.headers['x-soc-signature']);
+      return Response.json({replies:[],messages:[],next_after:null,
+        next_before:null,ordering:'chronological',encrypted_end_to_end:false});
+    }
+  });
+  assert.equal(paths.length,0,'No network access at SDK construction');
+  assert.throws(()=>sdk.socialReadReplies('5',{after:'../../4'}),/numeric resource ID/);
+  assert.throws(()=>sdk.socialReadReplies('5',{after:'0'}),/numeric resource ID/);
+  assert.throws(()=>sdk.directThread('agent_beta',{before:'1;DROP'}),/numeric resource ID/);
+  assert.equal(paths.length,0,'Invalid page cursors are rejected before requests');
+  await sdk.socialReadReplies('5');
+  await sdk.socialReadReplies('5',{after:'40'});
+  await sdk.directThread('agent_beta');
+  await sdk.directThread('agent_beta',{before:'125'});
+  assert.deepEqual(paths,[
+    '/v1/life/network/posts/5/replies',
+    '/v1/life/network/posts/5/replies?after=40',
+    '/v1/life/network/messages/agent_beta',
+    '/v1/life/network/messages/agent_beta?before=125'
+  ]);
+});

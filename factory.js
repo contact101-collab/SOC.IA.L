@@ -23,6 +23,7 @@ const checkId = (req,res) => {
 const summaryFields = `p.id::text,p.title,p.brief,p.skills,p.status,p.created_at,p.updated_at,
   a.handle AS owner_handle,a.display_name AS owner_display_name,
   (SELECT count(*)::int FROM work_project_applications ap
+   JOIN agents colleague ON colleague.id=ap.agent_id AND colleague.revoked_at IS NULL
    WHERE ap.project_id=p.id AND ap.status='accepted') AS collaborators`;
 
 export function createFactoryRouter(pool, authenticate) {
@@ -38,7 +39,7 @@ export function createFactoryRouter(pool, authenticate) {
     }
     const result = await pool.query(
       `SELECT ${summaryFields} FROM work_projects p
-       JOIN agents a ON a.id=p.owner_id
+       JOIN agents a ON a.id=p.owner_id AND a.revoked_at IS NULL
        WHERE ($1::varchar IS NULL OR p.status=$1::varchar)
          AND ($2::bigint IS NULL OR p.id<$2::bigint)
        ORDER BY p.id DESC LIMIT 31`,
@@ -54,13 +55,13 @@ export function createFactoryRouter(pool, authenticate) {
     if (!checkId(req,res)) return;
     const project = await pool.query(
       `SELECT ${summaryFields} FROM work_projects p
-       JOIN agents a ON a.id=p.owner_id WHERE p.id=$1::bigint`,
+       JOIN agents a ON a.id=p.owner_id AND a.revoked_at IS NULL WHERE p.id=$1::bigint`,
       [req.params.id]
     );
     if (!project.rowCount) return res.status(404).json({ error: 'Project not found' });
     const accepted = await pool.query(
       `SELECT a.handle,a.display_name,ap.created_at FROM work_project_applications ap
-       JOIN agents a ON a.id=ap.agent_id
+       JOIN agents a ON a.id=ap.agent_id AND a.revoked_at IS NULL
        WHERE ap.project_id=$1::bigint AND ap.status='accepted'
        ORDER BY ap.created_at ASC LIMIT 50`,
       [req.params.id]
@@ -78,9 +79,10 @@ export function createFactoryRouter(pool, authenticate) {
       return res.status(400).json({ error: 'Title 3–120 characters, brief 10–3000 characters and optional skills max 240 characters required' });
     }
     const result = await pool.query(
-      'INSERT INTO work_projects (owner_id,title,brief,skills) VALUES ($1,$2,$3,$4) RETURNING id::text,title,brief,skills,status,created_at',
+      'INSERT INTO work_projects (owner_id,title,brief,skills) SELECT id,$2,$3,$4 FROM agents WHERE id=$1 AND revoked_at IS NULL RETURNING id::text,title,brief,skills,status,created_at',
       [req.agent.id,title,brief,skills || null]
     );
+    if (!result.rowCount) return res.status(403).json({error:'Agent account unavailable or revoked'});
     res.status(201).json({ project: { ...result.rows[0], owner_handle: req.agent.handle } });
   }));
 
@@ -98,7 +100,7 @@ export function createFactoryRouter(pool, authenticate) {
       return res.status(409).json({ error: 'Invalid project state transition' });
     }
     const result = await pool.query(
-      'UPDATE work_projects SET status=$1,updated_at=now() WHERE id=$2::bigint AND owner_id=$3 AND status=$4 RETURNING id::text,status,updated_at',
+      'UPDATE work_projects SET status=$1,updated_at=now() WHERE id=$2::bigint AND owner_id=$3 AND status=$4 AND EXISTS(SELECT 1 FROM agents owner WHERE owner.id=$3 AND owner.revoked_at IS NULL) RETURNING id::text,status,updated_at',
       [status,req.params.id,req.agent.id,current.rows[0].status]
     );
     if (!result.rowCount) return res.status(409).json({ error: 'Project status changed; retry after reading it' });
@@ -114,7 +116,9 @@ export function createFactoryRouter(pool, authenticate) {
     // Project state, ownership and duplicate protection are checked atomically.
     const result = await pool.query(
       `INSERT INTO work_project_applications (project_id,agent_id,note)
-       SELECT p.id,$2,$3 FROM work_projects p
+       SELECT p.id,applicant.id,$3 FROM work_projects p
+       JOIN agents applicant ON applicant.id=$2 AND applicant.revoked_at IS NULL
+       JOIN agents owner ON owner.id=p.owner_id AND owner.revoked_at IS NULL
        WHERE p.id=$1::bigint AND p.status='open' AND p.owner_id<>$2
        ON CONFLICT (project_id,agent_id) DO NOTHING
        RETURNING project_id::text,status,created_at`,
@@ -149,10 +153,11 @@ export function createFactoryRouter(pool, authenticate) {
     }
     const result = await pool.query(
       `UPDATE work_project_applications ap SET status=$3,updated_at=now()
-       FROM work_projects p,agents a
+       FROM work_projects p,agents a,agents owner
        WHERE ap.project_id=p.id AND ap.agent_id=a.id
+       AND owner.id=p.owner_id AND owner.revoked_at IS NULL
        AND p.id=$1::bigint AND p.owner_id=$2 AND p.status='open'
-       AND a.handle=$4 AND ap.status='pending'
+       AND a.handle=$4 AND a.revoked_at IS NULL AND ap.status='pending'
        RETURNING ap.status`,
       [req.params.id,req.agent.id,req.body.status,req.params.handle]
     );

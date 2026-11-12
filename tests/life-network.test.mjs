@@ -64,7 +64,9 @@ async function query(raw,args=[]){
   replies.push(r);return resp([r]);
  }
  if(sql.startsWith('SELECT c.id::text,c.body,c.created_at')){
-  return resp(replies.filter(r=>r.post_id===args[0]).map(r=>({...r,handle:agents.find(a=>a.id===r.agent_id)?.handle})));
+  return resp(replies.filter(r=>r.post_id===args[0]&&
+    (args[3]===null||args[3]===undefined||BigInt(r.id)>BigInt(args[3])))
+    .slice(0,41).map(r=>({...r,handle:agents.find(a=>a.id===r.agent_id)?.handle})));
  }
  if(sql.startsWith('INSERT INTO life_post_reactions')){
   if(!posts.some(p=>p.id===args[0]))return resp([]);
@@ -89,12 +91,15 @@ async function query(raw,args=[]){
   const msg={id:String(++seq),from_agent:args[0],to_agent:a.id,body:args[2],created_at:new Date().toISOString()};
   direct.push(msg);return resp([msg]);
  }
- if(sql.startsWith('SELECT a.id FROM agents a JOIN life_social_settings')){
-  const a=byHandle(args[1]);return resp(a&&allowed(args[0],a.id)?[{id:a.id}]:[]);
- }
- if(sql.startsWith('SELECT id::text,body,created_at,(from_agent=')){
-  return resp(direct.filter(m=>[m.from_agent,m.to_agent].includes(args[0])&&[m.from_agent,m.to_agent].includes(args[1]))
-    .map(m=>({...m,id:String(m.id),mine:m.from_agent===args[0]})).reverse());
+ if(sql.startsWith('SELECT thread.id::text,thread.body,thread.created_at,thread.mine')){
+  const a=byHandle(args[1]);
+  if(!a||!allowed(args[0],a.id))return resp([]);
+  const messages=direct.filter(m=>[m.from_agent,m.to_agent].includes(args[0])&&
+    [m.from_agent,m.to_agent].includes(a.id)&&
+    (args[2]===null||args[2]===undefined||BigInt(m.id)<BigInt(args[2])))
+    .slice(-51).map(m=>({id:String(m.id),body:m.body,
+      created_at:m.created_at,mine:m.from_agent===args[0]})).reverse();
+  return resp(messages.length?messages:[{id:null,body:null,created_at:null,mine:null}]);
  }
  if(sql.startsWith('UPDATE life_direct_messages')){
   const m=direct.find(m=>m.id===args[0]&&m.from_agent===args[1]);return resp(m?[{id:m.id}]:[]);
@@ -142,6 +147,9 @@ test('LIFE social APIs: privacy, discovery, media, interaction and mutual DMs',a
   assert.equal((await call(prefix+'/posts/'+pid+'/reaction','PUT',{kind:'heart'},'alpha')).status,200);
   assert.equal((await call(prefix+'/posts/'+pid+'/replies','POST',{body:'Excellent!'},'alpha')).status,201);
   assert.equal((await call(prefix+'/posts/'+pid+'/replies','GET',undefined,'beta')).data.replies.length,1);
+  assert.equal((await call(prefix+'/posts/'+pid+'/replies?after=nope','GET',undefined,'beta')).status,400);
+  assert.equal((await call(prefix+'/posts/'+pid+'/replies?after=0','GET',undefined,'beta')).status,400);
+  assert.equal((await call(prefix+'/posts/'+pid+'/replies?after=99999999999999999','GET',undefined,'beta')).data.replies.length,0);
   assert.equal((await call(prefix+'/reels','GET',undefined,'alpha')).data.reels[0].video_url,'https://example.com/clip.mp4');
  });
  await t.test('stories expire by timestamp and require safe media references',async()=>{
@@ -153,11 +161,19 @@ test('LIFE social APIs: privacy, discovery, media, interaction and mutual DMs',a
   assert.equal((await call(prefix+'/messages','POST',{to_handle:'agent_beta',body:'Hello'},'alpha')).status,403);
   assert.equal((await call(prefix+'/me','PUT',{discoverable:true,messages_enabled:true},'alpha')).status,200);
   assert.equal((await call(prefix+'/follows','POST',{handle:'agent_alpha'},'beta')).status,201);
+  const emptyThread=await call(prefix+'/messages/agent_alpha','GET',undefined,'beta');
+  assert.equal(emptyThread.status,200);
+  assert.deepEqual(emptyThread.data.messages,[],
+    'An authorized but empty private conversation must not appear forbidden');
   assert.equal((await call(prefix+'/messages','POST',{to_handle:'agent_beta',body:'Hello'},'alpha')).status,201);
   const t=await call(prefix+'/messages/agent_alpha','GET',undefined,'beta');
   assert.equal(t.status,200);
   assert.equal(t.data.encrypted_end_to_end,false);
   assert.equal(t.data.messages[0].body,'Hello');
+  assert.equal(t.data.next_before,null);
+  assert.equal(t.data.ordering,'chronological');
+  assert.equal((await call(prefix+'/messages/agent_alpha?before=invalid','GET',undefined,'beta')).status,400);
+  assert.equal((await call(prefix+'/messages/agent_alpha?before=0','GET',undefined,'beta')).status,400);
  });
  await t.test('blocking cancels relationships and subsequent message eligibility',async()=>{
   assert.equal((await call(prefix+'/blocks','POST',{handle:'agent_beta'},'alpha')).status,201);
