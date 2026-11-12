@@ -9,10 +9,12 @@ const sha='a'.repeat(40),adminKey='preview-only-admin-test-secret';
 const asJSON=(data,status=200)=>Response.json(data,{status});
 
 function isolatedFakeServer({failAfterOldKeyRevocation=false,malformedRegistration=false,
-  loseEnrollmentResponse=false}={}){
+  loseEnrollmentResponse=false,loseInvitationResponse=false,existingInvitation=false,
+  failAccountRevocation=false}={}){
   const accounts=new Map(),invitations=new Set(),nonces=new Set();
   const calls=[],gardens=new Map();
   let invitationIndex=0,oldKeyErrorInjected=false;
+  if(existingInvitation)invitations.add('soci_'+'f'.repeat(64));
   const digest=value=>createHash('sha256').update(value).digest('hex');
   const live=()=>[...accounts.values()].filter(a=>!a.revoked);
   const assertPreview=({url,options})=>{
@@ -59,6 +61,8 @@ function isolatedFakeServer({failAfterOldKeyRevocation=false,malformedRegistrati
       if(headers['x-admin-key']!==adminKey)return asJSON({error:'Denied'},403);
       const token='soci_'+String(++invitationIndex).padStart(64,'0');
       invitations.add(token);
+      if(loseInvitationResponse)
+        throw Error('Simulated lost invitation response after commit');
       return asJSON({invitation:{token}},201);
     }
     if(path==='/v1/agents/a2a'&&method==='POST'){
@@ -133,6 +137,8 @@ function isolatedFakeServer({failAfterOldKeyRevocation=false,malformedRegistrati
       return asJSON({revoked:true},200);
     }
     if(path==='/v1/agents/me/token'&&method==='DELETE'){
+      if(failAccountRevocation)
+        return asJSON({error:'Simulated revocation failure'},503);
       account.revoked=true;
       return new Response(null,{status:204});
     }
@@ -186,4 +192,35 @@ test('pilot recovers lost enrollment response using Ed25519 and revokes committe
   assert.equal(fake.accounts.size,1);
   assert.equal(fake.live().length,0,'Recovered orphan test identity must be revoked');
   assert.equal(fake.calls.filter(x=>x.path==='/v1/agents/a2a/recover').length,1);
+});
+
+
+test('pilot refuses dirty preview before any write, including an outstanding invitation',async()=>{
+  const fake=isolatedFakeServer({existingInvitation:true});
+  await assert.rejects(runPreviewSignedPilot({
+    baseUrl:site,expectedSha:sha,adminKey,fetchImpl:fake.fetchImpl
+  }),/active_invitations must be zero/);
+  assert.equal(fake.accounts.size,0);
+  assert.equal(fake.invitations,1);
+  assert.deepEqual(fake.calls.map(x=>x.method),['GET','GET']);
+});
+
+test('pilot visibly flags an invitation created despite losing the HTTP response',async()=>{
+  const fake=isolatedFakeServer({loseInvitationResponse:true});
+  await assert.rejects(runPreviewSignedPilot({
+    baseUrl:site,expectedSha:sha,adminKey,fetchImpl:fake.fetchImpl
+  }),/PREVIEW PILOT CLEANUP INCOMPLETE.*operator snapshot/);
+  assert.equal(fake.accounts.size,0);
+  assert.equal(fake.invitations,1,
+    'An unused one-hour invitation is a real residual artifact, not a clean exit');
+  assert.equal(fake.calls.filter(x=>x.path==='/v1/admin/onboarding-status').length,2);
+});
+
+test('pilot flags failed account revocation rather than claiming clean completion',async()=>{
+  const fake=isolatedFakeServer({failAccountRevocation:true});
+  await assert.rejects(runPreviewSignedPilot({
+    baseUrl:site,expectedSha:sha,adminKey,fetchImpl:fake.fetchImpl
+  }),/PREVIEW PILOT CLEANUP INCOMPLETE.*could not be revoked/);
+  assert.equal(fake.live().length,2,
+    'The simulated failure is explicitly surfaced, never reported as successful cleanup');
 });
