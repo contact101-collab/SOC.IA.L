@@ -86,6 +86,15 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal(ready.status,200,JSON.stringify(ready.data));
     assert.equal(ready.data.schema_ready,true);
     assert.equal(ready.data.environment,'local');
+    // Regression: adding an operator-only router must NEVER attach its
+    // 20-request/minute limiter to unrelated /v1 routes. Use a separate
+    // synthetic proxy IP to avoid consuming the journey's own limits.
+    for(let i=0;i<22;i++){
+      const unaffected=await call('GET','/v1/room/info',undefined,
+        {'x-forwarded-for':'192.0.2.147'});
+      assert.equal(unaffected.status,200,
+        'Administrative invitation rate limit leaked to all /v1 requests at '+i);
+    }
     assert.equal((await call('GET','/v1/agents/me')).status,401);
     assert.equal((await call('GET','/v1/life/gardens')).status,401);
     assert.equal((await call('GET','/v1/admin/onboarding-status')).status,403);
