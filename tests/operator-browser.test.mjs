@@ -7,7 +7,8 @@ import {webcrypto,createHash,randomUUID,randomBytes,createPublicKey,verify} from
 const script=await readFile(new URL('../public/operator.js',import.meta.url),'utf8');
 const keyIds=['operator-key','operator-hours','operator-check','operator-issue',
   'operator-result','operator-ticket','operator-ticket-value','operator-copy',
-  'operator-dismiss','operator-qa-run','operator-qa-result'];
+  'operator-dismiss','operator-qa-run','operator-qa-result',
+  'operator-invites-id','operator-invites-read','operator-invites-revoke','operator-invites-result'];
 
 function page({hostname='social-agent-room-nsmq4mb8q-contact101-8081.vercel.app',fetchImpl}={}){
   const nodes=new Map(keyIds.map(id=>[id,{
@@ -26,7 +27,8 @@ function page({hostname='social-agent-room-nsmq4mb8q-contact101-8081.vercel.app'
     Date,AbortSignal,Number,JSON,Set,Map,Array,RegExp};
   runInNewContext(script,scope);
   return {get:id=>nodes.get('operator-'+id),
-    run:async()=>nodes.get('operator-qa-run').listeners.click(),events};
+    run:async()=>nodes.get('operator-qa-run').listeners.click(),
+    recover:async kind=>nodes.get('operator-invites-'+kind).listeners.click(),events};
 }
 const respond=(status,obj)=>new Response(status===204?null:JSON.stringify(obj),{
   status,headers:status===204?{}:{'content-type':'application/json; charset=utf-8'}
@@ -37,7 +39,9 @@ const sha=buffer=>createHash('sha256').update(buffer).digest('hex');
 function backend({environment='preview'}={}){
   let calls=0,issueCount=0,signedCalls=0;
   const invitations=new Set(),agents=new Map();
-  let club=null;
+  let club=null,recoveredInvites=0;
+  const strandedUuid='baaaaaaa-1234-4234-8234-123456789abc';
+  let strandedActive=true;
   async function fetchImpl(path,options={}){
     calls++;
     assert.ok(path.startsWith('/')&&!path.startsWith('//'),'same-origin only');
@@ -54,6 +58,17 @@ function backend({environment='preview'}={}){
         registered_agents:10,registered_test_agents:10,
         registered_non_test_agents:0,registered_signed_non_test_agents:0,
         active_invitations:0});
+    }
+    if(path==='/v1/admin/invitations'&&method==='GET'){
+      assert.equal(headers['x-admin-key'],'synthetic-preview-admin');
+      return respond(200,{scope:'preview-operator-only',invitations:strandedActive?
+        [{id:strandedUuid,expires_at:'2026-11-12T04:00:00.000Z'}]:[],truncated:false});
+    }
+    if(path==='/v1/admin/invitations/'+strandedUuid&&method==='DELETE'){
+      assert.equal(headers['x-admin-key'],'synthetic-preview-admin');
+      if(!strandedActive)return respond(404,{error:'Not found'});
+      strandedActive=false;recoveredInvites++;
+      return respond(200,{id:strandedUuid,status:'invalidated'});
     }
     if(path==='/v1/admin/invitations'){
       assert.equal(method,'POST');
@@ -132,7 +147,8 @@ function backend({environment='preview'}={}){
     return respond(404,{error:'Unhandled test endpoint'});
   }
   return {fetchImpl,stats:()=>({calls,issueCount,signedCalls,
-    agents:[...agents.values()],club})};
+    agents:[...agents.values()],club,recoveredInvites,strandedActive,
+    strandedUuid})};
 }
 
 test('operator QA never creates accounts or reads secrets without a manual click',async()=>{
@@ -197,6 +213,38 @@ test('operator reads actual non-test and signed-agent counts without falsely cla
   assert.equal(b.stats().calls,1);
   assert.equal(b.stats().issueCount,0);
   assert.equal(b.stats().agents.length,0);
+});
+
+test('preview operator can explicitly list and invalidate one invitation without seeing its token',async()=>{
+  const b=backend(),p=page({fetchImpl:b.fetchImpl});
+  assert.equal(b.stats().calls,0,'No automatic operator network access');
+  p.get('key').value='synthetic-preview-admin';
+  await p.recover('read');
+  assert.match(p.get('invites-result').textContent,/baaaaaaa-1234-4234-8234-123456789abc/);
+  assert.equal(p.get('key').value,'','Never retain operator secrets in the form');
+  assert.equal(b.stats().recoveredInvites,0,'Listing cannot revoke anything');
+  p.get('invites-id').value=b.stats().strandedUuid;
+  p.get('key').value='synthetic-preview-admin';
+  await p.recover('revoke');
+  assert.equal(b.stats().recoveredInvites,1);
+  assert.equal(b.stats().strandedActive,false);
+  assert.match(p.get('invites-result').textContent,/invalidated/);
+  assert.equal(p.get('invites-id').value,'');
+  assert.equal(p.get('key').value,'');
+  assert.doesNotMatch(p.get('invites-result').textContent,/synthetic-preview-admin|soci_[a-f0-9]{64}/);
+});
+
+test('manual invitation recovery cannot execute on the production hostname',async()=>{
+  const b=backend(),p=page({
+    hostname:'social-agent-room.vercel.app',fetchImpl:b.fetchImpl
+  });
+  assert.equal(p.get('invites-read').disabled,true);
+  assert.equal(p.get('invites-revoke').disabled,true);
+  p.get('key').value='synthetic-preview-admin';
+  p.get('invites-id').value=b.stats().strandedUuid;
+  await p.recover('read');
+  await p.recover('revoke');
+  assert.equal(b.stats().calls,0,'No preview recovery requests may leave a production page');
 });
 
 test('published Gemini CLI MCP configuration is parseable and read-only by default',async()=>{
