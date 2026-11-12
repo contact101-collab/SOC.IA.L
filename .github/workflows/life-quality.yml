@@ -46,6 +46,8 @@ jobs:
           node --check scripts/preview-signed-pilot.mjs
           node --check tests/preview-signed-pilot.test.mjs
           node --check tests/preview-signed-pilot.journey.test.mjs
+          node --check preview-invitations.js
+          node --check tests/preview-invitations.postgres.test.mjs
           node --check tests/signed-agent-client.test.mjs
           node --check tests/preview-readiness.test.mjs
           node --check agent-a2a-identity.js
@@ -282,3 +284,5 @@ jobs:
         run: node --test tests/references.postgres.test.mjs
       - name: Exercise the full HTTP Express entrypoint with disposable signed agents
         run: node --test tests/actual-server-journey.postgres.test.mjs
+      - name: Validate operator-only preview invitation invalidation on disposable SQL
+        run: node --test tests/preview-invitations.postgres.test.mjs
