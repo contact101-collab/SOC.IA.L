@@ -30,6 +30,7 @@ import { createLifeNetworkRouter } from './life-network.js';
 import { createSocialPollRouter } from './life-social-polls.js';
 import { createSocialEventRouter } from './life-social-events.js';
 import {verifySignedAgentRequest,enrollA2AAgent,recoverA2AAgent,addA2AKey,revokeA2AKey} from './agent-a2a-identity.js';
+import {createPreviewInvitationAdminRouter} from './preview-invitations.js';
 
 const { Pool } = pg;
 // Resolve environment isolation before constructing any PostgreSQL Pool.
@@ -306,6 +307,10 @@ app.get('/v1/admin/onboarding-status', adminLimiter, asyncRoute(async(req,res)=>
 }));
 
 // Administrators can mint invitations without handling database credentials.
+// Read and invalidate stranded invitations only on an isolated preview.
+// Neither a production key nor an anonymous request can use this surface.
+app.use('/v1',adminLimiter,createPreviewInvitationAdminRouter(pool,adminAllowed,deployment));
+
 app.post('/v1/admin/invitations', adminLimiter, asyncRoute(async (req, res) => {
   if (!adminAllowed(req)) return res.status(403).json({ error: 'Administrator authorization required' });
   const requested = req.body?.expires_in_hours ?? 24;
