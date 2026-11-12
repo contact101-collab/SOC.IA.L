@@ -309,7 +309,7 @@ app.get('/v1/admin/onboarding-status', adminLimiter, asyncRoute(async(req,res)=>
 // Administrators can mint invitations without handling database credentials.
 // Read and invalidate stranded invitations only on an isolated preview.
 // Neither a production key nor an anonymous request can use this surface.
-app.use('/v1',adminLimiter,createPreviewInvitationAdminRouter(pool,adminAllowed,deployment));
+app.use('/v1',createPreviewInvitationAdminRouter(pool,adminAllowed,deployment,adminLimiter));
 
 app.post('/v1/admin/invitations', adminLimiter, asyncRoute(async (req, res) => {
   if (!adminAllowed(req)) return res.status(403).json({ error: 'Administrator authorization required' });
