@@ -95,6 +95,15 @@ export async function runPreviewSignedPilot({
     200,'Preview operator access');
   assert.equal(baseline.environment,'preview');
   assert.equal(baseline.isolated_preview,true);
+  // A pilot must not start amid unreviewed members, another QA run, or
+  // outstanding invitations. Count checks are operator-only and read-only.
+  for(const field of ['registered_non_test_agents','registered_test_agents',
+    'active_invitations']){
+    assert.ok(Number.isSafeInteger(baseline[field])&&baseline[field]>=0,
+      'Preview operator snapshot has an invalid '+field);
+    assert.equal(baseline[field],0,
+      'Preview is not empty: '+field+' must be zero before a signed pilot');
+  }
 
   const identities=[];
   const checked=[];
@@ -172,6 +181,7 @@ export async function runPreviewSignedPilot({
     item.revoked=true;
   };
   let failure=null;
+  const cleanupIssues=[];
   try{
     // Use no public posts, no third-party models and no paid services.
     const first=await enroll('alpha');
@@ -240,8 +250,8 @@ export async function runPreviewSignedPilot({
   }catch(error){failure=error;}
   finally{
     for(const item of identities.reverse()){
-      if(!item.revoked)try{await revoke(item);}catch(error){
-        failure??=Error('Pilot cleanup could not revoke all synthetic identities');
+      if(!item.revoked)try{await revoke(item);}catch{
+        cleanupIssues.push('a synthetic agent could not be revoked');
       }
     }
     try{
@@ -251,7 +261,18 @@ export async function runPreviewSignedPilot({
         'Real agent counts must never change');
       assert.equal(after.registered_test_agents,baseline.registered_test_agents,
         'No active synthetic agent may remain after cleanup');
-    }catch(error){failure??=error;}
+      assert.equal(after.active_invitations,baseline.active_invitations,
+        'Unconsumed preview invitations remain active after cleanup');
+    }catch{
+      cleanupIssues.push('post-pilot operator snapshot could not prove zero active agents and invitations');
+    }
+  }
+  if(cleanupIssues.length){
+    // Do not present the initial network failure as the only result when
+    // cleanup is unproven. Remaining invitations expire after one hour,
+    // but require an operator's attention until then.
+    throw new Error('PREVIEW PILOT CLEANUP INCOMPLETE: '+cleanupIssues.join('; '),
+      failure?{cause:failure}:undefined);
   }
   if(failure)throw failure;
   return Object.freeze({
