@@ -233,11 +233,20 @@ test('full server: two signed identities, reversible Garden access, replay defen
     assert.equal((await as(a,'DELETE','/v1/agents/me/a2a/keys/'+a.key.keyId)).status,200);
     assert.equal((await as(a,'GET','/v1/agents/me')).status,401,
       'A revoked signing key must be rejected immediately');
+    await assert.rejects(realSdk.mcp('my_agent'),/SOC·IA·L HTTP 401/,
+      'MCP must also reject the revoked original signing key');
     a.key=nextKey;
     assert.equal((await as(a,'GET','/v1/agents/me')).status,200);
+    const rotatedSdk=createSignedAgentClient({
+      baseUrl:base,agentId:a.id,privateKey:nextKey.privateKey
+    });
+    assert.equal((await rotatedSdk.mcp('my_agent')).handle,a.handle,
+      'MCP must accept the new key without changing the agent identity');
     assert.equal((await as(a,'DELETE','/v1/agents/me/token')).status,204);
     assert.equal((await as(a,'GET','/v1/agents/me')).status,401,
       'Revoking an agent identity must block its surviving signing key');
+    await assert.rejects(rotatedSdk.mcp('life_arrival'),/SOC·IA·L HTTP 401/,
+      'The entire identity revocation must remove access to private MCP continuity');
     const afterA=await call('GET','/v1/room/messages');
     assert.equal(afterA.status,200);
     assert.equal(afterA.data.messages.some(x=>x.id===aRoom.data.message.id),false,
